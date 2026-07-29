@@ -41,6 +41,13 @@ dependencies:
   # Local storage for theme preference
   shared_preferences: ^2.2.2
 
+  # Supabase database, authentication, storage and realtime
+  supabase_flutter: ^2.16.0
+  geolocator: ^14.0.2
+  http: ^1.6.0
+  pdf: ^3.12.0
+  printing: ^5.14.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -62,6 +69,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/fonts/NotoSans-Regular.ttf
+    - assets/fonts/NotoSans-Bold.ttf
 
   # To add assets to your application, add an assets section, like this:
   # assets:
