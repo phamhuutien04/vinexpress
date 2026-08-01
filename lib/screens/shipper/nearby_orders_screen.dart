@@ -1,0 +1,255 @@
+import 'package:flutter/material.dart';
+import '../../core/constants/app_colors.dart';
+import '../../services/shipper_service.dart';
+
+class NearbyOrdersScreen extends StatefulWidget {
+  const NearbyOrdersScreen({super.key, this.embedded = false});
+
+  final bool embedded;
+
+  @override
+  State<NearbyOrdersScreen> createState() => _NearbyOrdersScreenState();
+}
+
+class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
+  final _service = ShipperService();
+  List<Map<String, dynamic>> _orders = [];
+  bool _loading = false;
+  bool _locationReady = false;
+  String? _locationText;
+
+  Future<void> _updateLocationAndLoad() async {
+    setState(() => _loading = true);
+    try {
+      final position = await _service.updateCurrentLocation();
+      final orders = await _service.getNearbyOrders();
+      if (!mounted) return;
+      setState(() {
+        _locationReady = true;
+        _locationText =
+            '${position.latitude.toStringAsFixed(5)}, '
+            '${position.longitude.toStringAsFixed(5)}';
+        _orders = orders;
+      });
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _accept(Map<String, dynamic> order) async {
+    setState(() => _loading = true);
+    try {
+      await _service.updateCurrentLocation();
+      await _service.acceptOrder(order['id'] as int);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã nhận đơn ${order['ma_van_don']}'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      await _updateLocationAndLoad();
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message), backgroundColor: AppColors.error),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final content = RefreshIndicator(
+      onRefresh: _updateLocationAndLoad,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: _buildContent(context),
+      ),
+    );
+    if (widget.embedded) return content;
+    return Scaffold(
+      appBar: AppBar(title: const Text('Đơn gần bạn')),
+      body: content,
+    );
+  }
+
+  List<Widget> _buildContent(BuildContext context) {
+    return [
+      Container(
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          gradient: AppColors.primaryGradient,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.my_location_rounded,
+              color: Colors.white,
+              size: 30,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _locationReady
+                  ? 'Đang tìm đơn trong bán kính 10 km'
+                  : 'Bật vị trí để tìm đơn gần bạn',
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 17,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            if (_locationText != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Vị trí: $_locationText',
+                style: const TextStyle(color: Colors.white70),
+              ),
+            ],
+            const SizedBox(height: 14),
+            FilledButton.icon(
+              onPressed: _loading ? null : _updateLocationAndLoad,
+              style: FilledButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: AppColors.primary,
+              ),
+              icon: const Icon(Icons.gps_fixed_rounded),
+              label: Text(
+                _locationReady ? 'Cập nhật vị trí' : 'Cho phép vị trí',
+              ),
+            ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 20),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+              'Đơn có thể nhận',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+          ),
+          Text('${_orders.length} đơn'),
+        ],
+      ),
+      const SizedBox(height: 12),
+      if (_loading)
+        const Center(
+          child: Padding(
+            padding: EdgeInsets.all(32),
+            child: CircularProgressIndicator(),
+          ),
+        )
+      else if (!_locationReady)
+        const _EmptyState(
+          icon: Icons.location_disabled_outlined,
+          text: 'Chưa có vị trí hiện tại',
+        )
+      else if (_orders.isEmpty)
+        const _EmptyState(
+          icon: Icons.inventory_2_outlined,
+          text: 'Chưa có đơn lấy hàng nào gần bạn',
+        )
+      else
+        ..._orders.map(
+          (order) =>
+              _NearbyOrderCard(order: order, onAccept: () => _accept(order)),
+        ),
+    ];
+  }
+}
+
+class _NearbyOrderCard extends StatelessWidget {
+  const _NearbyOrderCard({required this.order, required this.onAccept});
+  final Map<String, dynamic> order;
+  final VoidCallback onAccept;
+
+  @override
+  Widget build(BuildContext context) {
+    final distance = (order['khoang_cach_den_diem_lay_km'] as num).toDouble();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    order['ma_van_don'] as String,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                Chip(
+                  avatar: const Icon(Icons.near_me_outlined, size: 16),
+                  label: Text('${distance.toStringAsFixed(1)} km'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _line(Icons.person_outline, order['nguoi_gui_ten'] as String),
+            _line(
+              Icons.location_on_outlined,
+              order['nguoi_gui_dia_chi'] as String,
+            ),
+            _line(Icons.flag_outlined, order['nguoi_nhan_dia_chi'] as String),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: onAccept,
+                icon: const Icon(Icons.delivery_dining_rounded),
+                label: const Text('Nhận đơn'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _line(IconData icon, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text)),
+        ],
+      ),
+    );
+  }
+}
+
+class _EmptyState extends StatelessWidget {
+  const _EmptyState({required this.icon, required this.text});
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 42),
+      child: Column(
+        children: [
+          Icon(icon, size: 48, color: AppColors.textDisabled),
+          const SizedBox(height: 10),
+          Text(text, style: Theme.of(context).textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+}

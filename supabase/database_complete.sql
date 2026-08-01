@@ -1392,3 +1392,52 @@ SELECT dh.ma_van_don,kg.ma_kho kho_gui,tg.ma_kho trung_tam_gui,td.ma_kho trung_t
 FROM don_hang dh LEFT JOIN kho_hang kg ON kg.id=dh.kho_gui_id
 LEFT JOIN kho_hang tg ON tg.id=dh.kho_trung_tam_gui_id LEFT JOIN kho_hang td ON td.id=dh.kho_trung_tam_dich_id
 LEFT JOIN kho_hang kd ON kd.id=dh.kho_dich_id;
+
+-- ============================================================
+-- 20. SUPABASE AUTH CHO KHÁCH HÀNG VÀ NHÂN VIÊN
+-- Khi tạo user trên Supabase Auth, truyền metadata:
+-- Khách:    {"ho_ten":"...", "so_dien_thoai":"...", "vai_tro":"KHACH_HANG"}
+-- Nhân viên:{"ho_ten":"...", "so_dien_thoai":"...", "vai_tro":"NHAN_VIEN",
+--            "vai_tro_nhan_vien":"NHAN_VIEN_KHO", "kho_hang_id":"1"}
+-- ============================================================
+ALTER TABLE nhan_vien ADD COLUMN IF NOT EXISTS auth_user_id UUID;
+ALTER TABLE nhan_vien ADD CONSTRAINT fk_nhan_vien_auth_user
+    FOREIGN KEY (auth_user_id) REFERENCES auth.users(id) ON DELETE CASCADE;
+CREATE UNIQUE INDEX uq_nhan_vien_auth_user ON nhan_vien(auth_user_id)
+    WHERE auth_user_id IS NOT NULL;
+
+CREATE OR REPLACE FUNCTION tao_ho_so_nguoi_dung()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_loai TEXT; v_vai_tro TEXT; v_kho_id BIGINT;
+BEGIN
+  v_loai := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro','KHACH_HANG'));
+  IF v_loai = 'NHAN_VIEN' THEN
+    v_vai_tro := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro_nhan_vien','NHAN_VIEN_KHO'));
+    IF v_vai_tro NOT IN ('ADMIN','QUAN_LY_KHO','NHAN_VIEN_KHO','VAN_CHUYEN','SHIPPER') THEN
+      RAISE EXCEPTION 'Vai trò nhân viên không hợp lệ';
+    END IF;
+    v_kho_id := NULLIF(NEW.raw_user_meta_data->>'kho_hang_id','')::BIGINT;
+    INSERT INTO nhan_vien(auth_user_id,kho_hang_id,ho_ten,so_dien_thoai,email,mat_khau,vai_tro,trang_thai_duyet,trang_thai)
+    VALUES (NEW.id,v_kho_id,COALESCE(NULLIF(BTRIM(NEW.raw_user_meta_data->>'ho_ten'),''),'Nhân viên'),
+      COALESCE(NULLIF(BTRIM(NEW.raw_user_meta_data->>'so_dien_thoai'),''),NEW.id::TEXT),NEW.email,
+      'SUPABASE_AUTH',v_vai_tro,'CHO_DUYET','HOAT_DONG');
+  ELSE
+    INSERT INTO khach_hang(auth_user_id,ho_ten,so_dien_thoai,email,mat_khau,dia_chi,trang_thai)
+    VALUES (NEW.id,COALESCE(NULLIF(BTRIM(NEW.raw_user_meta_data->>'ho_ten'),''),'Khách hàng'),
+      COALESCE(NULLIF(BTRIM(NEW.raw_user_meta_data->>'so_dien_thoai'),''),NEW.id::TEXT),NEW.email,
+      'SUPABASE_AUTH',NULLIF(BTRIM(NEW.raw_user_meta_data->>'dia_chi'),''),'HOAT_DONG');
+  END IF;
+  RETURN NEW;
+END; $$;
+
+DROP TRIGGER IF EXISTS trg_tao_ho_so_nguoi_dung ON auth.users;
+CREATE TRIGGER trg_tao_ho_so_nguoi_dung AFTER INSERT ON auth.users
+FOR EACH ROW EXECUTE FUNCTION tao_ho_so_nguoi_dung();
+
+ALTER TABLE khach_hang ENABLE ROW LEVEL SECURITY;
+ALTER TABLE nhan_vien ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "Khach hang xem ho so cua minh" ON khach_hang FOR SELECT TO authenticated USING (auth.uid()=auth_user_id);
+CREATE POLICY "Khach hang cap nhat ho so cua minh" ON khach_hang FOR UPDATE TO authenticated USING (auth.uid()=auth_user_id) WITH CHECK (auth.uid()=auth_user_id);
+CREATE POLICY "Nhan vien xem ho so cua minh" ON nhan_vien FOR SELECT TO authenticated USING (auth.uid()=auth_user_id);
+CREATE POLICY "Nhan vien cap nhat ho so cua minh" ON nhan_vien FOR UPDATE TO authenticated USING (auth.uid()=auth_user_id) WITH CHECK (auth.uid()=auth_user_id);
+GRANT SELECT,UPDATE ON khach_hang,nhan_vien TO authenticated;

@@ -10,6 +10,12 @@ ALTER TABLE public.don_hang
 ALTER TABLE public.don_hang
     ADD COLUMN IF NOT EXISTS phuong_tien VARCHAR(30);
 
+ALTER TABLE public.don_hang
+    ADD COLUMN IF NOT EXISTS nguoi_gui_vi_do DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS nguoi_gui_kinh_do DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS nguoi_nhan_vi_do DOUBLE PRECISION,
+    ADD COLUMN IF NOT EXISTS nguoi_nhan_kinh_do DOUBLE PRECISION;
+
 -- Lưu các chặng liên tỉnh qua kho trung tâm, tách khỏi kho địa phương
 -- (cấp 2) nhận/giao hàng.
 ALTER TABLE public.don_hang
@@ -129,6 +135,13 @@ DROP FUNCTION IF EXISTS public.tao_don_hang_khach_hang(
     NUMERIC, NUMERIC, NUMERIC, NUMERIC, TEXT
 );
 
+DROP FUNCTION IF EXISTS public.tao_don_hang_khach_hang(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
+    NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC,
+    DOUBLE PRECISION, DOUBLE PRECISION,
+    DOUBLE PRECISION, DOUBLE PRECISION, TEXT
+);
+
 CREATE OR REPLACE FUNCTION public.tao_don_hang_khach_hang(
     p_nguoi_gui_ten TEXT,
     p_nguoi_gui_dia_chi TEXT,
@@ -141,6 +154,10 @@ CREATE OR REPLACE FUNCTION public.tao_don_hang_khach_hang(
     p_phi_van_chuyen NUMERIC,
     p_cod NUMERIC,
     p_khoang_cach_km NUMERIC,
+    p_nguoi_gui_vi_do DOUBLE PRECISION,
+    p_nguoi_gui_kinh_do DOUBLE PRECISION,
+    p_nguoi_nhan_vi_do DOUBLE PRECISION,
+    p_nguoi_nhan_kinh_do DOUBLE PRECISION,
     p_ghi_chu TEXT DEFAULT NULL
 )
 RETURNS TABLE (
@@ -224,6 +241,10 @@ BEGIN
         kho_trung_tam_dich_id,
         khoang_cach_km,
         phuong_tien,
+        nguoi_gui_vi_do,
+        nguoi_gui_kinh_do,
+        nguoi_nhan_vi_do,
+        nguoi_nhan_kinh_do,
         trang_thai,
         ghi_chu
     )
@@ -246,6 +267,10 @@ BEGIN
         v_kho_trung_tam_dich_id,
         ROUND(p_khoang_cach_km, 2),
         v_phuong_tien,
+        p_nguoi_gui_vi_do,
+        p_nguoi_gui_kinh_do,
+        p_nguoi_nhan_vi_do,
+        p_nguoi_nhan_kinh_do,
         'CHO_LAY_HANG',
         NULLIF(BTRIM(p_ghi_chu), '')
     )
@@ -266,10 +291,14 @@ REVOKE ALL ON FUNCTION public.tim_kho_theo_dia_chi(
 
 REVOKE ALL ON FUNCTION public.tao_don_hang_khach_hang(
     TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
-    NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, TEXT
+    NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC,
+    DOUBLE PRECISION, DOUBLE PRECISION,
+    DOUBLE PRECISION, DOUBLE PRECISION, TEXT
 ) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.tao_don_hang_khach_hang(
     TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
-    NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC, TEXT
+    NUMERIC, NUMERIC, NUMERIC, NUMERIC, NUMERIC,
+    DOUBLE PRECISION, DOUBLE PRECISION,
+    DOUBLE PRECISION, DOUBLE PRECISION, TEXT
 ) TO authenticated;

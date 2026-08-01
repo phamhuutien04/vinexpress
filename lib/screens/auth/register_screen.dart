@@ -20,6 +20,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _authService = CustomerAuthService();
   bool _obscurePassword = true;
   bool _isLoading = false;
+  bool _isEmployee = false;
+  String _employeeRole = 'SHIPPER';
 
   @override
   void dispose() {
@@ -41,17 +43,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
     setState(() => _isLoading = true);
 
     try {
-      final email = await _authService.register(
-        fullName: _nameController.text,
-        phone: _phoneController.text,
-        email: _emailController.text,
-        address: _addressController.text,
-        password: _passwordController.text,
-      );
+      final email = _isEmployee
+          ? await _authService.registerEmployee(
+              fullName: _nameController.text,
+              phone: _phoneController.text,
+              email: _emailController.text,
+              password: _passwordController.text,
+              employeeRole: _employeeRole,
+            )
+          : await _authService.register(
+              fullName: _nameController.text,
+              phone: _phoneController.text,
+              email: _emailController.text,
+              address: _addressController.text,
+              password: _passwordController.text,
+            );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đăng ký thành công. Vui lòng đăng nhập.'),
+        SnackBar(
+          content: Text(_isEmployee
+              ? 'Đăng ký nhân viên thành công. Vui lòng chờ quản trị viên duyệt tài khoản.'
+              : 'Đăng ký thành công. Vui lòng đăng nhập.'),
           backgroundColor: AppColors.success,
         ),
       );
@@ -85,15 +97,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      'Tạo tài khoản khách hàng',
+                      _isEmployee
+                          ? 'Đăng ký tài khoản nhân viên'
+                          : 'Tạo tài khoản khách hàng',
                       style: Theme.of(context).textTheme.displaySmall,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Nhập thông tin để bắt đầu gửi hàng cùng VinExpress.',
+                      _isEmployee
+                          ? 'Tài khoản sẽ được quản trị viên xét duyệt trước khi đăng nhập.'
+                          : 'Nhập thông tin để bắt đầu gửi hàng cùng VinExpress.',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 28),
+                    SegmentedButton<bool>(
+                      segments: const [
+                        ButtonSegment(value: false, label: Text('Khách hàng'), icon: Icon(Icons.person_outline)),
+                        ButtonSegment(value: true, label: Text('Nhân viên'), icon: Icon(Icons.badge_outlined)),
+                      ],
+                      selected: {_isEmployee},
+                      onSelectionChanged: (value) => setState(() => _isEmployee = value.first),
+                    ),
+                    const SizedBox(height: 20),
                     _field(
                       controller: _nameController,
                       label: 'Họ và tên',
@@ -131,13 +156,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                             : 'Email không hợp lệ';
                       },
                     ),
-                    const SizedBox(height: 14),
-                    _field(
-                      controller: _addressController,
-                      label: 'Địa chỉ',
-                      icon: Icons.location_on_outlined,
-                      maxLines: 2,
-                    ),
+                    if (_isEmployee) ...[
+                      const SizedBox(height: 14),
+                      DropdownButtonFormField<String>(
+                        value: _employeeRole,
+                        decoration: const InputDecoration(
+                          labelText: 'Vị trí ứng tuyển',
+                          prefixIcon: Icon(Icons.work_outline),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'SHIPPER', child: Text('Shipper')),
+                          DropdownMenuItem(value: 'VAN_CHUYEN', child: Text('Nhân viên vận chuyển')),
+                          DropdownMenuItem(value: 'NHAN_VIEN_KHO', child: Text('Nhân viên kho')),
+                        ],
+                        onChanged: (value) => setState(() => _employeeRole = value!),
+                      ),
+                    ] else ...[
+                      const SizedBox(height: 14),
+                      _field(
+                        controller: _addressController,
+                        label: 'Địa chỉ',
+                        icon: Icons.location_on_outlined,
+                        maxLines: 2,
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     TextFormField(
                       controller: _passwordController,
@@ -187,7 +229,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : const Text('Tạo tài khoản'),
+                          : Text(_isEmployee ? 'Gửi đăng ký nhân viên' : 'Tạo tài khoản'),
                     ),
                   ],
                 ),

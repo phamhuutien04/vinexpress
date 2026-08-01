@@ -25,10 +25,21 @@ class OrderService {
     required double itemValue,
     required double shippingFee,
     required double cod,
+    double? senderLatitude,
+    double? senderLongitude,
     String? note,
   }) async {
     try {
-      final route = await _calculateRoute(senderAddress, receiverAddress);
+      final route = await _calculateRoute(
+        senderAddress,
+        receiverAddress,
+        senderCoordinates: senderLatitude != null && senderLongitude != null
+            ? _Coordinates(
+                latitude: senderLatitude,
+                longitude: senderLongitude,
+              )
+            : null,
+      );
       final data = await _client
           .rpc(
             'tao_don_hang_khach_hang',
@@ -44,6 +55,10 @@ class OrderService {
               'p_phi_van_chuyen': shippingFee,
               'p_cod': cod,
               'p_khoang_cach_km': route.distanceKm,
+              'p_nguoi_gui_vi_do': route.sender.latitude,
+              'p_nguoi_gui_kinh_do': route.sender.longitude,
+              'p_nguoi_nhan_vi_do': route.receiver.latitude,
+              'p_nguoi_nhan_kinh_do': route.receiver.longitude,
               'p_ghi_chu': note?.trim(),
             },
           )
@@ -79,13 +94,19 @@ class OrderService {
 
   Future<_DeliveryRoute> _calculateRoute(
     String senderAddress,
-    String receiverAddress,
-  ) async {
-    final sender = await _coordinatesForAddress(senderAddress);
+    String receiverAddress, {
+    _Coordinates? senderCoordinates,
+  }) async {
+    final sender =
+        senderCoordinates ?? await _coordinatesForAddress(senderAddress);
     final receiver = await _coordinatesForAddress(receiverAddress);
     final meters = await _roadDistanceMeters(sender, receiver);
     final distanceKm = double.parse((meters / 1000).toStringAsFixed(2));
-    return _DeliveryRoute(distanceKm: distanceKm);
+    return _DeliveryRoute(
+      distanceKm: distanceKm,
+      sender: sender,
+      receiver: receiver,
+    );
   }
 
   Future<double> _roadDistanceMeters(
@@ -151,6 +172,12 @@ class _Coordinates {
 }
 
 class _DeliveryRoute {
-  const _DeliveryRoute({required this.distanceKm});
+  const _DeliveryRoute({
+    required this.distanceKm,
+    required this.sender,
+    required this.receiver,
+  });
   final double distanceKm;
+  final _Coordinates sender;
+  final _Coordinates receiver;
 }

@@ -30,6 +30,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   bool _cod = false;
   bool _isLoading = false;
+  double? _senderLatitude;
+  double? _senderLongitude;
   final _orderService = OrderService();
 
   static const int _shippingFee = 28000;
@@ -84,6 +86,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         shippingFee: _shippingFee.toDouble(),
         cod: _cod ? (double.tryParse(_codAmount.text) ?? 0) : 0,
         note: _note.text,
+        senderLatitude: _senderLatitude,
+        senderLongitude: _senderLongitude,
       );
       if (!mounted) return;
       _showSuccess(order);
@@ -239,6 +243,14 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     label: 'Địa chỉ lấy hàng',
                     hint: 'Chọn hoặc nhập địa chỉ lấy hàng',
                     allowCurrentLocation: true,
+                    onCurrentLocationSelected: (latitude, longitude) {
+                      _senderLatitude = latitude;
+                      _senderLongitude = longitude;
+                    },
+                    onAddressChanged: () {
+                      _senderLatitude = null;
+                      _senderLongitude = null;
+                    },
                     validator: _required,
                   ),
                 ],

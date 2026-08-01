@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
@@ -11,6 +12,8 @@ class AddressInput extends StatefulWidget {
     required this.label,
     required this.hint,
     this.allowCurrentLocation = false,
+    this.onCurrentLocationSelected,
+    this.onAddressChanged,
     this.validator,
   });
 
@@ -18,6 +21,9 @@ class AddressInput extends StatefulWidget {
   final String label;
   final String hint;
   final bool allowCurrentLocation;
+  final void Function(double latitude, double longitude)?
+      onCurrentLocationSelected;
+  final VoidCallback? onAddressChanged;
   final String? Function(String?)? validator;
 
   @override
@@ -26,6 +32,37 @@ class AddressInput extends StatefulWidget {
 
 class _AddressInputState extends State<AddressInput> {
   bool _locating = false;
+
+  Future<void> _showLocationPermissionHelp({required bool permanentlyDenied}) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cần quyền truy cập vị trí'),
+        content: Text(
+          kIsWeb
+              ? 'Quyền vị trí chưa được trình duyệt xác nhận hoặc vừa bị từ chối. Hãy chọn Cho phép, bấm Xong (Done), đóng hộp thoại này rồi thử lại. Nếu vẫn lỗi, tải lại trang.'
+              : permanentlyDenied
+                  ? 'Quyền vị trí đã bị từ chối vĩnh viễn. Hãy mở Cài đặt, chọn Quyền và bật Vị trí cho ứng dụng.'
+                  : 'Hãy chọn Cho phép khi điện thoại hỏi quyền vị trí rồi thử lại.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Đóng'),
+          ),
+          if (!kIsWeb && permanentlyDenied)
+            FilledButton(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                await Geolocator.openAppSettings();
+              },
+              child: const Text('Mở cài đặt'),
+            ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _useCurrentLocation() async {
     setState(() => _locating = true);
@@ -36,11 +73,20 @@ class _AddressInputState extends State<AddressInput> {
 
       var permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
+        try {
+          permission = await Geolocator.requestPermission();
+        } on PermissionDeniedException {
+          await _showLocationPermissionHelp(permanentlyDenied: false);
+          return;
+        }
       }
-      if (permission == LocationPermission.denied ||
-          permission == LocationPermission.deniedForever) {
-        throw Exception('Bạn chưa cấp quyền truy cập vị trí.');
+      if (permission == LocationPermission.denied) {
+        await _showLocationPermissionHelp(permanentlyDenied: false);
+        return;
+      }
+      if (permission == LocationPermission.deniedForever) {
+        await _showLocationPermissionHelp(permanentlyDenied: true);
+        return;
       }
 
       final position = await Geolocator.getCurrentPosition(
@@ -68,6 +114,12 @@ class _AddressInputState extends State<AddressInput> {
         throw Exception('Không tìm thấy địa chỉ tại vị trí hiện tại.');
       }
       widget.controller.text = address;
+      widget.onCurrentLocationSelected?.call(
+        position.latitude,
+        position.longitude,
+      );
+    } on PermissionDeniedException {
+      await _showLocationPermissionHelp(permanentlyDenied: false);
     } catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -90,6 +142,7 @@ class _AddressInputState extends State<AddressInput> {
     );
     if (address != null && address.isNotEmpty) {
       widget.controller.text = address;
+      widget.onAddressChanged?.call();
     }
   }
 
@@ -100,6 +153,7 @@ class _AddressInputState extends State<AddressInput> {
       children: [
         TextFormField(
           controller: widget.controller,
+          onChanged: (_) => widget.onAddressChanged?.call(),
           maxLines: 2,
           validator: widget.validator,
           decoration: InputDecoration(

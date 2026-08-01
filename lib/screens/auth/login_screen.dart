@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
 import '../customer/customer_home_screen.dart';
+import '../employee/delivery_home_screen.dart';
+import '../employee/employee_home_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -31,14 +33,24 @@ class _LoginScreenState extends State<LoginScreen> {
     setState(() => _isLoading = true);
 
     try {
-      await _authService.login(
+      final result = await _authService.login(
         email: _emailController.text,
         password: _passwordController.text,
       );
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const CustomerHomeScreen()),
+        MaterialPageRoute(
+          builder: (_) {
+            if (result.type == AccountType.customer) {
+              return const CustomerHomeScreen();
+            }
+            final role = result.profile['vai_tro'] as String?;
+            return role == 'SHIPPER' || role == 'VAN_CHUYEN'
+                ? const DeliveryHomeScreen()
+                : const EmployeeHomeScreen();
+          },
+        ),
       );
     } on CustomerAuthException catch (error) {
       if (mounted) _showError(error.message);
@@ -88,7 +100,7 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Đăng nhập tài khoản khách hàng VinExpress',
+                      'Đăng nhập VinExpress',
                       style: Theme.of(context).textTheme.bodyMedium,
                     ),
                     const SizedBox(height: 32),
