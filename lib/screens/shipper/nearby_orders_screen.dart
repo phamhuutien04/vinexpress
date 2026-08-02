@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
+import 'delivery_navigation_screen.dart';
 
 class NearbyOrdersScreen extends StatefulWidget {
   const NearbyOrdersScreen({super.key, this.embedded = false});
@@ -50,6 +51,12 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
           backgroundColor: AppColors.success,
         ),
       );
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => DeliveryNavigationScreen(order: order),
+        ),
+      );
+      if (!mounted) return;
       await _updateLocationAndLoad();
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
@@ -177,12 +184,11 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
         )
       else
         ..._orders.map(
-          (order) =>
-              _NearbyOrderCard(
-                order: order,
-                onAccept: () => _accept(order),
-                onReject: () => _reject(order),
-              ),
+          (order) => _NearbyOrderCard(
+            order: order,
+            onAccept: () => _accept(order),
+            onReject: () => _reject(order),
+          ),
         ),
     ];
   }

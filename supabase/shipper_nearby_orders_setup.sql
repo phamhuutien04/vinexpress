@@ -96,6 +96,8 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.don_hang_gan_shipper(DOUBLE PRECISION);
+
 CREATE OR REPLACE FUNCTION public.don_hang_gan_shipper(
     p_ban_kinh_km DOUBLE PRECISION DEFAULT 10
 )
@@ -106,6 +108,10 @@ RETURNS TABLE (
     nguoi_gui_sdt VARCHAR,
     nguoi_gui_dia_chi TEXT,
     nguoi_nhan_dia_chi TEXT,
+    nguoi_gui_vi_do DOUBLE PRECISION,
+    nguoi_gui_kinh_do DOUBLE PRECISION,
+    nguoi_nhan_vi_do DOUBLE PRECISION,
+    nguoi_nhan_kinh_do DOUBLE PRECISION,
     can_nang NUMERIC,
     cod NUMERIC,
     khoang_cach_den_diem_lay_km DOUBLE PRECISION
@@ -143,6 +149,10 @@ BEGIN
         dh.nguoi_gui_sdt,
         dh.nguoi_gui_dia_chi,
         dh.nguoi_nhan_dia_chi,
+        dh.nguoi_gui_vi_do,
+        dh.nguoi_gui_kinh_do,
+        dh.nguoi_nhan_vi_do,
+        dh.nguoi_nhan_kinh_do,
         dh.can_nang,
         dh.cod,
         public.khoang_cach_km(
@@ -283,6 +293,70 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.cap_nhat_chang_giao_shipper(
+    p_don_hang_id BIGINT,
+    p_trang_thai_moi TEXT,
+    p_vi_do DOUBLE PRECISION DEFAULT NULL,
+    p_kinh_do DOUBLE PRECISION DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_nhan_vien_id BIGINT;
+    v_don public.don_hang%ROWTYPE;
+    v_trang_thai_moi TEXT := UPPER(BTRIM(p_trang_thai_moi));
+BEGIN
+    SELECT nv.id INTO v_nhan_vien_id
+    FROM public.nhan_vien nv
+    WHERE nv.auth_user_id = auth.uid()
+      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.trang_thai = 'HOAT_DONG'
+      AND nv.trang_thai_duyet = 'DA_DUYET';
+
+    SELECT * INTO v_don
+    FROM public.don_hang dh
+    WHERE dh.id = p_don_hang_id
+    FOR UPDATE;
+
+    IF v_nhan_vien_id IS NULL OR NOT FOUND
+       OR v_don.nhan_vien_hien_tai_id IS DISTINCT FROM v_nhan_vien_id THEN
+        RAISE EXCEPTION 'Bạn không được phân công giao đơn hàng này';
+    END IF;
+
+    IF v_trang_thai_moi = 'DA_LAY_HANG'
+       AND v_don.trang_thai = 'CHO_LAY_HANG' THEN
+        UPDATE public.don_hang
+        SET trang_thai = 'DA_LAY_HANG', ngay_lay_hang = NOW()
+        WHERE id = p_don_hang_id;
+    ELSIF v_trang_thai_moi = 'DA_GIAO_HANG'
+       AND v_don.trang_thai IN ('DA_LAY_HANG', 'DANG_GIAO_HANG') THEN
+        UPDATE public.don_hang
+        SET trang_thai = 'DA_GIAO_HANG', ngay_giao_hang = NOW()
+        WHERE id = p_don_hang_id;
+    ELSE
+        RAISE EXCEPTION 'Không thể chuyển từ trạng thái % sang %',
+            v_don.trang_thai, v_trang_thai_moi;
+    END IF;
+
+    INSERT INTO public.nhat_ky_don_hang (
+        nhan_vien_id, don_hang_id, khach_hang_id,
+        hanh_dong, trang_thai_cu, trang_thai_moi,
+        ghi_chu, vi_do, kinh_do
+    ) VALUES (
+        v_nhan_vien_id, v_don.id, v_don.khach_hang_id,
+        CASE v_trang_thai_moi
+            WHEN 'DA_LAY_HANG' THEN 'Shipper đã lấy hàng'
+            ELSE 'Shipper đã giao hàng thành công'
+        END,
+        v_don.trang_thai, v_trang_thai_moi,
+        'Cập nhật từ màn hình dẫn đường', p_vi_do, p_kinh_do
+    );
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.cap_nhat_vi_tri_shipper(
     DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION
 ) FROM PUBLIC;
@@ -294,6 +368,9 @@ REVOKE ALL ON FUNCTION public.nhan_don_hang_gan(
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.tu_choi_don_hang_gan(
     BIGINT, TEXT
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.cap_nhat_chang_giao_shipper(
+    BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION
 ) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.cap_nhat_vi_tri_shipper(
@@ -307,4 +384,7 @@ GRANT EXECUTE ON FUNCTION public.nhan_don_hang_gan(
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.tu_choi_don_hang_gan(
     BIGINT, TEXT
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cap_nhat_chang_giao_shipper(
+    BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION
 ) TO authenticated;

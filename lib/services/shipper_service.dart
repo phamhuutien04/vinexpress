@@ -86,4 +86,25 @@ class ShipperService {
       throw ShipperServiceException(error.message);
     }
   }
+
+  Future<void> updateDeliveryStage({
+    required int orderId,
+    required String status,
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      await _client.rpc(
+        'cap_nhat_chang_giao_shipper',
+        params: {
+          'p_don_hang_id': orderId,
+          'p_trang_thai_moi': status,
+          'p_vi_do': latitude,
+          'p_kinh_do': longitude,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
 }
