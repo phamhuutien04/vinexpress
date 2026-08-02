@@ -75,4 +75,15 @@ class ShipperService {
       throw ShipperServiceException(error.message);
     }
   }
+
+  Future<void> rejectOrder(int orderId, {String? reason}) async {
+    try {
+      await _client.rpc(
+        'tu_choi_don_hang_gan',
+        params: {'p_don_hang_id': orderId, 'p_ly_do': reason},
+      );
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
 }

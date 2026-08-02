@@ -58,6 +58,22 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
     }
   }
 
+  Future<void> _reject(Map<String, dynamic> order) async {
+    setState(() => _loading = true);
+    try {
+      await _service.rejectOrder(order['id'] as int);
+      if (!mounted) return;
+      setState(() => _orders.removeWhere((item) => item['id'] == order['id']));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã chuyển đơn cho shipper khác')),
+      );
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppColors.error),
@@ -162,16 +178,25 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
       else
         ..._orders.map(
           (order) =>
-              _NearbyOrderCard(order: order, onAccept: () => _accept(order)),
+              _NearbyOrderCard(
+                order: order,
+                onAccept: () => _accept(order),
+                onReject: () => _reject(order),
+              ),
         ),
     ];
   }
 }
 
 class _NearbyOrderCard extends StatelessWidget {
-  const _NearbyOrderCard({required this.order, required this.onAccept});
+  const _NearbyOrderCard({
+    required this.order,
+    required this.onAccept,
+    required this.onReject,
+  });
   final Map<String, dynamic> order;
   final VoidCallback onAccept;
+  final VoidCallback onReject;
 
   @override
   Widget build(BuildContext context) {
@@ -205,13 +230,24 @@ class _NearbyOrderCard extends StatelessWidget {
             ),
             _line(Icons.flag_outlined, order['nguoi_nhan_dia_chi'] as String),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: onAccept,
-                icon: const Icon(Icons.delivery_dining_rounded),
-                label: const Text('Nhận đơn'),
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: onReject,
+                    child: const Text('Từ chối'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                    onPressed: onAccept,
+                    icon: const Icon(Icons.delivery_dining_rounded),
+                    label: const Text('Nhận đơn'),
+                  ),
+                ),
+              ],
             ),
           ],
         ),

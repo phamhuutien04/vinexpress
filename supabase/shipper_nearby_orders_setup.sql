@@ -26,6 +26,16 @@ CREATE TABLE IF NOT EXISTS public.vi_tri_nhan_vien (
     thoi_gian_cap_nhat TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS public.tu_choi_don_hang_shipper (
+    don_hang_id BIGINT NOT NULL
+        REFERENCES public.don_hang(id) ON DELETE CASCADE,
+    nhan_vien_id BIGINT NOT NULL
+        REFERENCES public.nhan_vien(id) ON DELETE CASCADE,
+    ly_do TEXT,
+    thoi_gian_tu_choi TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (don_hang_id, nhan_vien_id)
+);
+
 CREATE OR REPLACE FUNCTION public.khoang_cach_km(
     p_vi_do_1 DOUBLE PRECISION,
     p_kinh_do_1 DOUBLE PRECISION,
@@ -145,11 +155,60 @@ BEGIN
       AND dh.nhan_vien_hien_tai_id IS NULL
       AND dh.nguoi_gui_vi_do IS NOT NULL
       AND dh.nguoi_gui_kinh_do IS NOT NULL
+      AND NOT EXISTS (
+          SELECT 1
+          FROM public.tu_choi_don_hang_shipper tc
+          WHERE tc.don_hang_id = dh.id
+            AND tc.nhan_vien_id = v_nhan_vien_id
+      )
       AND public.khoang_cach_km(
           v_vi_do, v_kinh_do,
           dh.nguoi_gui_vi_do, dh.nguoi_gui_kinh_do
       ) <= p_ban_kinh_km
     ORDER BY khoang_cach_den_diem_lay_km, dh.ngay_tao;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.tu_choi_don_hang_gan(
+    p_don_hang_id BIGINT,
+    p_ly_do TEXT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_nhan_vien_id BIGINT;
+BEGIN
+    SELECT nv.id INTO v_nhan_vien_id
+    FROM public.nhan_vien nv
+    WHERE nv.auth_user_id = auth.uid()
+      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.trang_thai = 'HOAT_DONG'
+      AND nv.trang_thai_duyet = 'DA_DUYET';
+
+    IF v_nhan_vien_id IS NULL THEN
+        RAISE EXCEPTION 'Tài khoản không phải shipper đã được duyệt';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM public.don_hang dh
+        WHERE dh.id = p_don_hang_id
+          AND dh.trang_thai = 'CHO_LAY_HANG'
+          AND dh.nhan_vien_hien_tai_id IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Đơn hàng không còn khả dụng';
+    END IF;
+
+    INSERT INTO public.tu_choi_don_hang_shipper (
+        don_hang_id, nhan_vien_id, ly_do
+    ) VALUES (
+        p_don_hang_id, v_nhan_vien_id, NULLIF(TRIM(p_ly_do), '')
+    )
+    ON CONFLICT (don_hang_id, nhan_vien_id) DO UPDATE SET
+        ly_do = EXCLUDED.ly_do,
+        thoi_gian_tu_choi = NOW();
 END;
 $$;
 
@@ -233,6 +292,9 @@ REVOKE ALL ON FUNCTION public.don_hang_gan_shipper(
 REVOKE ALL ON FUNCTION public.nhan_don_hang_gan(
     BIGINT, DOUBLE PRECISION
 ) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.tu_choi_don_hang_gan(
+    BIGINT, TEXT
+) FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.cap_nhat_vi_tri_shipper(
     DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION
@@ -242,4 +304,7 @@ GRANT EXECUTE ON FUNCTION public.don_hang_gan_shipper(
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nhan_don_hang_gan(
     BIGINT, DOUBLE PRECISION
+) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.tu_choi_don_hang_gan(
+    BIGINT, TEXT
 ) TO authenticated;
