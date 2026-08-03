@@ -101,6 +101,7 @@ class ShipperService {
     required String status,
     double? latitude,
     double? longitude,
+    String? evidenceUrl,
   }) async {
     try {
       await _client.rpc(
@@ -110,6 +111,7 @@ class ShipperService {
           'p_trang_thai_moi': status,
           'p_vi_do': latitude,
           'p_kinh_do': longitude,
+          'p_minh_chung': evidenceUrl,
         },
       );
     } on PostgrestException catch (error) {

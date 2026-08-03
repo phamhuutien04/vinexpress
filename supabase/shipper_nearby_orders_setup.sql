@@ -338,11 +338,16 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.cap_nhat_chang_giao_shipper(
+    BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION
+);
+
 CREATE OR REPLACE FUNCTION public.cap_nhat_chang_giao_shipper(
     p_don_hang_id BIGINT,
     p_trang_thai_moi TEXT,
     p_vi_do DOUBLE PRECISION DEFAULT NULL,
-    p_kinh_do DOUBLE PRECISION DEFAULT NULL
+    p_kinh_do DOUBLE PRECISION DEFAULT NULL,
+    p_minh_chung TEXT DEFAULT NULL
 )
 RETURNS VOID
 LANGUAGE plpgsql
@@ -373,11 +378,17 @@ BEGIN
 
     IF v_trang_thai_moi = 'DA_LAY_HANG'
        AND v_don.trang_thai = 'CHO_LAY_HANG' THEN
+        IF p_minh_chung IS NULL OR BTRIM(p_minh_chung) = '' THEN
+            RAISE EXCEPTION 'Phải có ảnh minh chứng khi xác nhận đã lấy hàng';
+        END IF;
         UPDATE public.don_hang
         SET trang_thai = 'DA_LAY_HANG', ngay_lay_hang = NOW()
         WHERE id = p_don_hang_id;
     ELSIF v_trang_thai_moi = 'DA_GIAO_HANG'
        AND v_don.trang_thai IN ('DA_LAY_HANG', 'DANG_GIAO_HANG') THEN
+        IF p_minh_chung IS NULL OR BTRIM(p_minh_chung) = '' THEN
+            RAISE EXCEPTION 'Phải có ảnh minh chứng khi xác nhận đã giao hàng';
+        END IF;
         UPDATE public.don_hang
         SET trang_thai = 'DA_GIAO_HANG', ngay_giao_hang = NOW()
         WHERE id = p_don_hang_id;
@@ -389,7 +400,7 @@ BEGIN
     INSERT INTO public.nhat_ky_don_hang (
         nhan_vien_id, don_hang_id, khach_hang_id,
         hanh_dong, trang_thai_cu, trang_thai_moi,
-        ghi_chu, vi_do, kinh_do
+        ghi_chu, minh_chung, vi_do, kinh_do
     ) VALUES (
         v_nhan_vien_id, v_don.id, v_don.khach_hang_id,
         CASE v_trang_thai_moi
@@ -397,7 +408,8 @@ BEGIN
             ELSE 'Shipper đã giao hàng thành công'
         END,
         v_don.trang_thai, v_trang_thai_moi,
-        'Cập nhật từ màn hình dẫn đường', p_vi_do, p_kinh_do
+        'Cập nhật từ màn hình dẫn đường',
+        NULLIF(BTRIM(p_minh_chung), ''), p_vi_do, p_kinh_do
     );
 END;
 $$;
@@ -415,7 +427,7 @@ REVOKE ALL ON FUNCTION public.tu_choi_don_hang_gan(
     BIGINT, TEXT
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.cap_nhat_chang_giao_shipper(
-    BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION
+    BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION, TEXT
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.don_hang_dang_giao_cua_shipper() FROM PUBLIC;
 
@@ -432,7 +444,10 @@ GRANT EXECUTE ON FUNCTION public.tu_choi_don_hang_gan(
     BIGINT, TEXT
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.cap_nhat_chang_giao_shipper(
-    BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION
+    BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION, TEXT
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.don_hang_dang_giao_cua_shipper()
 TO authenticated;
+
+-- Yêu cầu PostgREST nạp ngay chữ ký RPC mới có tham số p_minh_chung.
+NOTIFY pgrst, 'reload schema';

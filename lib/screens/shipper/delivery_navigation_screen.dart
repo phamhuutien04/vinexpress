@@ -6,9 +6,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
+import '../../services/cloudinary_service.dart';
 
 class DeliveryNavigationScreen extends StatefulWidget {
   const DeliveryNavigationScreen({super.key, required this.order});
@@ -23,6 +25,8 @@ class DeliveryNavigationScreen extends StatefulWidget {
 class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   final _mapController = MapController();
   final _shipperService = ShipperService();
+  final _cloudinaryService = CloudinaryService();
+  final _imagePicker = ImagePicker();
   StreamSubscription<Position>? _positionSubscription;
   Timer? _simulationTimer;
   LatLng? _shipper;
@@ -256,15 +260,29 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     final shipper = _shipper;
     setState(() => _updatingStatus = true);
     try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 82,
+        maxWidth: 1600,
+      );
+      if (image == null) return;
+      final evidenceUrl = await _cloudinaryService.uploadEvidence(
+        image: image,
+        trackingCode: '${widget.order['ma_van_don']}',
+        evidenceType: 'pickup_evidence',
+      );
       await _shipperService.updateDeliveryStage(
         orderId: widget.order['id'] as int,
         status: 'DA_LAY_HANG',
         latitude: shipper?.latitude,
         longitude: shipper?.longitude,
+        evidenceUrl: evidenceUrl,
       );
       if (!mounted) return;
       setState(() => _toReceiver = true);
       await _loadRoute();
+    } on CloudinaryUploadException catch (error) {
+      if (mounted) _showError(error.message);
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
     } finally {
@@ -400,14 +418,28 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     final shipper = _shipper;
     setState(() => _updatingStatus = true);
     try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 82,
+        maxWidth: 1600,
+      );
+      if (image == null) return;
+      final evidenceUrl = await _cloudinaryService.uploadEvidence(
+        image: image,
+        trackingCode: '${widget.order['ma_van_don']}',
+        evidenceType: 'delivery_evidence',
+      );
       await _shipperService.updateDeliveryStage(
         orderId: widget.order['id'] as int,
         status: 'DA_GIAO_HANG',
         latitude: shipper?.latitude,
         longitude: shipper?.longitude,
+        evidenceUrl: evidenceUrl,
       );
       if (!mounted) return;
       Navigator.pop(context);
+    } on CloudinaryUploadException catch (error) {
+      if (mounted) _showError(error.message);
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
     } finally {
