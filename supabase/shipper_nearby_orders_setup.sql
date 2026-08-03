@@ -222,6 +222,51 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.don_hang_dang_giao_cua_shipper()
+RETURNS TABLE (
+    id BIGINT,
+    ma_van_don VARCHAR,
+    trang_thai VARCHAR,
+    nguoi_gui_ten VARCHAR,
+    nguoi_gui_sdt VARCHAR,
+    nguoi_gui_dia_chi TEXT,
+    nguoi_nhan_dia_chi TEXT,
+    nguoi_gui_vi_do DOUBLE PRECISION,
+    nguoi_gui_kinh_do DOUBLE PRECISION,
+    nguoi_nhan_vi_do DOUBLE PRECISION,
+    nguoi_nhan_kinh_do DOUBLE PRECISION,
+    can_nang NUMERIC,
+    cod NUMERIC
+)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT
+        dh.id,
+        dh.ma_van_don,
+        dh.trang_thai,
+        dh.nguoi_gui_ten,
+        dh.nguoi_gui_sdt,
+        dh.nguoi_gui_dia_chi,
+        dh.nguoi_nhan_dia_chi,
+        dh.nguoi_gui_vi_do,
+        dh.nguoi_gui_kinh_do,
+        dh.nguoi_nhan_vi_do,
+        dh.nguoi_nhan_kinh_do,
+        dh.can_nang,
+        dh.cod
+    FROM public.don_hang dh
+    JOIN public.nhan_vien nv
+      ON nv.id = dh.nhan_vien_hien_tai_id
+    WHERE nv.auth_user_id = auth.uid()
+      AND dh.trang_thai IN (
+          'CHO_LAY_HANG', 'DA_LAY_HANG', 'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG'
+      )
+    ORDER BY dh.ngay_tao DESC;
+$$;
+
 CREATE OR REPLACE FUNCTION public.nhan_don_hang_gan(
     p_don_hang_id BIGINT,
     p_ban_kinh_km DOUBLE PRECISION DEFAULT 10
@@ -372,6 +417,7 @@ REVOKE ALL ON FUNCTION public.tu_choi_don_hang_gan(
 REVOKE ALL ON FUNCTION public.cap_nhat_chang_giao_shipper(
     BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION
 ) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.don_hang_dang_giao_cua_shipper() FROM PUBLIC;
 
 GRANT EXECUTE ON FUNCTION public.cap_nhat_vi_tri_shipper(
     DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION
@@ -388,3 +434,5 @@ GRANT EXECUTE ON FUNCTION public.tu_choi_don_hang_gan(
 GRANT EXECUTE ON FUNCTION public.cap_nhat_chang_giao_shipper(
     BIGINT, TEXT, DOUBLE PRECISION, DOUBLE PRECISION
 ) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.don_hang_dang_giao_cua_shipper()
+TO authenticated;

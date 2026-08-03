@@ -15,22 +15,42 @@ class NearbyOrdersScreen extends StatefulWidget {
 class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
   final _service = ShipperService();
   List<Map<String, dynamic>> _orders = [];
+  List<Map<String, dynamic>> _activeOrders = [];
   bool _loading = false;
   bool _locationReady = false;
   String? _locationText;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadActiveOrders());
+  }
+
+  Future<void> _loadActiveOrders() async {
+    try {
+      final orders = await _service.getActiveOrders();
+      if (mounted) setState(() => _activeOrders = orders);
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    }
+  }
 
   Future<void> _updateLocationAndLoad() async {
     setState(() => _loading = true);
     try {
       final position = await _service.updateCurrentLocation();
-      final orders = await _service.getNearbyOrders();
+      final results = await Future.wait([
+        _service.getActiveOrders(),
+        _service.getNearbyOrders(),
+      ]);
       if (!mounted) return;
       setState(() {
         _locationReady = true;
         _locationText =
             '${position.latitude.toStringAsFixed(5)}, '
             '${position.longitude.toStringAsFixed(5)}';
-        _orders = orders;
+        _activeOrders = results[0];
+        _orders = results[1];
       });
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
@@ -85,6 +105,13 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppColors.error),
     );
+  }
+
+  Future<void> _resume(Map<String, dynamic> order) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => DeliveryNavigationScreen(order: order)),
+    );
+    if (mounted) await _updateLocationAndLoad();
   }
 
   @override
@@ -153,6 +180,25 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
         ),
       ),
       const SizedBox(height: 20),
+      if (_activeOrders.isNotEmpty) ...[
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Đơn đang giao',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            Text('${_activeOrders.length} đơn'),
+          ],
+        ),
+        const SizedBox(height: 12),
+        ..._activeOrders.map(
+          (order) =>
+              _ActiveOrderCard(order: order, onResume: () => _resume(order)),
+        ),
+        const SizedBox(height: 12),
+      ],
       Row(
         children: [
           Expanded(
@@ -191,6 +237,39 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
           ),
         ),
     ];
+  }
+}
+
+class _ActiveOrderCard extends StatelessWidget {
+  const _ActiveOrderCard({required this.order, required this.onResume});
+
+  final Map<String, dynamic> order;
+  final VoidCallback onResume;
+
+  @override
+  Widget build(BuildContext context) {
+    final pickedUp = order['trang_thai'] != 'CHO_LAY_HANG';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      color: AppColors.primary10,
+      child: ListTile(
+        leading: const CircleAvatar(
+          backgroundColor: AppColors.primary,
+          child: Icon(Icons.delivery_dining, color: Colors.white),
+        ),
+        title: Text(
+          '${order['ma_van_don']}',
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
+        subtitle: Text(
+          pickedUp ? 'Đang giao tới người nhận' : 'Đang đến lấy hàng',
+        ),
+        trailing: FilledButton(
+          onPressed: onResume,
+          child: const Text('Tiếp tục'),
+        ),
+      ),
+    );
   }
 }
 

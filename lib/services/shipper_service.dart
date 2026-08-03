@@ -65,6 +65,15 @@ class ShipperService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getActiveOrders() async {
+    try {
+      final data = await _client.rpc('don_hang_dang_giao_cua_shipper');
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
   Future<void> acceptOrder(int orderId, {double radiusKm = 10}) async {
     try {
       await _client.rpc(
