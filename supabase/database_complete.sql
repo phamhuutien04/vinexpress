@@ -21,7 +21,8 @@ DROP FUNCTION IF EXISTS quet_qr_don_hang(
     DOUBLE PRECISION
 );
 
-DROP FUNCTION IF EXISTS cap_nhat_thoi_gian();
+-- Bản full sẽ tạo lại toàn bộ bảng và trigger ngay bên dưới.
+DROP FUNCTION IF EXISTS cap_nhat_thoi_gian() CASCADE;
 
 DROP TABLE IF EXISTS danh_gia CASCADE;
 DROP TABLE IF EXISTS nhat_ky_don_hang CASCADE;

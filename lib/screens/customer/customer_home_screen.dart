@@ -1,14 +1,61 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
+import '../../services/order_service.dart';
 import '../auth/login_screen.dart';
 import 'create_order_screen.dart';
+import 'order_history_screen.dart';
 
-class CustomerHomeScreen extends StatelessWidget {
+class CustomerHomeScreen extends StatefulWidget {
   const CustomerHomeScreen({super.key});
+
+  @override
+  State<CustomerHomeScreen> createState() => _CustomerHomeScreenState();
+}
+
+class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
+  final _orderService = OrderService();
+  int _waitingCount = 0;
+  int _deliveringCount = 0;
+  int _deliveredCount = 0;
+  List<Map<String, dynamic>> _recentOrders = [];
 
   Map<String, dynamic> get _customer =>
       CustomerAuthService.currentCustomer ?? const {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadOrderSummary();
+  }
+
+  Future<void> _loadOrderSummary() async {
+    try {
+      final orders = await _orderService.getCustomerOrders();
+      if (!mounted) return;
+      setState(() {
+        _recentOrders = orders.take(3).toList();
+        _waitingCount = orders
+            .where((order) => order['trang_thai'] == 'CHO_LAY_HANG')
+            .length;
+        _deliveredCount = orders
+            .where((order) => order['trang_thai'] == 'DA_GIAO_HANG')
+            .length;
+        _deliveringCount = orders.where((order) {
+          return const {
+            'DA_LAY_HANG',
+            'DANG_VAN_CHUYEN',
+            'DEN_KHO_TRUNG_CHUYEN',
+            'DEN_KHO_DICH',
+            'GIAO_CHO_SHIPPER',
+            'DANG_GIAO_HANG',
+          }.contains(order['trang_thai']);
+        }).length;
+      });
+    } on OrderServiceException {
+      // Màn hình lịch sử sẽ hiển thị lỗi chi tiết nếu RPC chưa được cài đặt.
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,44 +149,47 @@ class CustomerHomeScreen extends StatelessWidget {
             sliver: SliverList(
               delegate: SliverChildListDelegate([
                 _CreateOrderBanner(
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const CreateOrderScreen(),
-                    ),
-                  ),
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const CreateOrderScreen(),
+                      ),
+                    );
+                    await _loadOrderSummary();
+                  },
                 ),
                 const SizedBox(height: 24),
                 _SectionTitle(
                   title: 'Tra cứu vận đơn',
                   action: 'Xem lịch sử',
-                  onTap: () {},
+                  onTap: () => _openHistory(context),
                 ),
                 const SizedBox(height: 12),
                 const _TrackingBox(),
                 const SizedBox(height: 24),
                 const _SectionTitle(title: 'Đơn hàng của tôi'),
                 const SizedBox(height: 12),
-                const Row(
+                Row(
                   children: [
                     _StatusCard(
                       icon: Icons.inventory_2_outlined,
                       label: 'Chờ lấy',
-                      value: '0',
+                      value: '$_waitingCount',
                       color: Color(0xFFFFA726),
                     ),
                     SizedBox(width: 10),
                     _StatusCard(
                       icon: Icons.local_shipping_outlined,
                       label: 'Đang giao',
-                      value: '0',
+                      value: '$_deliveringCount',
                       color: Color(0xFF42A5F5),
                     ),
                     SizedBox(width: 10),
                     _StatusCard(
                       icon: Icons.check_circle_outline,
                       label: 'Đã giao',
-                      value: '0',
+                      value: '$_deliveredCount',
                       color: AppColors.success,
                     ),
                   ],
@@ -172,7 +222,13 @@ class CustomerHomeScreen extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 24),
-                const _EmptyOrders(),
+                if (_recentOrders.isEmpty)
+                  const _EmptyOrders()
+                else
+                  _RecentOrders(
+                    orders: _recentOrders,
+                    onViewAll: () => _openHistory(context),
+                  ),
               ]),
             ),
           ),
@@ -182,10 +238,7 @@ class CustomerHomeScreen extends StatelessWidget {
         selectedIndex: 0,
         onDestinationSelected: (index) {
           if (index == 1) {
-            Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CreateOrderScreen()),
-            );
+            _openHistory(context);
           }
         },
         destinations: const [
@@ -215,6 +268,14 @@ class CustomerHomeScreen extends StatelessWidget {
       MaterialPageRoute(builder: (_) => const LoginScreen()),
       (_) => false,
     );
+  }
+
+  Future<void> _openHistory(BuildContext context) async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const OrderHistoryScreen()),
+    );
+    await _loadOrderSummary();
   }
 }
 
@@ -465,4 +526,124 @@ class _EmptyOrders extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RecentOrders extends StatelessWidget {
+  const _RecentOrders({required this.orders, required this.onViewAll});
+
+  final List<Map<String, dynamic>> orders;
+  final VoidCallback onViewAll;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Đơn hàng gần đây',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+            ),
+            TextButton(onPressed: onViewAll, child: const Text('Xem tất cả')),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ...orders.map((order) => _RecentOrderCard(order: order)),
+      ],
+    );
+  }
+}
+
+class _RecentOrderCard extends StatelessWidget {
+  const _RecentOrderCard({required this.order});
+
+  final Map<String, dynamic> order;
+
+  @override
+  Widget build(BuildContext context) {
+    final status = _status('${order['trang_thai']}');
+    final createdAt = DateTime.tryParse('${order['ngay_tao']}')?.toLocal();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(
+                  Icons.inventory_2_outlined,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${order['ma_van_don']}',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+                Text(
+                  status.label,
+                  style: TextStyle(
+                    color: status.color,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(Icons.location_on_outlined, size: 18),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Text(
+                    '${order['nguoi_nhan_dia_chi']}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+            if (createdAt != null) ...[
+              const SizedBox(height: 7),
+              Text(
+                '${createdAt.day.toString().padLeft(2, '0')}/'
+                '${createdAt.month.toString().padLeft(2, '0')}/'
+                '${createdAt.year} '
+                '${createdAt.hour.toString().padLeft(2, '0')}:'
+                '${createdAt.minute.toString().padLeft(2, '0')}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  static _HomeStatus _status(String value) {
+    if (value == 'CHO_LAY_HANG') {
+      return const _HomeStatus('Chờ lấy hàng', Colors.orange);
+    }
+    if (value == 'DA_GIAO_HANG') {
+      return const _HomeStatus('Đã giao', AppColors.success);
+    }
+    if (value == 'DA_HUY') {
+      return const _HomeStatus('Đã hủy', AppColors.error);
+    }
+    return const _HomeStatus('Đang giao', Colors.blue);
+  }
+}
+
+class _HomeStatus {
+  const _HomeStatus(this.label, this.color);
+  final String label;
+  final Color color;
 }

@@ -14,6 +14,15 @@ class OrderService {
   final SupabaseClient? _clientOverride;
   SupabaseClient get _client => _clientOverride ?? SupabaseConfig.client;
 
+  Future<List<Map<String, dynamic>>> getCustomerOrders() async {
+    try {
+      final data = await _client.rpc('don_hang_cua_khach_hang');
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw OrderServiceException(error.message);
+    }
+  }
+
   Future<Map<String, dynamic>> createOrder({
     required String senderName,
     required String senderPhone,
@@ -34,10 +43,7 @@ class OrderService {
         senderAddress,
         receiverAddress,
         senderCoordinates: senderLatitude != null && senderLongitude != null
-            ? _Coordinates(
-                latitude: senderLatitude,
-                longitude: senderLongitude,
-              )
+            ? _Coordinates(latitude: senderLatitude, longitude: senderLongitude)
             : null,
       );
       final data = await _client

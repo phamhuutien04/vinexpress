@@ -408,7 +408,12 @@ BEGIN
             ELSE 'Shipper đã giao hàng thành công'
         END,
         v_don.trang_thai, v_trang_thai_moi,
-        'Cập nhật từ màn hình dẫn đường',
+        CASE v_trang_thai_moi
+            WHEN 'DA_LAY_HANG' THEN
+                'Địa chỉ minh chứng: ' || v_don.nguoi_gui_dia_chi
+            ELSE
+                'Địa chỉ minh chứng: ' || v_don.nguoi_nhan_dia_chi
+        END,
         NULLIF(BTRIM(p_minh_chung), ''), p_vi_do, p_kinh_do
     );
 END;

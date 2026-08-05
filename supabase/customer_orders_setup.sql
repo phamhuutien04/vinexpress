@@ -106,6 +106,46 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.don_hang_cua_khach_hang()
+RETURNS TABLE (
+    id BIGINT,
+    ma_van_don VARCHAR,
+    trang_thai VARCHAR,
+    nguoi_gui_ten VARCHAR,
+    nguoi_gui_dia_chi TEXT,
+    nguoi_gui_sdt VARCHAR,
+    nguoi_nhan_ten VARCHAR,
+    nguoi_nhan_dia_chi TEXT,
+    nguoi_nhan_sdt VARCHAR,
+    can_nang NUMERIC,
+    gia_tri_hang NUMERIC,
+    phi_van_chuyen NUMERIC,
+    cod NUMERIC,
+    khoang_cach_km NUMERIC,
+    phuong_tien VARCHAR,
+    ghi_chu TEXT,
+    ngay_tao TIMESTAMPTZ,
+    ngay_lay_hang TIMESTAMPTZ,
+    ngay_giao_hang TIMESTAMPTZ
+)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT
+        dh.id, dh.ma_van_don, dh.trang_thai,
+        dh.nguoi_gui_ten, dh.nguoi_gui_dia_chi, dh.nguoi_gui_sdt,
+        dh.nguoi_nhan_ten, dh.nguoi_nhan_dia_chi, dh.nguoi_nhan_sdt,
+        dh.can_nang, dh.gia_tri_hang, dh.phi_van_chuyen, dh.cod,
+        dh.khoang_cach_km, dh.phuong_tien, dh.ghi_chu,
+        dh.ngay_tao, dh.ngay_lay_hang, dh.ngay_giao_hang
+    FROM public.don_hang dh
+    JOIN public.khach_hang kh ON kh.id = dh.khach_hang_id
+    WHERE kh.auth_user_id = auth.uid()
+    ORDER BY dh.ngay_tao DESC;
+$$;
+
 CREATE OR REPLACE FUNCTION public.tim_kho_trung_tam(
     p_kho_id BIGINT
 )
@@ -302,3 +342,7 @@ GRANT EXECUTE ON FUNCTION public.tao_don_hang_khach_hang(
     DOUBLE PRECISION, DOUBLE PRECISION,
     DOUBLE PRECISION, DOUBLE PRECISION, TEXT
 ) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.don_hang_cua_khach_hang() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.don_hang_cua_khach_hang() TO authenticated;
+NOTIFY pgrst, 'reload schema';

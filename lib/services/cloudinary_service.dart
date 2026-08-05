@@ -1,7 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
-import 'package:image_picker/image_picker.dart';
 
 import '../core/config/cloudinary_config.dart';
 
@@ -12,20 +12,28 @@ class CloudinaryUploadException implements Exception {
 
 class CloudinaryService {
   Future<String> uploadEvidence({
-    required XFile image,
+    required Uint8List imageBytes,
     required String trackingCode,
     required String evidenceType,
+    required int orderId,
+    required String address,
+    required double latitude,
+    required double longitude,
+    required String locationSource,
   }) async {
-    final bytes = await image.readAsBytes();
+    final safeAddress = address.replaceAll('|', ' ').replaceAll('=', '-');
     final request =
         http.MultipartRequest('POST', CloudinaryConfig.imageUploadUri)
           ..fields['upload_preset'] = CloudinaryConfig.uploadPreset
-          ..fields['context'] = 'tracking_code=$trackingCode|type=$evidenceType'
+          ..fields['context'] =
+              'order_id=$orderId|tracking_code=$trackingCode|type=$evidenceType|'
+              'latitude=$latitude|longitude=$longitude|address=$safeAddress'
+              '|location_source=$locationSource'
           ..files.add(
             http.MultipartFile.fromBytes(
               'file',
-              bytes,
-              filename: image.name.isEmpty ? 'evidence.jpg' : image.name,
+              imageBytes,
+              filename: '${trackingCode}_$evidenceType.png',
             ),
           );
 

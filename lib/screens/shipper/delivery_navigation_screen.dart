@@ -11,6 +11,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
 import '../../services/cloudinary_service.dart';
+import '../../services/evidence_image_service.dart';
 
 class DeliveryNavigationScreen extends StatefulWidget {
   const DeliveryNavigationScreen({super.key, required this.order});
@@ -26,6 +27,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   final _mapController = MapController();
   final _shipperService = ShipperService();
   final _cloudinaryService = CloudinaryService();
+  final _evidenceImageService = EvidenceImageService();
   final _imagePicker = ImagePicker();
   StreamSubscription<Position>? _positionSubscription;
   Timer? _simulationTimer;
@@ -36,6 +38,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   bool _toReceiver = false;
   bool _navigationStarted = false;
   bool _simulating = false;
+  bool _simulatedThisStage = false;
   bool _loadingRoute = true;
   bool _updatingStatus = false;
   double? _distanceKm;
@@ -257,7 +260,6 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
   Future<void> _switchToDelivery() async {
     _stopSimulation();
-    final shipper = _shipper;
     setState(() => _updatingStatus = true);
     try {
       final image = await _imagePicker.pickImage(
@@ -266,20 +268,41 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         maxWidth: 1600,
       );
       if (image == null) return;
+      final usingSimulation = _simulatedThisStage;
+      final capturedPosition = await _evidencePosition();
+      final stampedImage = await _evidenceImageService.stamp(
+        sourceBytes: await image.readAsBytes(),
+        orderId: widget.order['id'] as int,
+        trackingCode: '${widget.order['ma_van_don']}',
+        evidenceLabel: 'XÁC NHẬN ĐÃ LẤY HÀNG',
+        address: '${widget.order['nguoi_gui_dia_chi']}',
+        latitude: capturedPosition.latitude,
+        longitude: capturedPosition.longitude,
+        capturedAt: DateTime.now(),
+        locationSource: usingSimulation ? 'GIẢ LẬP' : 'GPS THẬT',
+      );
       final evidenceUrl = await _cloudinaryService.uploadEvidence(
-        image: image,
+        imageBytes: stampedImage,
         trackingCode: '${widget.order['ma_van_don']}',
         evidenceType: 'pickup_evidence',
+        orderId: widget.order['id'] as int,
+        address: '${widget.order['nguoi_gui_dia_chi']}',
+        latitude: capturedPosition.latitude,
+        longitude: capturedPosition.longitude,
+        locationSource: usingSimulation ? 'simulation' : 'gps',
       );
       await _shipperService.updateDeliveryStage(
         orderId: widget.order['id'] as int,
         status: 'DA_LAY_HANG',
-        latitude: shipper?.latitude,
-        longitude: shipper?.longitude,
+        latitude: capturedPosition.latitude,
+        longitude: capturedPosition.longitude,
         evidenceUrl: evidenceUrl,
       );
       if (!mounted) return;
-      setState(() => _toReceiver = true);
+      setState(() {
+        _toReceiver = true;
+        _simulatedThisStage = false;
+      });
       await _loadRoute();
     } on CloudinaryUploadException catch (error) {
       if (mounted) _showError(error.message);
@@ -322,6 +345,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     setState(() {
       _navigationStarted = true;
       _simulating = true;
+      _simulatedThisStage = true;
     });
 
     _simulationTimer?.cancel();
@@ -415,7 +439,6 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   }
 
   Future<void> _completeDelivery() async {
-    final shipper = _shipper;
     setState(() => _updatingStatus = true);
     try {
       final image = await _imagePicker.pickImage(
@@ -424,16 +447,34 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         maxWidth: 1600,
       );
       if (image == null) return;
+      final usingSimulation = _simulatedThisStage;
+      final capturedPosition = await _evidencePosition();
+      final stampedImage = await _evidenceImageService.stamp(
+        sourceBytes: await image.readAsBytes(),
+        orderId: widget.order['id'] as int,
+        trackingCode: '${widget.order['ma_van_don']}',
+        evidenceLabel: 'XÁC NHẬN ĐÃ GIAO HÀNG',
+        address: '${widget.order['nguoi_nhan_dia_chi']}',
+        latitude: capturedPosition.latitude,
+        longitude: capturedPosition.longitude,
+        capturedAt: DateTime.now(),
+        locationSource: usingSimulation ? 'GIẢ LẬP' : 'GPS THẬT',
+      );
       final evidenceUrl = await _cloudinaryService.uploadEvidence(
-        image: image,
+        imageBytes: stampedImage,
         trackingCode: '${widget.order['ma_van_don']}',
         evidenceType: 'delivery_evidence',
+        orderId: widget.order['id'] as int,
+        address: '${widget.order['nguoi_nhan_dia_chi']}',
+        latitude: capturedPosition.latitude,
+        longitude: capturedPosition.longitude,
+        locationSource: usingSimulation ? 'simulation' : 'gps',
       );
       await _shipperService.updateDeliveryStage(
         orderId: widget.order['id'] as int,
         status: 'DA_GIAO_HANG',
-        latitude: shipper?.latitude,
-        longitude: shipper?.longitude,
+        latitude: capturedPosition.latitude,
+        longitude: capturedPosition.longitude,
         evidenceUrl: evidenceUrl,
       );
       if (!mounted) return;
@@ -445,6 +486,17 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     } finally {
       if (mounted) setState(() => _updatingStatus = false);
     }
+  }
+
+  Future<LatLng> _evidencePosition() async {
+    if (_simulatedThisStage && _shipper != null) return _shipper!;
+    final position = await Geolocator.getCurrentPosition(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        timeLimit: Duration(seconds: 20),
+      ),
+    );
+    return LatLng(position.latitude, position.longitude);
   }
 
   void _showError(String message) {

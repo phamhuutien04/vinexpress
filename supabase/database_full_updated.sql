@@ -1,7 +1,7 @@
 -- ============================================================================
 -- VINEXPRESS - DATABASE FULL UPDATED
--- Chạy toàn bộ file này trong Supabase Dashboard > SQL Editor.
--- Bao gồm schema gốc và toàn bộ cập nhật Auth, kho, đơn hàng, GPS, shipper.
+-- CẢNH BÁO: File này xóa dữ liệu cũ và tạo lại toàn bộ database.
+-- Chỉ chạy trên database mới hoặc khi chấp nhận mất dữ liệu hiện tại.
 -- ============================================================================
 
 -- ============================================================================
@@ -30,7 +30,8 @@ DROP FUNCTION IF EXISTS quet_qr_don_hang(
     DOUBLE PRECISION
 );
 
-DROP FUNCTION IF EXISTS cap_nhat_thoi_gian();
+-- Bản full sẽ tạo lại toàn bộ bảng và trigger ngay bên dưới.
+DROP FUNCTION IF EXISTS cap_nhat_thoi_gian() CASCADE;
 
 DROP TABLE IF EXISTS danh_gia CASCADE;
 DROP TABLE IF EXISTS nhat_ky_don_hang CASCADE;
@@ -1976,6 +1977,46 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.don_hang_cua_khach_hang()
+RETURNS TABLE (
+    id BIGINT,
+    ma_van_don VARCHAR,
+    trang_thai VARCHAR,
+    nguoi_gui_ten VARCHAR,
+    nguoi_gui_dia_chi TEXT,
+    nguoi_gui_sdt VARCHAR,
+    nguoi_nhan_ten VARCHAR,
+    nguoi_nhan_dia_chi TEXT,
+    nguoi_nhan_sdt VARCHAR,
+    can_nang NUMERIC,
+    gia_tri_hang NUMERIC,
+    phi_van_chuyen NUMERIC,
+    cod NUMERIC,
+    khoang_cach_km NUMERIC,
+    phuong_tien VARCHAR,
+    ghi_chu TEXT,
+    ngay_tao TIMESTAMPTZ,
+    ngay_lay_hang TIMESTAMPTZ,
+    ngay_giao_hang TIMESTAMPTZ
+)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT
+        dh.id, dh.ma_van_don, dh.trang_thai,
+        dh.nguoi_gui_ten, dh.nguoi_gui_dia_chi, dh.nguoi_gui_sdt,
+        dh.nguoi_nhan_ten, dh.nguoi_nhan_dia_chi, dh.nguoi_nhan_sdt,
+        dh.can_nang, dh.gia_tri_hang, dh.phi_van_chuyen, dh.cod,
+        dh.khoang_cach_km, dh.phuong_tien, dh.ghi_chu,
+        dh.ngay_tao, dh.ngay_lay_hang, dh.ngay_giao_hang
+    FROM public.don_hang dh
+    JOIN public.khach_hang kh ON kh.id = dh.khach_hang_id
+    WHERE kh.auth_user_id = auth.uid()
+    ORDER BY dh.ngay_tao DESC;
+$$;
+
 CREATE OR REPLACE FUNCTION public.tim_kho_trung_tam(
     p_kho_id BIGINT
 )
@@ -2172,6 +2213,10 @@ GRANT EXECUTE ON FUNCTION public.tao_don_hang_khach_hang(
     DOUBLE PRECISION, DOUBLE PRECISION,
     DOUBLE PRECISION, DOUBLE PRECISION, TEXT
 ) TO authenticated;
+
+REVOKE ALL ON FUNCTION public.don_hang_cua_khach_hang() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.don_hang_cua_khach_hang() TO authenticated;
+NOTIFY pgrst, 'reload schema';
 
 
 -- ============================================================================
@@ -2587,7 +2632,12 @@ BEGIN
             ELSE 'Shipper đã giao hàng thành công'
         END,
         v_don.trang_thai, v_trang_thai_moi,
-        'Cập nhật từ màn hình dẫn đường',
+        CASE v_trang_thai_moi
+            WHEN 'DA_LAY_HANG' THEN
+                'Địa chỉ minh chứng: ' || v_don.nguoi_gui_dia_chi
+            ELSE
+                'Địa chỉ minh chứng: ' || v_don.nguoi_nhan_dia_chi
+        END,
         NULLIF(BTRIM(p_minh_chung), ''), p_vi_do, p_kinh_do
     );
 END;
