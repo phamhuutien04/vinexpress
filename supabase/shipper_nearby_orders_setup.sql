@@ -366,6 +366,12 @@ BEGIN
         RAISE EXCEPTION 'Điểm lấy hàng nằm ngoài bán kính cho phép';
     END IF;
 
+    PERFORM public.tam_giu_cod_vi_shipper(
+        v_nhan_vien_id,
+        v_don.id,
+        COALESCE(v_don.cod, 0)
+    );
+
     UPDATE public.don_hang
     SET nhan_vien_hien_tai_id = v_nhan_vien_id
     WHERE don_hang.id = p_don_hang_id;
@@ -461,12 +467,20 @@ BEGIN
 
         INSERT INTO public.luong_shipper (
             nhan_vien_id, don_hang_id, phi_van_chuyen,
-            phan_tram_san, tien_san, tien_shipper
+            phan_tram_san, tien_san, tien_shipper,
+            trang_thai, ngay_thanh_toan
         ) VALUES (
             v_nhan_vien_id, v_don.id, COALESCE(v_don.phi_van_chuyen, 0),
-            v_phan_tram_san, v_tien_san, v_tien_shipper
+            v_phan_tram_san, v_tien_san, v_tien_shipper,
+            'DA_THANH_TOAN', NOW()
         )
         ON CONFLICT (don_hang_id) DO NOTHING;
+
+        PERFORM public.cong_thu_nhap_vi_shipper(
+            v_nhan_vien_id,
+            v_don.id,
+            v_tien_shipper
+        );
     ELSE
         RAISE EXCEPTION 'Không thể chuyển từ trạng thái % sang %',
             v_don.trang_thai, v_trang_thai_moi;

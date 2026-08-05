@@ -83,6 +83,37 @@ class ShipperService {
     }
   }
 
+  Future<Map<String, dynamic>> getWalletInfo() async {
+    try {
+      final data = await _client.rpc('thong_tin_vi_shipper');
+      final rows = List<Map<String, dynamic>>.from(data as List);
+      return rows.isEmpty ? <String, dynamic>{} : rows.first;
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getWalletTransactions() async {
+    try {
+      final data = await _client.rpc('lich_su_giao_dich_vi_shipper');
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
+  Future<int> requestWalletTopUp(double amount) async {
+    try {
+      final data = await _client.rpc(
+        'tao_yeu_cau_nap_vi_shipper',
+        params: {'p_so_tien': amount, 'p_phuong_thuc': 'CHUYEN_KHOAN'},
+      );
+      return (data as num).toInt();
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
   Future<void> acceptOrder(int orderId, {double radiusKm = 10}) async {
     try {
       await _client.rpc(
