@@ -5,6 +5,7 @@ import '../auth/login_screen.dart';
 import '../shipper/nearby_orders_screen.dart';
 import '../shipper/shipper_order_history_screen.dart';
 import '../shipper/shipper_wallet_screen.dart';
+import '../wallet/bank_account_screen.dart';
 
 class DeliveryHomeScreen extends StatefulWidget {
   const DeliveryHomeScreen({super.key});
@@ -150,6 +151,14 @@ class _ProfilePage extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          OutlinedButton.icon(
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const BankAccountScreen()),
+            ),
+            icon: const Icon(Icons.account_balance_outlined),
+            label: const Text('Tài khoản ngân hàng'),
+          ),
+          const SizedBox(height: 10),
           OutlinedButton.icon(
             onPressed: onLogout,
             icon: const Icon(Icons.logout_rounded),

@@ -5,6 +5,8 @@ import '../../services/order_service.dart';
 import '../auth/login_screen.dart';
 import 'create_order_screen.dart';
 import 'order_history_screen.dart';
+import 'customer_wallet_screen.dart';
+import 'customer_account_screen.dart';
 
 class CustomerHomeScreen extends StatefulWidget {
   const CustomerHomeScreen({super.key});
@@ -239,6 +241,16 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
         onDestinationSelected: (index) {
           if (index == 1) {
             _openHistory(context);
+          } else if (index == 2) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CustomerWalletScreen()),
+            );
+          } else if (index == 3) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const CustomerAccountScreen()),
+            );
           }
         },
         destinations: const [
@@ -250,6 +262,11 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           NavigationDestination(
             icon: Icon(Icons.receipt_long_outlined),
             label: 'Đơn hàng',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet_rounded),
+            label: 'Ví',
           ),
           NavigationDestination(
             icon: Icon(Icons.account_circle_outlined),

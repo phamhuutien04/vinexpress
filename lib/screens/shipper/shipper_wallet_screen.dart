@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
+import '../../widgets/wallet_withdrawal_sheet.dart';
 
 class ShipperWalletScreen extends StatefulWidget {
   const ShipperWalletScreen({super.key});
@@ -21,6 +22,8 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   double get _balance => (_wallet['so_du'] as num?)?.toDouble() ?? 0;
   double get _pendingTopUp =>
       (_wallet['tong_cho_nap'] as num?)?.toDouble() ?? 0;
+  double get _pendingWithdrawal =>
+      (_wallet['tong_cho_rut'] as num?)?.toDouble() ?? 0;
   double get _pendingIncome => _sumIncome(paid: false);
   double get _paidIncome => _sumIncome(paid: true);
   double get _totalIncome => _pendingIncome + _paidIncome;
@@ -97,6 +100,28 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
     }
   }
 
+  Future<void> _showWithdrawalSheet() async {
+    final request = await showWalletWithdrawalSheet(context, balance: _balance);
+    if (request == null) return;
+    try {
+      final id = await _service.requestWalletWithdrawal(amount: request.amount);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Yêu cầu rút #$id đang chờ admin duyệt.')),
+      );
+      await _load();
+    } on ShipperServiceException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_loading) return const Center(child: CircularProgressIndicator());
@@ -124,7 +149,9 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
                       _WalletHero(
                         balance: _balance,
                         pendingTopUp: _pendingTopUp,
+                        pendingWithdrawal: _pendingWithdrawal,
                         onTopUp: _showTopUpSheet,
+                        onWithdraw: _showWithdrawalSheet,
                       ),
                       const SizedBox(height: 14),
                       _CodNotice(balance: _balance),
@@ -187,12 +214,16 @@ class _WalletHero extends StatelessWidget {
   const _WalletHero({
     required this.balance,
     required this.pendingTopUp,
+    required this.pendingWithdrawal,
     required this.onTopUp,
+    required this.onWithdraw,
   });
 
   final double balance;
   final double pendingTopUp;
+  final double pendingWithdrawal;
   final VoidCallback onTopUp;
+  final VoidCallback onWithdraw;
 
   @override
   Widget build(BuildContext context) {
@@ -256,6 +287,15 @@ class _WalletHero extends StatelessWidget {
                 icon: const Icon(Icons.add_card_rounded),
                 label: const Text('Nạp tiền'),
               ),
+              OutlinedButton.icon(
+                onPressed: balance >= 50000 ? onWithdraw : null,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Colors.white),
+                ),
+                icon: const Icon(Icons.account_balance_rounded),
+                label: const Text('Rút tiền'),
+              ),
               if (pendingTopUp > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -270,6 +310,11 @@ class _WalletHero extends StatelessWidget {
                     '${_money(pendingTopUp)} chờ duyệt',
                     style: const TextStyle(color: Colors.white),
                   ),
+                ),
+              if (pendingWithdrawal > 0)
+                Text(
+                  '${_money(pendingWithdrawal)} đang chờ rút',
+                  style: const TextStyle(color: Colors.white),
                 ),
             ],
           ),
@@ -567,12 +612,18 @@ String _money(dynamic value) {
 }
 
 bool _isCredit(dynamic type) =>
-    type == 'NAP_TIEN' || type == 'HOAN_COD' || type == 'THU_NHAP_GIAO_HANG';
+    type == 'NAP_TIEN' ||
+    type == 'HOAN_COD' ||
+    type == 'HOAN_RUT' ||
+    type == 'THU_NHAP_GIAO_HANG';
 
 String _transactionTitle(dynamic type) => switch (type) {
   'NAP_TIEN' => 'Nạp tiền',
   'TAM_GIU_COD' => 'Khấu trừ đơn COD',
   'HOAN_COD' => 'Hoàn tiền COD',
+  'YEU_CAU_RUT' => 'Yêu cầu rút tiền',
+  'RUT_TIEN' => 'Rút tiền',
+  'HOAN_RUT' => 'Hoàn tiền rút bị từ chối',
   'THU_NHAP_GIAO_HANG' => 'Thu nhập giao hàng',
   _ => 'Điều chỉnh số dư',
 };
