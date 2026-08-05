@@ -262,7 +262,8 @@ class _ActiveOrderCard extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(
-          pickedUp ? 'Đang giao tới người nhận' : 'Đang đến lấy hàng',
+          '${pickedUp ? 'Đang giao tới người nhận' : 'Đang đến lấy hàng'}\n'
+          'Thu nhập: ${_formatMoney(order['tien_shipper_du_kien'])}',
         ),
         trailing: FilledButton(
           onPressed: onResume,
@@ -314,6 +315,10 @@ class _NearbyOrderCard extends StatelessWidget {
               order['nguoi_gui_dia_chi'] as String,
             ),
             _line(Icons.flag_outlined, order['nguoi_nhan_dia_chi'] as String),
+            _line(
+              Icons.payments_outlined,
+              'Thu nhập shipper: ${_money(order['tien_shipper_du_kien'])}',
+            ),
             const SizedBox(height: 12),
             Row(
               children: [
@@ -353,6 +358,24 @@ class _NearbyOrderCard extends StatelessWidget {
       ),
     );
   }
+
+  String _money(dynamic value) {
+    final number = (value as num?)?.round() ?? 0;
+    final formatted = number.toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]}.',
+    );
+    return '$formattedđ';
+  }
+}
+
+String _formatMoney(dynamic value) {
+  final number = (value as num?)?.round() ?? 0;
+  final formatted = number.toString().replaceAllMapped(
+    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+    (match) => '${match[1]}.',
+  );
+  return '$formattedđ';
 }
 
 class _EmptyState extends StatelessWidget {

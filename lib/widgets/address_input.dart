@@ -14,6 +14,7 @@ class AddressInput extends StatefulWidget {
     this.allowCurrentLocation = false,
     this.onCurrentLocationSelected,
     this.onAddressChanged,
+    this.onAddressSelected,
     this.validator,
   });
 
@@ -22,8 +23,9 @@ class AddressInput extends StatefulWidget {
   final String hint;
   final bool allowCurrentLocation;
   final void Function(double latitude, double longitude)?
-      onCurrentLocationSelected;
+  onCurrentLocationSelected;
   final VoidCallback? onAddressChanged;
+  final VoidCallback? onAddressSelected;
   final String? Function(String?)? validator;
 
   @override
@@ -33,7 +35,9 @@ class AddressInput extends StatefulWidget {
 class _AddressInputState extends State<AddressInput> {
   bool _locating = false;
 
-  Future<void> _showLocationPermissionHelp({required bool permanentlyDenied}) async {
+  Future<void> _showLocationPermissionHelp({
+    required bool permanentlyDenied,
+  }) async {
     if (!mounted) return;
     await showDialog<void>(
       context: context,
@@ -43,8 +47,8 @@ class _AddressInputState extends State<AddressInput> {
           kIsWeb
               ? 'Quyền vị trí chưa được trình duyệt xác nhận hoặc vừa bị từ chối. Hãy chọn Cho phép, bấm Xong (Done), đóng hộp thoại này rồi thử lại. Nếu vẫn lỗi, tải lại trang.'
               : permanentlyDenied
-                  ? 'Quyền vị trí đã bị từ chối vĩnh viễn. Hãy mở Cài đặt, chọn Quyền và bật Vị trí cho ứng dụng.'
-                  : 'Hãy chọn Cho phép khi điện thoại hỏi quyền vị trí rồi thử lại.',
+              ? 'Quyền vị trí đã bị từ chối vĩnh viễn. Hãy mở Cài đặt, chọn Quyền và bật Vị trí cho ứng dụng.'
+              : 'Hãy chọn Cho phép khi điện thoại hỏi quyền vị trí rồi thử lại.',
         ),
         actions: [
           TextButton(
@@ -118,6 +122,7 @@ class _AddressInputState extends State<AddressInput> {
         position.latitude,
         position.longitude,
       );
+      widget.onAddressSelected?.call();
     } on PermissionDeniedException {
       await _showLocationPermissionHelp(permanentlyDenied: false);
     } catch (error) {
@@ -143,6 +148,7 @@ class _AddressInputState extends State<AddressInput> {
     if (address != null && address.isNotEmpty) {
       widget.controller.text = address;
       widget.onAddressChanged?.call();
+      widget.onAddressSelected?.call();
     }
   }
 

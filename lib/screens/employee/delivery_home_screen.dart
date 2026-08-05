@@ -3,6 +3,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
 import '../auth/login_screen.dart';
 import '../shipper/nearby_orders_screen.dart';
+import '../shipper/shipper_order_history_screen.dart';
 
 class DeliveryHomeScreen extends StatefulWidget {
   const DeliveryHomeScreen({super.key});
@@ -22,7 +23,11 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
     return Scaffold(
       backgroundColor: Theme.of(context).colorScheme.surface,
       appBar: AppBar(
-        title: Text(_tab == 0 ? 'Nhận đơn gần bạn' : 'Tài khoản shipper'),
+        title: Text(switch (_tab) {
+          0 => 'Nhận đơn gần bạn',
+          1 => 'Lịch sử giao hàng',
+          _ => 'Tài khoản shipper',
+        }),
         actions: _tab == 0
             ? [
                 Padding(
@@ -43,6 +48,7 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
         index: _tab,
         children: [
           const NearbyOrdersScreen(embedded: true),
+          const ShipperOrderHistoryScreen(),
           _ProfilePage(name: _name, onLogout: _logout),
         ],
       ),
@@ -50,6 +56,11 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
         selectedIndex: _tab,
         onDestinationSelected: (value) => setState(() => _tab = value),
         destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history_rounded),
+            label: 'Lịch sử',
+          ),
           NavigationDestination(
             icon: Icon(Icons.near_me_outlined),
             selectedIcon: Icon(Icons.near_me_rounded),

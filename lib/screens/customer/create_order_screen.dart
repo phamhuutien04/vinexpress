@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/constants/app_colors.dart';
@@ -30,11 +32,15 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   bool _cod = false;
   bool _isLoading = false;
+  bool _calculatingFee = false;
+  bool _feeCalculated = false;
   double? _senderLatitude;
   double? _senderLongitude;
   final _orderService = OrderService();
 
-  static const int _shippingFee = 28000;
+  int _shippingFee = 0;
+  Timer? _feeDebounce;
+  int _feeRequestVersion = 0;
 
   @override
   void initState() {
@@ -47,6 +53,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   @override
   void dispose() {
+    _feeDebounce?.cancel();
     for (final controller in [
       _senderName,
       _senderPhone,
@@ -72,6 +79,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
     FocusScope.of(context).unfocus();
+    if (!_feeCalculated && !await _calculateFee()) return;
     setState(() => _isLoading = true);
     try {
       final order = await _orderService.createOrder(
@@ -98,10 +106,67 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
   }
 
+  Future<bool> _calculateFee() async {
+    if (_senderAddress.text.trim().isEmpty ||
+        _receiverAddress.text.trim().isEmpty) {
+      _showError('Vui lòng nhập đầy đủ địa chỉ gửi và nhận trước.');
+      return false;
+    }
+    final requestVersion = _feeRequestVersion;
+    setState(() => _calculatingFee = true);
+    try {
+      final quote = await _orderService.calculateShippingQuote(
+        senderAddress: _senderAddress.text,
+        receiverAddress: _receiverAddress.text,
+        senderLatitude: _senderLatitude,
+        senderLongitude: _senderLongitude,
+      );
+      if (!mounted || requestVersion != _feeRequestVersion) return false;
+      setState(() {
+        _shippingFee = quote.shippingFee.round();
+        _feeCalculated = true;
+      });
+      return true;
+    } on OrderServiceException catch (error) {
+      if (mounted) _showError(error.message);
+      return false;
+    } finally {
+      if (mounted && requestVersion == _feeRequestVersion) {
+        setState(() => _calculatingFee = false);
+      }
+    }
+  }
+
+  void _invalidateFee() {
+    _feeRequestVersion++;
+    if (!_feeCalculated && _shippingFee == 0 && !_calculatingFee) return;
+    setState(() {
+      _feeCalculated = false;
+      _shippingFee = 0;
+      _calculatingFee = false;
+    });
+  }
+
+  void _scheduleAutomaticFeeCalculation({bool immediately = false}) {
+    _invalidateFee();
+    _feeDebounce?.cancel();
+    if (_senderAddress.text.trim().isEmpty ||
+        _receiverAddress.text.trim().isEmpty) {
+      return;
+    }
+    if (immediately) {
+      _calculateFee();
+    } else {
+      _feeDebounce = Timer(const Duration(milliseconds: 900), _calculateFee);
+    }
+  }
+
   void _showSuccess(Map<String, dynamic> order) {
     final trackingCode = order['ma_van_don'] as String;
     final vehicle = order['phuong_tien'] == 'XE_MAY' ? 'Xe máy' : 'Xe tải';
-    final distance = order['khoang_cach_km'];
+    final distance = ((order['khoang_cach_km'] as num?)?.toDouble() ?? 0)
+        .toStringAsFixed(2)
+        .replaceFirst('.', ',');
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -142,6 +207,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 color: AppColors.primary,
                 fontWeight: FontWeight.w600,
               ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Phí vận chuyển: ${_money(((order['phi_van_chuyen'] as num?)?.round() ?? _shippingFee))}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
             if (order['phuong_tien'] == 'XE_TAI') ...[
@@ -250,7 +320,10 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     onAddressChanged: () {
                       _senderLatitude = null;
                       _senderLongitude = null;
+                      _scheduleAutomaticFeeCalculation();
                     },
+                    onAddressSelected: () =>
+                        _scheduleAutomaticFeeCalculation(immediately: true),
                     validator: _required,
                   ),
                 ],
@@ -284,6 +357,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     controller: _receiverAddress,
                     label: 'Địa chỉ giao hàng',
                     hint: 'Số nhà, tên đường, phường/xã...',
+                    onAddressChanged: _scheduleAutomaticFeeCalculation,
+                    onAddressSelected: () =>
+                        _scheduleAutomaticFeeCalculation(immediately: true),
                     validator: _required,
                   ),
                 ],
@@ -369,7 +445,13 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               ),
             ),
             const SizedBox(height: 16),
-            _SummaryCard(shippingFee: _shippingFee, codFee: 0, money: _money),
+            _SummaryCard(
+              shippingFee: _shippingFee,
+              codFee: 0,
+              money: _money,
+              feeCalculated: _feeCalculated,
+              calculating: _calculatingFee,
+            ),
           ],
         ),
       ),
@@ -398,7 +480,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       style: TextStyle(fontSize: 12),
                     ),
                     Text(
-                      _money(_shippingFee),
+                      _feeCalculated ? _money(_shippingFee) : 'Chưa tính phí',
                       style: const TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.w800,
@@ -409,7 +491,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                 ),
               ),
               FilledButton.icon(
-                onPressed: _isLoading ? null : _submit,
+                onPressed: _isLoading || _calculatingFee ? null : _submit,
                 icon: const Icon(Icons.arrow_forward_rounded),
                 iconAlignment: IconAlignment.end,
                 label: _isLoading
@@ -607,10 +689,14 @@ class _SummaryCard extends StatelessWidget {
     required this.shippingFee,
     required this.codFee,
     required this.money,
+    required this.feeCalculated,
+    required this.calculating,
   });
   final int shippingFee;
   final int codFee;
   final String Function(int) money;
+  final bool feeCalculated;
+  final bool calculating;
 
   @override
   Widget build(BuildContext context) {
@@ -634,7 +720,10 @@ class _SummaryCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-          _priceRow('Phí vận chuyển', money(shippingFee)),
+          _priceRow(
+            'Phí vận chuyển',
+            feeCalculated ? money(shippingFee) : 'Chưa tính',
+          ),
           if (codFee > 0) ...[
             const SizedBox(height: 8),
             _priceRow('Phí thu hộ', money(codFee)),
@@ -643,7 +732,26 @@ class _SummaryCard extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(),
           ),
-          _priceRow('Tổng cộng', money(shippingFee + codFee), strong: true),
+          _priceRow(
+            'Tổng cộng',
+            feeCalculated ? money(shippingFee + codFee) : 'Chưa tính',
+            strong: true,
+          ),
+          if (calculating) ...[
+            const SizedBox(height: 12),
+            const LinearProgressIndicator(),
+            const SizedBox(height: 6),
+            const Text(
+              'Đang tự động tính quãng đường và phí...',
+              style: TextStyle(fontSize: 11),
+            ),
+          ],
+          const SizedBox(height: 10),
+          const Text(
+            'Đơn xe máy ≤ 50 km được tính theo số km và biểu phí hiện tại do quản trị viên cấu hình.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
         ],
       ),
     );

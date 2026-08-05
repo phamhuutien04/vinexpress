@@ -8,11 +8,25 @@ class OrderServiceException implements Exception {
   final String message;
 }
 
+class OrderQuote {
+  const OrderQuote({
+    required this.distanceKm,
+    required this.shippingFee,
+    required this.vehicle,
+  });
+
+  final double distanceKm;
+  final double shippingFee;
+  final String vehicle;
+}
+
 class OrderService {
   OrderService({SupabaseClient? client}) : _clientOverride = client;
 
   final SupabaseClient? _clientOverride;
   SupabaseClient get _client => _clientOverride ?? SupabaseConfig.client;
+
+  static const double directPricePerKm = 5000;
 
   Future<List<Map<String, dynamic>>> getCustomerOrders() async {
     try {
@@ -21,6 +35,28 @@ class OrderService {
     } on PostgrestException catch (error) {
       throw OrderServiceException(error.message);
     }
+  }
+
+  Future<OrderQuote> calculateShippingQuote({
+    required String senderAddress,
+    required String receiverAddress,
+    double? senderLatitude,
+    double? senderLongitude,
+  }) async {
+    final route = await _calculateRoute(
+      senderAddress,
+      receiverAddress,
+      senderCoordinates: senderLatitude != null && senderLongitude != null
+          ? _Coordinates(latitude: senderLatitude, longitude: senderLongitude)
+          : null,
+    );
+    final direct = route.distanceKm <= 50;
+    final fee = await _directShippingFee(route.distanceKm);
+    return OrderQuote(
+      distanceKm: route.distanceKm,
+      shippingFee: fee,
+      vehicle: direct ? 'XE_MAY' : 'XE_TAI',
+    );
   }
 
   Future<Map<String, dynamic>> createOrder({
@@ -46,6 +82,7 @@ class OrderService {
             ? _Coordinates(latitude: senderLatitude, longitude: senderLongitude)
             : null,
       );
+      final calculatedShippingFee = await _directShippingFee(route.distanceKm);
       final data = await _client
           .rpc(
             'tao_don_hang_khach_hang',
@@ -58,7 +95,7 @@ class OrderService {
               'p_nguoi_nhan_sdt': _normalizePhone(receiverPhone),
               'p_can_nang': weight,
               'p_gia_tri_hang': itemValue,
-              'p_phi_van_chuyen': shippingFee,
+              'p_phi_van_chuyen': calculatedShippingFee,
               'p_cod': cod,
               'p_khoang_cach_km': route.distanceKm,
               'p_nguoi_gui_vi_do': route.sender.latitude,
@@ -79,7 +116,9 @@ class OrderService {
         'nguoi_nhan_sdt': _normalizePhone(receiverPhone),
         'can_nang': weight,
         'gia_tri_hang': itemValue,
-        'phi_van_chuyen': shippingFee,
+        'phi_van_chuyen':
+            (order['phi_van_chuyen'] as num?)?.toDouble() ??
+            calculatedShippingFee,
         'cod': cod,
         'ghi_chu': note?.trim(),
       });
@@ -97,6 +136,17 @@ class OrderService {
 
   String _normalizePhone(String phone) =>
       phone.replaceAll(RegExp(r'[^0-9+]'), '');
+
+  Future<double> _directShippingFee(double distanceKm) async {
+    var pricePerKm = directPricePerKm;
+    try {
+      final data = await _client.rpc('lay_phi_van_chuyen_xe_may').single();
+      pricePerKm = (data['phi_van_chuyen'] as num).toDouble();
+    } on PostgrestException {
+      // Dùng mức mặc định trong lúc database chưa chạy migration cấu hình phí.
+    }
+    return (distanceKm * pricePerKm).roundToDouble();
+  }
 
   Future<_DeliveryRoute> _calculateRoute(
     String senderAddress,

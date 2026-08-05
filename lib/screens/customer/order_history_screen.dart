@@ -152,7 +152,7 @@ class _OrderHistoryCard extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text('${order['khoang_cach_km'] ?? 0} km'),
+                Text('${_distance(order['khoang_cach_km'])} km'),
                 Text(
                   _money(order['phi_van_chuyen']),
                   style: const TextStyle(
@@ -183,6 +183,11 @@ class _OrderHistoryCard extends StatelessWidget {
   static String _money(dynamic value) {
     final number = (value as num?)?.round() ?? 0;
     return '${number.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.')}đ';
+  }
+
+  static String _distance(dynamic value) {
+    final distance = (value as num?)?.toDouble() ?? 0;
+    return distance.toStringAsFixed(2).replaceFirst('.', ',');
   }
 
   static String _date(DateTime value) =>

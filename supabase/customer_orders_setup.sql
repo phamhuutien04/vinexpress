@@ -4,6 +4,47 @@
 
 CREATE EXTENSION IF NOT EXISTS unaccent;
 
+CREATE TABLE IF NOT EXISTS public.phi_van_chuyen (
+    id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+    phi_van_chuyen NUMERIC(14,2) NOT NULL DEFAULT 5000
+        CHECK (phi_van_chuyen >= 0),
+    phan_tram_san NUMERIC(5,2) NOT NULL DEFAULT 20
+        CHECK (phan_tram_san BETWEEN 0 AND 100),
+    ngay_cap_nhat TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.phi_van_chuyen
+    ADD COLUMN IF NOT EXISTS phi_van_chuyen NUMERIC(14,2)
+        NOT NULL DEFAULT 5000 CHECK (phi_van_chuyen >= 0);
+
+ALTER TABLE public.phi_van_chuyen
+    ADD COLUMN IF NOT EXISTS phan_tram_san NUMERIC(5,2)
+        NOT NULL DEFAULT 20 CHECK (phan_tram_san BETWEEN 0 AND 100);
+
+INSERT INTO public.phi_van_chuyen (
+    id, phi_van_chuyen, phan_tram_san
+) VALUES (1, 5000, 20)
+ON CONFLICT (id) DO NOTHING;
+
+-- Chỉ quản trị viên/service role được sửa trực tiếp trong Table Editor.
+REVOKE ALL ON TABLE public.phi_van_chuyen FROM anon, authenticated;
+
+DROP FUNCTION IF EXISTS public.lay_phi_van_chuyen_xe_may();
+
+CREATE OR REPLACE FUNCTION public.lay_phi_van_chuyen_xe_may()
+RETURNS TABLE (
+    phi_van_chuyen NUMERIC
+)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT ch.phi_van_chuyen
+    FROM public.phi_van_chuyen ch
+    WHERE ch.id = 1;
+$$;
+
 ALTER TABLE public.don_hang
     ADD COLUMN IF NOT EXISTS khoang_cach_km NUMERIC(12,2);
 
@@ -207,6 +248,7 @@ RETURNS TABLE (
     trang_thai VARCHAR,
     khoang_cach_km NUMERIC,
     phuong_tien VARCHAR,
+    phi_van_chuyen NUMERIC,
     ngay_tao TIMESTAMPTZ
 )
 LANGUAGE plpgsql
@@ -220,6 +262,8 @@ DECLARE
     v_kho_trung_tam_gui_id BIGINT := NULL;
     v_kho_trung_tam_dich_id BIGINT := NULL;
     v_phuong_tien VARCHAR(30);
+    v_phi_van_chuyen NUMERIC;
+    v_phi_moi_km NUMERIC;
 BEGIN
     IF auth.uid() IS NULL THEN
         RAISE EXCEPTION 'Bạn chưa đăng nhập';
@@ -243,10 +287,21 @@ BEGIN
         RAISE EXCEPTION 'Khoảng cách giao hàng không hợp lệ';
     END IF;
 
+    SELECT ch.phi_van_chuyen
+    INTO v_phi_moi_km
+    FROM public.phi_van_chuyen ch
+    WHERE ch.id = 1;
+
+    IF v_phi_moi_km IS NULL THEN
+        RAISE EXCEPTION 'Chưa cấu hình phí vận chuyển xe máy';
+    END IF;
+
     IF p_khoang_cach_km <= 50 THEN
         v_phuong_tien := 'XE_MAY';
+        v_phi_van_chuyen := ROUND(p_khoang_cach_km * v_phi_moi_km, 0);
     ELSE
         v_phuong_tien := 'XE_TAI';
+        v_phi_van_chuyen := ROUND(p_khoang_cach_km * v_phi_moi_km, 0);
         v_kho_gui_id := public.tim_kho_theo_dia_chi(p_nguoi_gui_dia_chi);
         v_kho_dich_id := public.tim_kho_theo_dia_chi(
             p_nguoi_nhan_dia_chi,
@@ -299,7 +354,7 @@ BEGIN
         BTRIM(p_nguoi_nhan_sdt),
         p_can_nang,
         GREATEST(p_gia_tri_hang, 0),
-        GREATEST(p_phi_van_chuyen, 0),
+        v_phi_van_chuyen,
         GREATEST(p_cod, 0),
         v_kho_gui_id,
         v_kho_dich_id,
@@ -321,6 +376,7 @@ BEGIN
         don_hang.trang_thai,
         don_hang.khoang_cach_km,
         don_hang.phuong_tien,
+        don_hang.phi_van_chuyen,
         don_hang.ngay_tao;
 END;
 $$;
@@ -328,6 +384,9 @@ $$;
 REVOKE ALL ON FUNCTION public.tim_kho_theo_dia_chi(
     TEXT, BIGINT
 ) FROM PUBLIC;
+
+REVOKE ALL ON FUNCTION public.lay_phi_van_chuyen_xe_may() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.lay_phi_van_chuyen_xe_may() TO authenticated;
 
 REVOKE ALL ON FUNCTION public.tao_don_hang_khach_hang(
     TEXT, TEXT, TEXT, TEXT, TEXT, TEXT,
