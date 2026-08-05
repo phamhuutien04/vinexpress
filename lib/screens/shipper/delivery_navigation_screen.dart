@@ -13,6 +13,7 @@ import '../../services/shipper_service.dart';
 import '../../services/cloudinary_service.dart';
 import '../../services/evidence_image_service.dart';
 import '../../services/customer_auth_service.dart';
+import 'shipper_wallet_screen.dart';
 
 class DeliveryNavigationScreen extends StatefulWidget {
   const DeliveryNavigationScreen({super.key, required this.order});
@@ -443,6 +444,8 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   Future<void> _completeDelivery() async {
     setState(() => _updatingStatus = true);
     try {
+      if (!await _hasEnoughWalletForCod()) return;
+
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
         imageQuality: 82,
@@ -482,10 +485,78 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     } on CloudinaryUploadException catch (error) {
       if (mounted) _showError(error.message);
     } on ShipperServiceException catch (error) {
-      if (mounted) _showError(error.message);
+      if (!mounted) return;
+      if (error.message.contains('Số dư ví không đủ')) {
+        await _showWalletRequired(error.message);
+      } else {
+        _showError(error.message);
+      }
     } finally {
       if (mounted) setState(() => _updatingStatus = false);
     }
+  }
+
+  Future<bool> _hasEnoughWalletForCod() async {
+    final cod = (widget.order['cod'] as num?)?.toDouble() ?? 0;
+    if (cod <= 0) return true;
+
+    final wallet = await _shipperService.getWalletInfo();
+    final balance = (wallet['so_du'] as num?)?.toDouble() ?? 0;
+    if (balance >= cod) return true;
+
+    await _showWalletRequired(
+      'Đơn hàng cần thu hộ ${_money(cod)}, nhưng ví chỉ còn '
+      '${_money(balance)}. Bạn cần nạp thêm ${_money(cod - balance)} '
+      'trước khi xác nhận đã giao.',
+    );
+    return false;
+  }
+
+  Future<void> _showWalletRequired(String message) async {
+    if (!mounted) return;
+    final openWallet = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(
+          Icons.account_balance_wallet_outlined,
+          color: AppColors.warning,
+          size: 36,
+        ),
+        title: const Text('Số dư ví không đủ'),
+        content: Text(message),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Để sau'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(context, true),
+            icon: const Icon(Icons.add_card_rounded),
+            label: const Text('Nạp tiền'),
+          ),
+        ],
+      ),
+    );
+
+    if (openWallet == true && mounted) {
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => Scaffold(
+            appBar: AppBar(title: const Text('Ví shipper')),
+            body: const ShipperWalletScreen(),
+          ),
+        ),
+      );
+    }
+  }
+
+  String _money(dynamic value) {
+    final number = (value as num?)?.round() ?? 0;
+    final formatted = number.toString().replaceAllMapped(
+      RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+      (match) => '${match[1]}.',
+    );
+    return '$formattedđ';
   }
 
   Future<LatLng> _evidencePosition() async {

@@ -366,12 +366,6 @@ BEGIN
         RAISE EXCEPTION 'Điểm lấy hàng nằm ngoài bán kính cho phép';
     END IF;
 
-    PERFORM public.tam_giu_cod_vi_shipper(
-        v_nhan_vien_id,
-        v_don.id,
-        COALESCE(v_don.cod, 0)
-    );
-
     UPDATE public.don_hang
     SET nhan_vien_hien_tai_id = v_nhan_vien_id
     WHERE don_hang.id = p_don_hang_id;
@@ -446,6 +440,15 @@ BEGIN
         IF p_minh_chung IS NULL OR BTRIM(p_minh_chung) = '' THEN
             RAISE EXCEPTION 'Phải có ảnh minh chứng khi xác nhận đã giao hàng';
         END IF;
+
+        -- Chỉ khấu trừ COD khi xác nhận giao thành công. Nếu ví không đủ,
+        -- toàn bộ giao dịch dừng và trạng thái đơn không bị thay đổi.
+        PERFORM public.tam_giu_cod_vi_shipper(
+            v_nhan_vien_id,
+            v_don.id,
+            COALESCE(v_don.cod, 0)
+        );
+
         UPDATE public.don_hang
         SET trang_thai = 'DA_GIAO_HANG', ngay_giao_hang = NOW()
         WHERE id = p_don_hang_id;

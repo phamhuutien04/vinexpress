@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
 
+enum _HistoryPeriod { day, month, year, range }
+
 class ShipperOrderHistoryScreen extends StatefulWidget {
   const ShipperOrderHistoryScreen({super.key});
 
@@ -16,6 +18,9 @@ class _ShipperOrderHistoryScreenState extends State<ShipperOrderHistoryScreen> {
   List<Map<String, dynamic>> _orders = [];
   bool _loading = true;
   String? _error;
+  _HistoryPeriod _period = _HistoryPeriod.day;
+  DateTime _selectedDate = DateTime.now();
+  DateTimeRange? _selectedRange;
 
   @override
   void initState() {
@@ -38,11 +43,88 @@ class _ShipperOrderHistoryScreenState extends State<ShipperOrderHistoryScreen> {
     }
   }
 
-  double get _totalIncome => _orders.fold(
+  List<Map<String, dynamic>> get _filteredOrders {
+    return _orders.where((order) {
+      final deliveredAt = _parseDate(order['ngay_giao_hang']);
+      if (deliveredAt == null) return false;
+      return switch (_period) {
+        _HistoryPeriod.day => _sameDay(deliveredAt, _selectedDate),
+        _HistoryPeriod.month =>
+          deliveredAt.year == _selectedDate.year &&
+              deliveredAt.month == _selectedDate.month,
+        _HistoryPeriod.year => deliveredAt.year == _selectedDate.year,
+        _HistoryPeriod.range => _isInRange(deliveredAt, _selectedRange),
+      };
+    }).toList();
+  }
+
+  double get _totalIncome => _filteredOrders.fold(
     0,
     (total, order) =>
         total + ((order['tien_shipper'] as num?)?.toDouble() ?? 0),
   );
+
+  String get _periodLabel => switch (_period) {
+    _HistoryPeriod.day => 'Ngày ${_formatDate(_selectedDate)}',
+    _HistoryPeriod.month =>
+      'Tháng ${_selectedDate.month}/${_selectedDate.year}',
+    _HistoryPeriod.year => 'Năm ${_selectedDate.year}',
+    _HistoryPeriod.range =>
+      _selectedRange == null
+          ? 'Khoảng ngày tùy chỉnh'
+          : '${_formatDate(_selectedRange!.start)} – '
+                '${_formatDate(_selectedRange!.end)}',
+  };
+
+  Future<void> _selectPeriodValue() async {
+    final now = DateTime.now();
+    if (_period == _HistoryPeriod.range) {
+      final range = await showDateRangePicker(
+        context: context,
+        initialDateRange: _selectedRange,
+        firstDate: DateTime(2020),
+        lastDate: DateTime(now.year + 1, 12, 31),
+        helpText: 'Chọn từ ngày đến ngày',
+        cancelText: 'Hủy',
+        confirmText: 'Áp dụng',
+        saveText: 'Áp dụng',
+      );
+      if (range != null && mounted) setState(() => _selectedRange = range);
+      return;
+    }
+
+    final selected = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(now.year + 1, 12, 31),
+      helpText: switch (_period) {
+        _HistoryPeriod.day => 'Chọn ngày cần tổng kết',
+        _HistoryPeriod.month => 'Chọn một ngày trong tháng cần tổng kết',
+        _HistoryPeriod.year => 'Chọn một ngày trong năm cần tổng kết',
+        _ => 'Chọn thời gian',
+      },
+      cancelText: 'Hủy',
+      confirmText: 'Chọn',
+    );
+    if (selected != null && mounted) {
+      setState(() => _selectedDate = selected);
+    }
+  }
+
+  Future<void> _changePeriod(_HistoryPeriod value) async {
+    final today = DateTime.now();
+    setState(() {
+      _period = value;
+      if (value != _HistoryPeriod.range) {
+        _selectedDate = today;
+      }
+      if (value == _HistoryPeriod.range && _selectedRange == null) {
+        _selectedRange = DateTimeRange(start: today, end: today);
+      }
+    });
+    if (value == _HistoryPeriod.range) await _selectPeriodValue();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,19 +135,119 @@ class _ShipperOrderHistoryScreenState extends State<ShipperOrderHistoryScreen> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _IncomeSummary(total: _totalIncome, orderCount: _orders.length),
+          _IncomeSummary(
+            total: _totalIncome,
+            orderCount: _filteredOrders.length,
+            periodLabel: _periodLabel,
+          ),
+          const SizedBox(height: 14),
+          _PeriodFilter(
+            period: _period,
+            periodLabel: _periodLabel,
+            onPeriodChanged: _changePeriod,
+            onSelectValue: _selectPeriodValue,
+          ),
           const SizedBox(height: 20),
-          Text('Đơn đã giao', style: Theme.of(context).textTheme.titleMedium),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Đơn đã giao',
+                  style: Theme.of(context).textTheme.titleMedium,
+                ),
+              ),
+              Text('${_filteredOrders.length} đơn'),
+            ],
+          ),
           const SizedBox(height: 12),
           if (_error != null)
             _MessageState(icon: Icons.error_outline_rounded, message: _error!)
-          else if (_orders.isEmpty)
-            const _MessageState(
+          else if (_filteredOrders.isEmpty)
+            _MessageState(
               icon: Icons.history_rounded,
-              message: 'Bạn chưa có đơn hàng đã giao',
+              message: 'Không có đơn giao trong $_periodLabel',
             )
           else
-            ..._orders.map((order) => _DeliveredOrderCard(order: order)),
+            ..._filteredOrders.map(
+              (order) => _DeliveredOrderCard(order: order),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PeriodFilter extends StatelessWidget {
+  const _PeriodFilter({
+    required this.period,
+    required this.periodLabel,
+    required this.onPeriodChanged,
+    required this.onSelectValue,
+  });
+
+  final _HistoryPeriod period;
+  final String periodLabel;
+  final ValueChanged<_HistoryPeriod> onPeriodChanged;
+  final VoidCallback onSelectValue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.primary10,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.primary.withValues(alpha: .22)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: _HistoryPeriod.values.map((value) {
+                return Padding(
+                  padding: const EdgeInsets.only(right: 7),
+                  child: ChoiceChip(
+                    selected: period == value,
+                    label: Text(_periodName(value)),
+                    onSelected: (_) => onPeriodChanged(value),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (period == _HistoryPeriod.range)
+            OutlinedButton.icon(
+              onPressed: onSelectValue,
+              icon: const Icon(Icons.date_range_rounded),
+              label: Text(periodLabel),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.calendar_today_rounded,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 9),
+                  Expanded(
+                    child: Text(
+                      periodLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -73,10 +255,15 @@ class _ShipperOrderHistoryScreenState extends State<ShipperOrderHistoryScreen> {
 }
 
 class _IncomeSummary extends StatelessWidget {
-  const _IncomeSummary({required this.total, required this.orderCount});
+  const _IncomeSummary({
+    required this.total,
+    required this.orderCount,
+    required this.periodLabel,
+  });
 
   final double total;
   final int orderCount;
+  final String periodLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -107,6 +294,8 @@ class _IncomeSummary extends StatelessWidget {
             '$orderCount đơn giao thành công',
             style: const TextStyle(color: Colors.white),
           ),
+          const SizedBox(height: 4),
+          Text(periodLabel, style: const TextStyle(color: Colors.white70)),
         ],
       ),
     );
@@ -148,6 +337,11 @@ class _DeliveredOrderCard extends StatelessWidget {
             const SizedBox(height: 10),
             _line(Icons.my_location_rounded, '${order['nguoi_gui_dia_chi']}'),
             _line(Icons.flag_rounded, '${order['nguoi_nhan_dia_chi']}'),
+            if (_parseDate(order['ngay_giao_hang']) case final date?)
+              _line(
+                Icons.schedule_rounded,
+                'Giao lúc ${_formatDateTime(date)}',
+              ),
             const Divider(height: 22),
             Row(
               children: [
@@ -228,3 +422,39 @@ String _percent(dynamic value) {
       ? '${number.round()}%'
       : '${number.toStringAsFixed(1)}%';
 }
+
+DateTime? _parseDate(dynamic value) {
+  if (value == null) return null;
+  return DateTime.tryParse('$value')?.toLocal();
+}
+
+String _formatDate(DateTime value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.day)}/${two(value.month)}/${value.year}';
+}
+
+String _formatDateTime(DateTime value) {
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${_formatDate(value)} ${two(value.hour)}:${two(value.minute)}';
+}
+
+bool _sameDay(DateTime first, DateTime second) {
+  return first.year == second.year &&
+      first.month == second.month &&
+      first.day == second.day;
+}
+
+bool _isInRange(DateTime value, DateTimeRange? range) {
+  if (range == null) return false;
+  final day = DateTime(value.year, value.month, value.day);
+  final start = DateTime(range.start.year, range.start.month, range.start.day);
+  final end = DateTime(range.end.year, range.end.month, range.end.day);
+  return !day.isBefore(start) && !day.isAfter(end);
+}
+
+String _periodName(_HistoryPeriod value) => switch (value) {
+  _HistoryPeriod.day => 'Ngày',
+  _HistoryPeriod.month => 'Tháng',
+  _HistoryPeriod.year => 'Năm',
+  _HistoryPeriod.range => 'Tùy chỉnh',
+};
