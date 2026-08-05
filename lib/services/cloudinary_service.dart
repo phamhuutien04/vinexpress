@@ -19,7 +19,6 @@ class CloudinaryService {
     required String address,
     required double latitude,
     required double longitude,
-    required String locationSource,
   }) async {
     final safeAddress = address.replaceAll('|', ' ').replaceAll('=', '-');
     final request =
@@ -28,7 +27,6 @@ class CloudinaryService {
           ..fields['context'] =
               'order_id=$orderId|tracking_code=$trackingCode|type=$evidenceType|'
               'latitude=$latitude|longitude=$longitude|address=$safeAddress'
-              '|location_source=$locationSource'
           ..files.add(
             http.MultipartFile.fromBytes(
               'file',

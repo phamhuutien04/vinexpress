@@ -9,11 +9,11 @@ class EvidenceImageService {
     required int orderId,
     required String trackingCode,
     required String evidenceLabel,
+    required String employeeName,
     required String address,
     required double latitude,
     required double longitude,
     required DateTime capturedAt,
-    required String locationSource,
   }) async {
     final source = await _decode(sourceBytes);
     final recorder = ui.PictureRecorder();
@@ -22,31 +22,30 @@ class EvidenceImageService {
     final height = source.height.toDouble();
     canvas.drawImage(source, Offset.zero, Paint());
 
-    final fontSize = (width * .032).clamp(18.0, 42.0);
-    final padding = fontSize * .7;
     final text = [
       'VINEXPRESS - $evidenceLabel',
       'Đơn #$orderId • $trackingCode',
+      'Nhân viên: $employeeName',
       'Địa chỉ: $address',
       'GPS: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
-      'Nguồn vị trí: $locationSource',
       'Thời gian: ${_formatDateTime(capturedAt)}',
     ].join('\n');
-    final painter = TextPainter(
-      text: TextSpan(
-        text: text,
-        style: TextStyle(
-          color: Colors.white,
-          fontSize: fontSize,
-          height: 1.3,
-          fontWeight: FontWeight.w600,
-          shadows: const [Shadow(color: Colors.black, blurRadius: 3)],
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-      maxLines: 7,
-      ellipsis: '…',
-    )..layout(maxWidth: width - padding * 2);
+
+    // Co chữ theo cả chiều rộng và chiều cao để ảnh dọc, ngang hoặc ảnh nhỏ
+    // đều hiển thị đủ phần thông tin mà không tràn khỏi khung.
+    var fontSize = (width * .032).clamp(12.0, 42.0);
+    final maxPanelHeight = height * .48;
+    late TextPainter painter;
+    late double padding;
+    while (true) {
+      padding = (fontSize * .7).clamp(7.0, 30.0);
+      painter = _textPainter(text, fontSize)
+        ..layout(maxWidth: (width - padding * 2).clamp(1.0, width));
+      if (painter.height + padding * 2 <= maxPanelHeight || fontSize <= 9) {
+        break;
+      }
+      fontSize -= 1;
+    }
     final panelHeight = painter.height + padding * 2;
     final panelTop = (height - panelHeight).clamp(0.0, height);
     canvas.drawRect(
@@ -62,6 +61,24 @@ class EvidenceImageService {
     final byteData = await result.toByteData(format: ui.ImageByteFormat.png);
     if (byteData == null) throw Exception('Không thể tạo ảnh minh chứng.');
     return byteData.buffer.asUint8List();
+  }
+
+  TextPainter _textPainter(String text, double fontSize) {
+    return TextPainter(
+      text: TextSpan(
+        text: text,
+        style: TextStyle(
+          color: Colors.white,
+          fontSize: fontSize,
+          height: 1.25,
+          fontWeight: FontWeight.w600,
+          shadows: const [Shadow(color: Colors.black, blurRadius: 3)],
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+      maxLines: 9,
+      ellipsis: '…',
+    );
   }
 
   Future<ui.Image> _decode(Uint8List bytes) async {

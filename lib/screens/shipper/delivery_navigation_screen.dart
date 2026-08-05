@@ -12,6 +12,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
 import '../../services/cloudinary_service.dart';
 import '../../services/evidence_image_service.dart';
+import '../../services/customer_auth_service.dart';
 
 class DeliveryNavigationScreen extends StatefulWidget {
   const DeliveryNavigationScreen({super.key, required this.order});
@@ -48,6 +49,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   String _instruction = 'Đi thẳng theo tuyến đường';
   double? _nextTurnMeters;
   String? _turnModifier;
+
+  String get _employeeName =>
+      CustomerAuthService.currentEmployee?['ho_ten'] as String? ?? 'Shipper';
 
   LatLng get _target => (_toReceiver ? _delivery : _pickup)!;
 
@@ -268,18 +272,17 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         maxWidth: 1600,
       );
       if (image == null) return;
-      final usingSimulation = _simulatedThisStage;
       final capturedPosition = await _evidencePosition();
       final stampedImage = await _evidenceImageService.stamp(
         sourceBytes: await image.readAsBytes(),
         orderId: widget.order['id'] as int,
         trackingCode: '${widget.order['ma_van_don']}',
         evidenceLabel: 'XÁC NHẬN ĐÃ LẤY HÀNG',
+        employeeName: _employeeName,
         address: '${widget.order['nguoi_gui_dia_chi']}',
         latitude: capturedPosition.latitude,
         longitude: capturedPosition.longitude,
         capturedAt: DateTime.now(),
-        locationSource: usingSimulation ? 'GIẢ LẬP' : 'GPS THẬT',
       );
       final evidenceUrl = await _cloudinaryService.uploadEvidence(
         imageBytes: stampedImage,
@@ -289,7 +292,6 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         address: '${widget.order['nguoi_gui_dia_chi']}',
         latitude: capturedPosition.latitude,
         longitude: capturedPosition.longitude,
-        locationSource: usingSimulation ? 'simulation' : 'gps',
       );
       await _shipperService.updateDeliveryStage(
         orderId: widget.order['id'] as int,
@@ -447,18 +449,17 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         maxWidth: 1600,
       );
       if (image == null) return;
-      final usingSimulation = _simulatedThisStage;
       final capturedPosition = await _evidencePosition();
       final stampedImage = await _evidenceImageService.stamp(
         sourceBytes: await image.readAsBytes(),
         orderId: widget.order['id'] as int,
         trackingCode: '${widget.order['ma_van_don']}',
         evidenceLabel: 'XÁC NHẬN ĐÃ GIAO HÀNG',
+        employeeName: _employeeName,
         address: '${widget.order['nguoi_nhan_dia_chi']}',
         latitude: capturedPosition.latitude,
         longitude: capturedPosition.longitude,
         capturedAt: DateTime.now(),
-        locationSource: usingSimulation ? 'GIẢ LẬP' : 'GPS THẬT',
       );
       final evidenceUrl = await _cloudinaryService.uploadEvidence(
         imageBytes: stampedImage,
@@ -468,7 +469,6 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         address: '${widget.order['nguoi_nhan_dia_chi']}',
         latitude: capturedPosition.latitude,
         longitude: capturedPosition.longitude,
-        locationSource: usingSimulation ? 'simulation' : 'gps',
       );
       await _shipperService.updateDeliveryStage(
         orderId: widget.order['id'] as int,

@@ -4,6 +4,7 @@ import '../../services/customer_auth_service.dart';
 import '../auth/login_screen.dart';
 import '../shipper/nearby_orders_screen.dart';
 import '../shipper/shipper_order_history_screen.dart';
+import '../shipper/shipper_wallet_screen.dart';
 
 class DeliveryHomeScreen extends StatefulWidget {
   const DeliveryHomeScreen({super.key});
@@ -25,7 +26,8 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
       appBar: AppBar(
         title: Text(switch (_tab) {
           0 => 'Nhận đơn gần bạn',
-          1 => 'Lịch sử giao hàng',
+          1 => 'Ví shipper',
+          2 => 'Lịch sử giao hàng',
           _ => 'Tài khoản shipper',
         }),
         actions: _tab == 0
@@ -48,6 +50,7 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
         index: _tab,
         children: [
           const NearbyOrdersScreen(embedded: true),
+          const ShipperWalletScreen(),
           const ShipperOrderHistoryScreen(),
           _ProfilePage(name: _name, onLogout: _logout),
         ],
@@ -57,14 +60,19 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
         onDestinationSelected: (value) => setState(() => _tab = value),
         destinations: const [
           NavigationDestination(
-            icon: Icon(Icons.history_outlined),
-            selectedIcon: Icon(Icons.history_rounded),
-            label: 'Lịch sử',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.near_me_outlined),
             selectedIcon: Icon(Icons.near_me_rounded),
             label: 'Đơn gần bạn',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            selectedIcon: Icon(Icons.account_balance_wallet_rounded),
+            label: 'Ví',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.history_outlined),
+            selectedIcon: Icon(Icons.history_rounded),
+            label: 'Lịch sử',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
