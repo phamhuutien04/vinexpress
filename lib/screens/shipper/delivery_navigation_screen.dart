@@ -7,6 +7,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
@@ -576,6 +577,19 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     );
   }
 
+  Future<void> _callPhone(String phone) async {
+    final normalized = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (normalized.isEmpty) {
+      _showError('Đơn hàng chưa có số điện thoại liên hệ.');
+      return;
+    }
+
+    final opened = await launchUrl(Uri(scheme: 'tel', path: normalized));
+    if (!opened && mounted) {
+      _showError('Không thể mở ứng dụng gọi điện trên thiết bị này.');
+    }
+  }
+
   @override
   void dispose() {
     _simulationTimer?.cancel();
@@ -719,8 +733,14 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
   Widget _deliveryCard() {
     final address = _toReceiver
-        ? widget.order['nguoi_nhan_dia_chi'] as String
-        : widget.order['nguoi_gui_dia_chi'] as String;
+        ? '${widget.order['nguoi_nhan_dia_chi'] ?? ''}'
+        : '${widget.order['nguoi_gui_dia_chi'] ?? ''}';
+    final contactName = _toReceiver
+        ? '${widget.order['nguoi_nhan_ten'] ?? 'Người nhận'}'
+        : '${widget.order['nguoi_gui_ten'] ?? 'Người gửi'}';
+    final contactPhone = _toReceiver
+        ? '${widget.order['nguoi_nhan_sdt'] ?? ''}'
+        : '${widget.order['nguoi_gui_sdt'] ?? ''}';
     return Card(
       elevation: 8,
       child: Padding(
@@ -735,6 +755,48 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
             ),
             const SizedBox(height: 6),
             Text(address, maxLines: 2, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.phone_outlined, color: AppColors.primary),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          contactName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        Text(
+                          contactPhone.isEmpty
+                              ? 'Chưa có số điện thoại'
+                              : contactPhone,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton.filled(
+                    tooltip: 'Gọi điện',
+                    onPressed: contactPhone.isEmpty
+                        ? null
+                        : () => _callPhone(contactPhone),
+                    icon: const Icon(Icons.call),
+                  ),
+                ],
+              ),
+            ),
             if (_distanceKm != null && _durationMinutes != null) ...[
               const SizedBox(height: 8),
               Text(

@@ -1452,7 +1452,6 @@ CREATE POLICY "Nhan vien xem ho so cua minh" ON nhan_vien FOR SELECT TO authenti
 CREATE POLICY "Nhan vien cap nhat ho so cua minh" ON nhan_vien FOR UPDATE TO authenticated USING (auth.uid()=auth_user_id) WITH CHECK (auth.uid()=auth_user_id);
 GRANT SELECT,UPDATE ON khach_hang,nhan_vien TO authenticated;
 
-
 -- ============================================================================
 -- SOURCE: supabase_auth_setup.sql
 -- ============================================================================
@@ -1542,7 +1541,6 @@ CREATE POLICY "Khach hang cap nhat ho so cua minh"
 
 GRANT SELECT, UPDATE ON TABLE public.khach_hang TO authenticated;
 REVOKE ALL ON TABLE public.khach_hang FROM anon;
-
 
 -- ============================================================================
 -- SOURCE: employee_auth_setup.sql
@@ -1638,7 +1636,6 @@ GRANT SELECT ON public.nhan_vien TO authenticated;
 -- Sau khi kiểm tra hồ sơ, quản trị viên duyệt tài khoản bằng câu lệnh sau:
 -- UPDATE public.nhan_vien SET trang_thai_duyet = 'DA_DUYET'
 -- WHERE email = 'email-nhan-vien@example.com';
-
 
 -- ============================================================================
 -- SOURCE: warehouse_hierarchy_setup.sql
@@ -1744,7 +1741,6 @@ SELECT
 FROM public.kho_hang AS kh
 LEFT JOIN public.kho_hang AS trung_tam ON trung_tam.id = kh.kho_trung_tam_id
 ORDER BY kh.ma_kho;
-
 
 -- ============================================================================
 -- SOURCE: seed_warehouses.sql
@@ -1864,7 +1860,6 @@ SELECT
 FROM public.kho_hang AS kh
 JOIN public.khu_vuc AS kv ON kv.id = kh.khu_vuc_id
 ORDER BY kh.ma_kho;
-
 
 -- ============================================================================
 -- SOURCE: customer_orders_setup.sql
@@ -2276,7 +2271,6 @@ GRANT EXECUTE ON FUNCTION public.tao_don_hang_khach_hang(
 REVOKE ALL ON FUNCTION public.don_hang_cua_khach_hang() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.don_hang_cua_khach_hang() TO authenticated;
 NOTIFY pgrst, 'reload schema';
-
 
 -- ============================================================================
 -- SOURCE: wallet_shared_setup.sql
@@ -2981,7 +2975,6 @@ DROP TABLE IF EXISTS public.vi_shipper;
 -- Yêu cầu PostgREST nạp lại danh sách RPC mới ngay sau migration.
 NOTIFY pgrst, 'reload schema';
 
-
 -- ============================================================================
 -- SOURCE: shipper_nearby_orders_setup.sql
 -- ============================================================================
@@ -3116,6 +3109,8 @@ RETURNS TABLE (
     nguoi_gui_ten VARCHAR,
     nguoi_gui_sdt VARCHAR,
     nguoi_gui_dia_chi TEXT,
+    nguoi_nhan_ten VARCHAR,
+    nguoi_nhan_sdt VARCHAR,
     nguoi_nhan_dia_chi TEXT,
     nguoi_gui_vi_do DOUBLE PRECISION,
     nguoi_gui_kinh_do DOUBLE PRECISION,
@@ -3159,6 +3154,8 @@ BEGIN
         dh.nguoi_gui_ten,
         dh.nguoi_gui_sdt,
         dh.nguoi_gui_dia_chi,
+        dh.nguoi_nhan_ten,
+        dh.nguoi_nhan_sdt,
         dh.nguoi_nhan_dia_chi,
         dh.nguoi_gui_vi_do,
         dh.nguoi_gui_kinh_do,
@@ -3253,6 +3250,8 @@ RETURNS TABLE (
     nguoi_gui_ten VARCHAR,
     nguoi_gui_sdt VARCHAR,
     nguoi_gui_dia_chi TEXT,
+    nguoi_nhan_ten VARCHAR,
+    nguoi_nhan_sdt VARCHAR,
     nguoi_nhan_dia_chi TEXT,
     nguoi_gui_vi_do DOUBLE PRECISION,
     nguoi_gui_kinh_do DOUBLE PRECISION,
@@ -3275,6 +3274,8 @@ AS $$
         dh.nguoi_gui_ten,
         dh.nguoi_gui_sdt,
         dh.nguoi_gui_dia_chi,
+        dh.nguoi_nhan_ten,
+        dh.nguoi_nhan_sdt,
         dh.nguoi_nhan_dia_chi,
         dh.nguoi_gui_vi_do,
         dh.nguoi_gui_kinh_do,
@@ -3536,7 +3537,6 @@ TO authenticated;
 -- Yêu cầu PostgREST nạp ngay chữ ký RPC mới có tham số p_minh_chung.
 NOTIFY pgrst, 'reload schema';
 
-
 -- ============================================================================
 -- SOURCE: shipper_salary_setup.sql
 -- ============================================================================
@@ -3759,5 +3759,4 @@ GRANT EXECUTE ON FUNCTION public.lich_su_don_hang_shipper() TO authenticated;
 
 -- Xem lương đã ghi nhận:
 -- SELECT * FROM public.luong_shipper ORDER BY ngay_ghi_nhan DESC;
-
 
