@@ -5,6 +5,7 @@ import '../../services/order_service.dart';
 import '../auth/login_screen.dart';
 import 'create_order_screen.dart';
 import 'order_history_screen.dart';
+import 'order_tracking_screen.dart';
 import 'customer_wallet_screen.dart';
 import 'customer_account_screen.dart';
 
@@ -179,6 +180,11 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                       label: 'Chờ lấy',
                       value: '$_waitingCount',
                       color: Color(0xFFFFA726),
+                      onTap: () => _openHistory(
+                        context,
+                        title: 'Đơn chờ lấy hàng',
+                        statuses: const {'CHO_LAY_HANG'},
+                      ),
                     ),
                     SizedBox(width: 10),
                     _StatusCard(
@@ -186,6 +192,16 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                       label: 'Đang giao',
                       value: '$_deliveringCount',
                       color: Color(0xFF42A5F5),
+                      onTap: () => _openHistory(
+                        context,
+                        title: 'Đơn đang giao',
+                        statuses: const {
+                          'DA_LAY_HANG',
+                          'DANG_VAN_CHUYEN',
+                          'GIAO_CHO_SHIPPER',
+                          'DANG_GIAO_HANG',
+                        },
+                      ),
                     ),
                     SizedBox(width: 10),
                     _StatusCard(
@@ -193,6 +209,11 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                       label: 'Đã giao',
                       value: '$_deliveredCount',
                       color: AppColors.success,
+                      onTap: () => _openHistory(
+                        context,
+                        title: 'Đơn đã giao',
+                        statuses: const {'DA_GIAO_HANG'},
+                      ),
                     ),
                   ],
                 ),
@@ -287,10 +308,16 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     );
   }
 
-  Future<void> _openHistory(BuildContext context) async {
+  Future<void> _openHistory(
+    BuildContext context, {
+    String title = 'Lịch sử đơn hàng',
+    Set<String>? statuses,
+  }) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const OrderHistoryScreen()),
+      MaterialPageRoute(
+        builder: (_) => OrderHistoryScreen(title: title, statuses: statuses),
+      ),
     );
     await _loadOrderSummary();
   }
@@ -429,36 +456,47 @@ class _StatusCard extends StatelessWidget {
     required this.label,
     required this.value,
     required this.color,
+    required this.onTap,
   });
   final IconData icon;
   final String label;
   final String value;
   final Color color;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Theme.of(context).scaffoldBackgroundColor,
+      child: Material(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Theme.of(context).dividerColor),
+          side: BorderSide(color: Theme.of(context).dividerColor),
         ),
-        child: Column(
-          children: [
-            Icon(icon, color: color),
-            const SizedBox(height: 7),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 15, horizontal: 8),
+            child: Column(
+              children: [
+                Icon(icon, color: color),
+                const SizedBox(height: 7),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
             ),
-            Text(
-              label,
-              maxLines: 1,
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -581,65 +619,103 @@ class _RecentOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final status = _status('${order['trang_thai']}');
+    final statusValue = '${order['trang_thai']}';
+    final status = _status(statusValue);
     final createdAt = DateTime.tryParse('${order['ngay_tao']}')?.toLocal();
+    final canTrack = const {
+      'CHO_LAY_HANG',
+      'DA_LAY_HANG',
+      'GIAO_CHO_SHIPPER',
+      'DANG_GIAO_HANG',
+    }.contains(statusValue);
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(
-                  Icons.inventory_2_outlined,
-                  color: AppColors.primary,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    '${order['ma_van_don']}',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: canTrack
+            ? () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => OrderTrackingScreen(
+                    orderId: (order['id'] as num).toInt(),
                   ),
                 ),
-                Text(
-                  status.label,
-                  style: TextStyle(
-                    color: status.color,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 12,
+              )
+            : null,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.inventory_2_outlined,
+                    color: AppColors.primary,
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.location_on_outlined, size: 18),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Text(
-                    '${order['nguoi_nhan_dia_chi']}',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${order['ma_van_don']}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            if (createdAt != null) ...[
-              const SizedBox(height: 7),
-              Text(
-                '${createdAt.day.toString().padLeft(2, '0')}/'
-                '${createdAt.month.toString().padLeft(2, '0')}/'
-                '${createdAt.year} '
-                '${createdAt.hour.toString().padLeft(2, '0')}:'
-                '${createdAt.minute.toString().padLeft(2, '0')}',
-                style: Theme.of(context).textTheme.bodySmall,
+                  Text(
+                    status.label,
+                    style: TextStyle(
+                      color: status.color,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(height: 10),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.location_on_outlined, size: 18),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      '${order['nguoi_nhan_dia_chi']}',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              if (createdAt != null) ...[
+                const SizedBox(height: 7),
+                Text(
+                  '${createdAt.day.toString().padLeft(2, '0')}/'
+                  '${createdAt.month.toString().padLeft(2, '0')}/'
+                  '${createdAt.year} '
+                  '${createdAt.hour.toString().padLeft(2, '0')}:'
+                  '${createdAt.minute.toString().padLeft(2, '0')}',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+              if (canTrack) ...[
+                const SizedBox(height: 10),
+                const Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Icon(Icons.my_location, size: 17, color: AppColors.primary),
+                    SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        'Xem vị trí và thời gian đến',
+                        style: TextStyle(
+                          color: AppColors.primary,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );

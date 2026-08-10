@@ -37,6 +37,27 @@ class OrderService {
     }
   }
 
+  Future<Map<String, dynamic>> getCustomerOrderTracking(int orderId) async {
+    try {
+      final data = await _client
+          .rpc(
+            'theo_doi_don_hang_khach_hang',
+            params: {'p_don_hang_id': orderId},
+          )
+          .single();
+      return Map<String, dynamic>.from(data);
+    } on PostgrestException catch (error) {
+      if (error.code == 'PGRST202' ||
+          error.message.contains('theo_doi_don_hang_khach_hang')) {
+        throw const OrderServiceException(
+          'Chức năng theo dõi chưa được cài trên Supabase. '
+          'Hãy chạy file customer_tracking_setup.sql.',
+        );
+      }
+      throw OrderServiceException(error.message);
+    }
+  }
+
   Future<OrderQuote> calculateShippingQuote({
     required String senderAddress,
     required String receiverAddress,

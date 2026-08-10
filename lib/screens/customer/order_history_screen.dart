@@ -2,9 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/order_service.dart';
+import 'order_tracking_screen.dart';
 
 class OrderHistoryScreen extends StatefulWidget {
-  const OrderHistoryScreen({super.key});
+  const OrderHistoryScreen({
+    super.key,
+    this.title = 'Lịch sử đơn hàng',
+    this.statuses,
+  });
+
+  final String title;
+  final Set<String>? statuses;
 
   @override
   State<OrderHistoryScreen> createState() => _OrderHistoryScreenState();
@@ -12,14 +20,52 @@ class OrderHistoryScreen extends StatefulWidget {
 
 class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
   final _service = OrderService();
+  final _searchController = TextEditingController();
   List<Map<String, dynamic>> _orders = [];
+  Set<String>? _statusFilter;
+  DateTimeRange? _dateRange;
   bool _loading = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
+    _statusFilter = widget.statuses;
+    _searchController.addListener(_applyFilters);
     _load();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _applyFilters() => setState(() {});
+
+  List<Map<String, dynamic>> get _filteredOrders {
+    final query = _searchController.text.trim().toLowerCase();
+    return _orders.where((order) {
+      final statusMatches =
+          _statusFilter == null ||
+          _statusFilter!.contains('${order['trang_thai']}');
+      final createdAt = DateTime.tryParse('${order['ngay_tao']}')?.toLocal();
+      final dateMatches =
+          _dateRange == null ||
+          (createdAt != null &&
+              !createdAt.isBefore(_dateRange!.start) &&
+              createdAt.isBefore(_dateRange!.end.add(const Duration(days: 1))));
+      final searchable = [
+        order['ma_van_don'],
+        order['nguoi_gui_dia_chi'],
+        order['nguoi_nhan_dia_chi'],
+        order['nguoi_nhan_ten'],
+        order['nguoi_nhan_sdt'],
+      ].join(' ').toLowerCase();
+      return statusMatches &&
+          dateMatches &&
+          (query.isEmpty || searchable.contains(query));
+    }).toList();
   }
 
   Future<void> _load() async {
@@ -39,8 +85,9 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final filteredOrders = _filteredOrders;
     return Scaffold(
-      appBar: AppBar(title: const Text('Lịch sử đơn hàng')),
+      appBar: AppBar(title: Text(widget.title)),
       body: RefreshIndicator(
         onRefresh: _load,
         child: _loading
@@ -62,28 +109,160 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                   ),
                 ],
               )
-            : _orders.isEmpty
-            ? ListView(
-                children: const [
-                  SizedBox(height: 180),
-                  Icon(
-                    Icons.inventory_2_outlined,
-                    size: 58,
-                    color: AppColors.textDisabled,
-                  ),
-                  SizedBox(height: 12),
-                  Text('Bạn chưa có đơn hàng nào', textAlign: TextAlign.center),
-                ],
-              )
             : ListView.builder(
                 padding: const EdgeInsets.all(16),
-                itemCount: _orders.length,
-                itemBuilder: (_, index) =>
-                    _OrderHistoryCard(order: _orders[index]),
+                itemCount: filteredOrders.length + 1,
+                itemBuilder: (_, index) {
+                  if (index == 0) {
+                    return _OrderFilters(
+                      searchController: _searchController,
+                      selectedStatuses: _statusFilter,
+                      dateRange: _dateRange,
+                      onStatusesChanged: (value) {
+                        setState(() => _statusFilter = value);
+                      },
+                      onPickDate: _pickDateRange,
+                      onClearDate: () => setState(() => _dateRange = null),
+                      resultCount: filteredOrders.length,
+                    );
+                  }
+                  return _OrderHistoryCard(order: filteredOrders[index - 1]);
+                },
               ),
       ),
     );
   }
+
+  Future<void> _pickDateRange() async {
+    final now = DateTime.now();
+    final picked = await showDateRangePicker(
+      context: context,
+      firstDate: DateTime(now.year - 5),
+      lastDate: DateTime(now.year + 1),
+      initialDateRange: _dateRange,
+      helpText: 'Chọn khoảng ngày tạo đơn',
+      saveText: 'Lọc',
+    );
+    if (picked != null && mounted) setState(() => _dateRange = picked);
+  }
+}
+
+class _OrderFilters extends StatelessWidget {
+  const _OrderFilters({
+    required this.searchController,
+    required this.selectedStatuses,
+    required this.dateRange,
+    required this.onStatusesChanged,
+    required this.onPickDate,
+    required this.onClearDate,
+    required this.resultCount,
+  });
+
+  final TextEditingController searchController;
+  final Set<String>? selectedStatuses;
+  final DateTimeRange? dateRange;
+  final ValueChanged<Set<String>?> onStatusesChanged;
+  final VoidCallback onPickDate;
+  final VoidCallback onClearDate;
+  final int resultCount;
+
+  static const _delivering = {
+    'DA_LAY_HANG',
+    'DANG_VAN_CHUYEN',
+    'GIAO_CHO_SHIPPER',
+    'DANG_GIAO_HANG',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: searchController,
+            decoration: InputDecoration(
+              hintText: 'Tìm mã vận đơn, người nhận, địa chỉ...',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: searchController.text.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: searchController.clear,
+                      icon: const Icon(Icons.close),
+                    ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                _chip('Tất cả', null),
+                _chip('Chờ lấy', const {'CHO_LAY_HANG'}),
+                _chip('Đang giao', _delivering),
+                _chip('Đã giao', const {'DA_GIAO_HANG'}),
+                _chip('Đã hủy', const {'DA_HUY'}),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: onPickDate,
+                  icon: const Icon(Icons.date_range_outlined),
+                  label: Text(
+                    dateRange == null
+                        ? 'Chọn khoảng ngày'
+                        : '${_date(dateRange!.start)} – ${_date(dateRange!.end)}',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+              if (dateRange != null)
+                IconButton(
+                  tooltip: 'Bỏ lọc ngày',
+                  onPressed: onClearDate,
+                  icon: const Icon(Icons.close),
+                ),
+            ],
+          ),
+          Text(
+            resultCount == 0
+                ? 'Không tìm thấy đơn phù hợp'
+                : '$resultCount đơn hàng',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, Set<String>? statuses) {
+    final selected = _sameStatuses(selectedStatuses, statuses);
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onStatusesChanged(statuses),
+      ),
+    );
+  }
+
+  static bool _sameStatuses(Set<String>? first, Set<String>? second) {
+    if (first == null || second == null) return first == null && second == null;
+    return first.length == second.length && first.containsAll(second);
+  }
+
+  static String _date(DateTime value) =>
+      '${value.day.toString().padLeft(2, '0')}/'
+      '${value.month.toString().padLeft(2, '0')}/${value.year}';
 }
 
 class _OrderHistoryCard extends StatelessWidget {
@@ -95,6 +274,12 @@ class _OrderHistoryCard extends StatelessWidget {
     final status = '${order['trang_thai']}';
     final statusInfo = _status(status);
     final createdAt = DateTime.tryParse('${order['ngay_tao']}')?.toLocal();
+    final canTrack = const {
+      'CHO_LAY_HANG',
+      'DA_LAY_HANG',
+      'GIAO_CHO_SHIPPER',
+      'DANG_GIAO_HANG',
+    }.contains(status);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -162,6 +347,23 @@ class _OrderHistoryCard extends StatelessWidget {
                 ),
               ],
             ),
+            if (canTrack) ...[
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => OrderTrackingScreen(
+                        orderId: (order['id'] as num).toInt(),
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.my_location),
+                  label: const Text('Theo dõi đơn hàng'),
+                ),
+              ),
+            ],
           ],
         ),
       ),
