@@ -33,7 +33,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
   void initState() {
     super.initState();
     _refresh();
-    _timer = Timer.periodic(const Duration(seconds: 10), (_) => _refresh());
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _refresh());
   }
 
   @override
@@ -51,6 +51,12 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         'diem_den_vi_do',
         'diem_den_kinh_do',
       );
+      if (!mounted) return;
+      setState(() {
+        _tracking = tracking;
+        _loading = false;
+        _error = null;
+      });
       if (shipper != null && destination != null) {
         await _loadRoadRoute(shipper, destination);
       } else {
@@ -60,9 +66,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
       }
       if (!mounted) return;
       setState(() {
-        _tracking = tracking;
-        _loading = false;
-        _error = null;
+        // Vẽ lại tuyến đường, số km và ETA sau khi OSRM trả kết quả.
       });
       if (shipper != null && destination != null) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -70,7 +74,8 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
             _mapController.fitCamera(
               CameraFit.coordinates(
                 coordinates: [shipper, destination, ..._route],
-                padding: const EdgeInsets.all(55),
+                padding: const EdgeInsets.fromLTRB(55, 70, 55, 220),
+                maxZoom: 17.5,
               ),
             );
           }
@@ -166,8 +171,10 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                                 polylines: [
                                   Polyline(
                                     points: _route,
-                                    strokeWidth: 6,
+                                    strokeWidth: 7,
                                     color: AppColors.primary,
+                                    borderStrokeWidth: 3,
+                                    borderColor: Colors.white,
                                   ),
                                 ],
                               ),

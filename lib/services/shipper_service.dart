@@ -13,6 +13,25 @@ class ShipperService {
   final SupabaseClient? _clientOverride;
   SupabaseClient get _client => _clientOverride ?? SupabaseConfig.client;
 
+  Future<void> updateTrackingLocation({
+    required double latitude,
+    required double longitude,
+    double? accuracyMeters,
+  }) async {
+    try {
+      await _client.rpc(
+        'cap_nhat_vi_tri_shipper',
+        params: {
+          'p_vi_do': latitude,
+          'p_kinh_do': longitude,
+          'p_do_chinh_xac_met': accuracyMeters,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
   Future<Position> updateCurrentLocation() async {
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw const ShipperServiceException('Vui lòng bật GPS trên điện thoại.');
@@ -37,13 +56,10 @@ class ShipperService {
     );
 
     try {
-      await _client.rpc(
-        'cap_nhat_vi_tri_shipper',
-        params: {
-          'p_vi_do': position.latitude,
-          'p_kinh_do': position.longitude,
-          'p_do_chinh_xac_met': position.accuracy,
-        },
+      await updateTrackingLocation(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracyMeters: position.accuracy,
       );
       return position;
     } on PostgrestException catch (error) {

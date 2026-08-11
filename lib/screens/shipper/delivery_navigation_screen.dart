@@ -51,6 +51,10 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   String _instruction = 'Đi thẳng theo tuyến đường';
   double? _nextTurnMeters;
   String? _turnModifier;
+  DateTime? _lastLocationSyncAt;
+  LatLng? _lastSyncedPosition;
+  bool _locationSyncInProgress = false;
+  bool _detailsExpanded = true;
 
   String get _employeeName =>
       CustomerAuthService.currentEmployee?['ho_ten'] as String? ?? 'Shipper';
@@ -143,6 +147,13 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         _shipper = LatLng(current.latitude, current.longitude);
         _loadingRoute = false;
       });
+      unawaited(
+        _syncTrackingLocation(
+          _shipper!,
+          accuracyMeters: current.accuracy,
+          force: true,
+        ),
+      );
 
       _positionSubscription =
           Geolocator.getPositionStream(
@@ -160,9 +171,12 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
             setState(() {
               _shipper = updatedPosition;
             });
-            if (_navigationStarted) {
-              _mapController.move(updatedPosition, 17);
-            }
+            unawaited(
+              _syncTrackingLocation(
+                updatedPosition,
+                accuracyMeters: position.accuracy,
+              ),
+            );
             final lastOrigin = _lastRouteOrigin;
             if (_navigationStarted &&
                 !_loadingRoute &&
@@ -251,14 +265,55 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     }
   }
 
+  Future<void> _syncTrackingLocation(
+    LatLng position, {
+    double? accuracyMeters,
+    bool force = false,
+  }) async {
+    if (_locationSyncInProgress) return;
+    final now = DateTime.now();
+    final lastTime = _lastLocationSyncAt;
+    final lastPosition = _lastSyncedPosition;
+    final movedMeters = lastPosition == null
+        ? double.infinity
+        : const Distance().as(LengthUnit.Meter, lastPosition, position);
+    if (!force &&
+        lastTime != null &&
+        now.difference(lastTime) < const Duration(seconds: 1) &&
+        movedMeters < 8) {
+      return;
+    }
+
+    _locationSyncInProgress = true;
+    try {
+      await _shipperService.updateTrackingLocation(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracyMeters: accuracyMeters,
+      );
+      _lastLocationSyncAt = now;
+      _lastSyncedPosition = position;
+    } catch (_) {
+      // Giữ màn hình dẫn đường hoạt động nếu mạng tạm thời gián đoạn.
+    } finally {
+      _locationSyncInProgress = false;
+    }
+  }
+
   void _fitRoute() {
     if (_route.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _mapController.fitCamera(
         CameraFit.coordinates(
-          coordinates: _route,
-          padding: const EdgeInsets.fromLTRB(40, 80, 40, 250),
+          coordinates: [_shipper!, _target, ..._route],
+          padding: EdgeInsets.fromLTRB(
+            42,
+            150,
+            42,
+            _detailsExpanded ? 390 : 175,
+          ),
+          maxZoom: 18.5,
         ),
       );
     });
@@ -322,7 +377,10 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       _showError('Chưa lấy được vị trí hiện tại của shipper.');
       return;
     }
-    setState(() => _navigationStarted = true);
+    setState(() {
+      _navigationStarted = true;
+      _detailsExpanded = false;
+    });
     await _loadRoute();
   }
 
@@ -342,6 +400,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
     final simulationRoute = List<LatLng>.from(_route);
     var index = 0;
+    var cameraTick = 0;
     final pointsPerTick = (simulationRoute.length / 120)
         .ceil()
         .clamp(1, 20)
@@ -350,6 +409,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       _navigationStarted = true;
       _simulating = true;
       _simulatedThisStage = true;
+      _detailsExpanded = false;
     });
 
     _simulationTimer?.cancel();
@@ -371,9 +431,14 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
             ? 'Sắp đến điểm đích'
             : 'Tiếp tục đi theo tuyến đường';
       });
-      _mapController.move(current, 17);
+      unawaited(_syncTrackingLocation(current));
+      cameraTick++;
+      if (cameraTick == 1 || cameraTick % 4 == 0) {
+        _fitRoute();
+      }
 
       if (index >= simulationRoute.length - 1) {
+        unawaited(_syncTrackingLocation(current, force: true));
         _stopSimulation(reachedDestination: true);
       }
     });
@@ -648,8 +713,10 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
                   polylines: [
                     Polyline(
                       points: _route,
-                      strokeWidth: 6,
+                      strokeWidth: 7,
                       color: AppColors.primary,
+                      borderStrokeWidth: 3,
+                      borderColor: Colors.white,
                     ),
                   ],
                 ),
@@ -749,112 +816,153 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              _toReceiver ? 'Đang giao tới người nhận' : 'Đang đến lấy hàng',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 6),
-            Text(address, maxLines: 2, overflow: TextOverflow.ellipsis),
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.phone_outlined, color: AppColors.primary),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          contactName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        Text(
-                          contactPhone.isEmpty
-                              ? 'Chưa có số điện thoại'
-                              : contactPhone,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _toReceiver
+                        ? 'Đang giao tới người nhận'
+                        : 'Đang đến lấy hàng',
+                    style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  IconButton.filled(
-                    tooltip: 'Gọi điện',
-                    onPressed: contactPhone.isEmpty
-                        ? null
-                        : () => _callPhone(contactPhone),
-                    icon: const Icon(Icons.call),
-                  ),
-                ],
-              ),
-            ),
-            if (_distanceKm != null && _durationMinutes != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                '${_distanceKm!.toStringAsFixed(1)} km • '
-                '${_durationMinutes!.ceil()} phút',
-                style: const TextStyle(
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.bold,
                 ),
-              ),
+                IconButton(
+                  tooltip: _detailsExpanded ? 'Thu gọn' : 'Mở thông tin',
+                  onPressed: () {
+                    setState(() => _detailsExpanded = !_detailsExpanded);
+                    _fitRoute();
+                  },
+                  icon: Icon(
+                    _detailsExpanded
+                        ? Icons.keyboard_arrow_down
+                        : Icons.keyboard_arrow_up,
+                  ),
+                ),
+              ],
+            ),
+            if (!_detailsExpanded) ...[
+              Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (_distanceKm != null && _durationMinutes != null)
+                Text(
+                  '${_distanceKm!.toStringAsFixed(1)} km • '
+                  '${_durationMinutes!.ceil()} phút',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
             ],
-            if (_error != null) ...[
+            if (_detailsExpanded) ...[
               const SizedBox(height: 6),
-              Text(_error!, style: const TextStyle(color: AppColors.error)),
+              Text(address, maxLines: 2, overflow: TextOverflow.ellipsis),
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.phone_outlined, color: AppColors.primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            contactName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          Text(
+                            contactPhone.isEmpty
+                                ? 'Chưa có số điện thoại'
+                                : contactPhone,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton.filled(
+                      tooltip: 'Gọi điện',
+                      onPressed: contactPhone.isEmpty
+                          ? null
+                          : () => _callPhone(contactPhone),
+                      icon: const Icon(Icons.call),
+                    ),
+                  ],
+                ),
+              ),
+              if (_distanceKm != null && _durationMinutes != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '${_distanceKm!.toStringAsFixed(1)} km • '
+                  '${_durationMinutes!.ceil()} phút',
+                  style: const TextStyle(
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+              if (_error != null) ...[
+                const SizedBox(height: 6),
+                Text(_error!, style: const TextStyle(color: AppColors.error)),
+              ],
+              const SizedBox(height: 12),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _loadingRoute ? null : _startNavigation,
+                  icon: Icon(
+                    _navigationStarted
+                        ? Icons.navigation_rounded
+                        : Icons.directions_rounded,
+                  ),
+                  label: Text(
+                    _navigationStarted
+                        ? 'Cập nhật chỉ đường'
+                        : 'Bắt đầu chỉ đường',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: _loadingRoute ? null : _toggleSimulation,
+                  icon: Icon(
+                    _simulating
+                        ? Icons.pause_circle_outline
+                        : Icons.play_circle_outline,
+                  ),
+                  label: Text(
+                    _simulating ? 'Dừng giả lập' : 'Giả lập di chuyển',
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: _loadingRoute || _updatingStatus
+                      ? null
+                      : _toReceiver
+                      ? _completeDelivery
+                      : _switchToDelivery,
+                  icon: Icon(
+                    _toReceiver ? Icons.check_circle : Icons.inventory,
+                  ),
+                  label: Text(_toReceiver ? 'Đã giao hàng' : 'Đã lấy hàng'),
+                ),
+              ),
             ],
-            const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _loadingRoute ? null : _startNavigation,
-                icon: Icon(
-                  _navigationStarted
-                      ? Icons.navigation_rounded
-                      : Icons.directions_rounded,
-                ),
-                label: Text(
-                  _navigationStarted
-                      ? 'Cập nhật chỉ đường'
-                      : 'Bắt đầu chỉ đường',
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: _loadingRoute ? null : _toggleSimulation,
-                icon: Icon(
-                  _simulating
-                      ? Icons.pause_circle_outline
-                      : Icons.play_circle_outline,
-                ),
-                label: Text(_simulating ? 'Dừng giả lập' : 'Giả lập di chuyển'),
-              ),
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton.icon(
-                onPressed: _loadingRoute || _updatingStatus
-                    ? null
-                    : _toReceiver
-                    ? _completeDelivery
-                    : _switchToDelivery,
-                icon: Icon(_toReceiver ? Icons.check_circle : Icons.inventory),
-                label: Text(_toReceiver ? 'Đã giao hàng' : 'Đã lấy hàng'),
-              ),
-            ),
           ],
         ),
       ),
