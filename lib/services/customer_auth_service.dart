@@ -43,34 +43,7 @@ class CustomerAuthService {
       if (user == null) {
         throw const CustomerAuthException('Email hoặc mật khẩu không đúng.');
       }
-
-      try {
-        final customer = await _client
-            .from('khach_hang')
-            .select('id, auth_user_id, ho_ten, so_dien_thoai, email, dia_chi, avt, trang_thai')
-            .eq('auth_user_id', user.id)
-            .single();
-        if (customer['trang_thai'] != 'HOAT_DONG') {
-          throw const CustomerAuthException('Tài khoản khách hàng đang bị khóa.');
-        }
-        currentCustomer = Map<String, dynamic>.from(customer);
-        currentEmployee = null;
-        return LoginResult(type: AccountType.customer, profile: currentCustomer!);
-      } on PostgrestException {
-        final employee = await _client
-            .from('nhan_vien')
-            .select('id, auth_user_id, ho_ten, so_dien_thoai, email, kho_hang_id, vai_tro, trang_thai, trang_thai_duyet')
-            .eq('auth_user_id', user.id)
-            .single();
-        if (employee['trang_thai'] != 'HOAT_DONG' ||
-            employee['trang_thai_duyet'] != 'DA_DUYET') {
-          await _client.auth.signOut();
-          throw const CustomerAuthException('Tài khoản nhân viên chưa được duyệt hoặc đã bị khóa.');
-        }
-        currentEmployee = Map<String, dynamic>.from(employee);
-        currentCustomer = null;
-        return LoginResult(type: AccountType.employee, profile: currentEmployee!);
-      }
+      return _loadProfile(user);
     } on CustomerAuthException {
       rethrow;
     } on AuthException catch (error) {
@@ -84,6 +57,73 @@ class CustomerAuthService {
         'Không thể kết nối máy chủ. Vui lòng thử lại.',
       );
     }
+  }
+
+  Future<LoginResult?> restoreSession() async {
+    final user = _client.auth.currentUser;
+    if (user == null || _client.auth.currentSession == null) return null;
+    try {
+      return await _loadProfile(user);
+    } catch (_) {
+      await _client.auth.signOut();
+      currentCustomer = null;
+      currentEmployee = null;
+      return null;
+    }
+  }
+
+  Future<LoginResult> _loadProfile(User user) async {
+    final metadataRole = '${user.userMetadata?['vai_tro'] ?? ''}';
+    if (metadataRole == 'NHAN_VIEN') {
+      final employee = await _employeeProfile(user.id);
+      if (employee != null) return _employeeResult(employee);
+    }
+
+    final customer = await _client
+        .from('khach_hang')
+        .select(
+          'id, auth_user_id, ho_ten, so_dien_thoai, email, dia_chi, avt, trang_thai',
+        )
+        .eq('auth_user_id', user.id)
+        .maybeSingle();
+    if (customer != null) {
+      if (customer['trang_thai'] != 'HOAT_DONG') {
+        throw const CustomerAuthException('Tài khoản khách hàng đang bị khóa.');
+      }
+      currentCustomer = Map<String, dynamic>.from(customer);
+      currentEmployee = null;
+      return LoginResult(type: AccountType.customer, profile: currentCustomer!);
+    }
+
+    final employee = await _employeeProfile(user.id);
+    if (employee != null) return _employeeResult(employee);
+    throw const CustomerAuthException(
+      'Không tìm thấy hồ sơ của tài khoản này.',
+    );
+  }
+
+  Future<Map<String, dynamic>?> _employeeProfile(String userId) async {
+    final employee = await _client
+        .from('nhan_vien')
+        .select(
+          'id, auth_user_id, ho_ten, so_dien_thoai, email, kho_hang_id, '
+          'vai_tro, trang_thai, trang_thai_duyet',
+        )
+        .eq('auth_user_id', userId)
+        .maybeSingle();
+    return employee == null ? null : Map<String, dynamic>.from(employee);
+  }
+
+  LoginResult _employeeResult(Map<String, dynamic> employee) {
+    if (employee['trang_thai'] != 'HOAT_DONG' ||
+        employee['trang_thai_duyet'] != 'DA_DUYET') {
+      throw const CustomerAuthException(
+        'Tài khoản nhân viên chưa được duyệt hoặc đã bị khóa.',
+      );
+    }
+    currentEmployee = employee;
+    currentCustomer = null;
+    return LoginResult(type: AccountType.employee, profile: currentEmployee!);
   }
 
   Future<String> register({

@@ -4,6 +4,10 @@ import 'core/config/supabase_config.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/customer/customer_home_screen.dart';
+import 'screens/employee/delivery_home_screen.dart';
+import 'screens/employee/employee_home_screen.dart';
+import 'services/customer_auth_service.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -30,7 +34,42 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeProvider.themeMode,
-      home: const LoginScreen(),
+      home: const _SessionGate(),
+    );
+  }
+}
+
+class _SessionGate extends StatefulWidget {
+  const _SessionGate();
+
+  @override
+  State<_SessionGate> createState() => _SessionGateState();
+}
+
+class _SessionGateState extends State<_SessionGate> {
+  late final Future<LoginResult?> _session = CustomerAuthService()
+      .restoreSession();
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<LoginResult?>(
+      future: _session,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final result = snapshot.data;
+        if (result == null) return const LoginScreen();
+        if (result.type == AccountType.customer) {
+          return const CustomerHomeScreen();
+        }
+        final role = result.profile['vai_tro'] as String?;
+        return role == 'SHIPPER' || role == 'VAN_CHUYEN'
+            ? const DeliveryHomeScreen()
+            : const EmployeeHomeScreen();
+      },
     );
   }
 }

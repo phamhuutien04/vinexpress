@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
@@ -30,6 +32,22 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
     try {
       final orders = await _service.getActiveOrders();
       if (mounted) setState(() => _activeOrders = orders);
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    }
+  }
+
+  Future<void> _refreshOrdersFromSavedLocation() async {
+    try {
+      final results = await Future.wait([
+        _service.getActiveOrders(),
+        _service.getNearbyOrders(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _activeOrders = results[0];
+        _orders = results[1];
+      });
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
     }
@@ -71,13 +89,20 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
           backgroundColor: AppColors.success,
         ),
       );
-      await Navigator.of(context).push(
+      setState(() => _loading = false);
+      final completed = await Navigator.of(context).push<bool>(
         MaterialPageRoute(
           builder: (_) => DeliveryNavigationScreen(order: order),
         ),
       );
       if (!mounted) return;
-      await _updateLocationAndLoad();
+      if (completed == true) {
+        setState(() {
+          _orders.removeWhere((item) => item['id'] == order['id']);
+          _activeOrders.removeWhere((item) => item['id'] == order['id']);
+        });
+      }
+      unawaited(_refreshOrdersFromSavedLocation());
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
     } finally {
@@ -108,10 +133,16 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
   }
 
   Future<void> _resume(Map<String, dynamic> order) async {
-    await Navigator.of(context).push(
+    final completed = await Navigator.of(context).push<bool>(
       MaterialPageRoute(builder: (_) => DeliveryNavigationScreen(order: order)),
     );
-    if (mounted) await _updateLocationAndLoad();
+    if (!mounted) return;
+    if (completed == true) {
+      setState(() {
+        _activeOrders.removeWhere((item) => item['id'] == order['id']);
+      });
+    }
+    unawaited(_refreshOrdersFromSavedLocation());
   }
 
   @override

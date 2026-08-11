@@ -547,7 +547,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         evidenceUrl: evidenceUrl,
       );
       if (!mounted) return;
-      Navigator.pop(context);
+      Navigator.pop(context, true);
     } on CloudinaryUploadException catch (error) {
       if (mounted) _showError(error.message);
     } on ShipperServiceException catch (error) {
