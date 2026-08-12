@@ -126,7 +126,10 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                       resultCount: filteredOrders.length,
                     );
                   }
-                  return _OrderHistoryCard(order: filteredOrders[index - 1]);
+                  return _OrderHistoryCard(
+                    order: filteredOrders[index - 1],
+                    onRated: _load,
+                  );
                 },
               ),
       ),
@@ -266,8 +269,9 @@ class _OrderFilters extends StatelessWidget {
 }
 
 class _OrderHistoryCard extends StatelessWidget {
-  const _OrderHistoryCard({required this.order});
+  const _OrderHistoryCard({required this.order, required this.onRated});
   final Map<String, dynamic> order;
+  final Future<void> Function() onRated;
 
   @override
   Widget build(BuildContext context) {
@@ -280,6 +284,7 @@ class _OrderHistoryCard extends StatelessWidget {
       'GIAO_CHO_SHIPPER',
       'DANG_GIAO_HANG',
     }.contains(status);
+    final rating = (order['diem_danh_gia'] as num?)?.toInt();
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -364,10 +369,152 @@ class _OrderHistoryCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (status == 'DA_GIAO_HANG') ...[
+              const SizedBox(height: 12),
+              if (rating == null)
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _showRatingDialog(context),
+                    icon: const Icon(Icons.star_outline),
+                    label: Text(
+                      'Đánh giá ${order['nhan_vien_giao_ten'] ?? 'nhân viên giao hàng'}',
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: .10),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          ...List.generate(
+                            5,
+                            (index) => Icon(
+                              index < rating ? Icons.star : Icons.star_border,
+                              color: Colors.amber,
+                              size: 22,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Expanded(
+                            child: Text(
+                              'Đã đánh giá',
+                              textAlign: TextAlign.end,
+                              style: TextStyle(
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if ('${order['binh_luan_danh_gia'] ?? ''}'.isNotEmpty)
+                        Text('${order['binh_luan_danh_gia']}'),
+                    ],
+                  ),
+                ),
+            ],
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _showRatingDialog(BuildContext context) async {
+    final comment = TextEditingController();
+    var stars = 5;
+    var saving = false;
+    final saved = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          title: const Text('Đánh giá nhân viên giao hàng'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${order['nhan_vien_giao_ten'] ?? 'Nhân viên giao hàng'}'),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(
+                    5,
+                    (index) => IconButton(
+                      onPressed: saving
+                          ? null
+                          : () => setDialogState(() => stars = index + 1),
+                      iconSize: 34,
+                      icon: Icon(
+                        index < stars ? Icons.star : Icons.star_border,
+                        color: Colors.amber,
+                      ),
+                    ),
+                  ),
+                ),
+                TextField(
+                  controller: comment,
+                  enabled: !saving,
+                  maxLines: 3,
+                  maxLength: 500,
+                  decoration: const InputDecoration(
+                    labelText: 'Nhận xét (không bắt buộc)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: saving ? null : () => Navigator.pop(context, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: saving
+                  ? null
+                  : () async {
+                      setDialogState(() => saving = true);
+                      try {
+                        await OrderService().rateDeliveredOrder(
+                          orderId: (order['id'] as num).toInt(),
+                          stars: stars,
+                          comment: comment.text,
+                        );
+                        if (context.mounted) Navigator.pop(context, true);
+                      } on OrderServiceException catch (error) {
+                        setDialogState(() => saving = false);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(error.message),
+                              backgroundColor: AppColors.error,
+                            ),
+                          );
+                        }
+                      }
+                    },
+              child: saving
+                  ? const SizedBox.square(
+                      dimension: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Text('Gửi đánh giá'),
+            ),
+          ],
+        ),
+      ),
+    );
+    comment.dispose();
+    if (saved == true) await onRated();
   }
 
   Widget _line(IconData icon, String text, Color color) => Padding(

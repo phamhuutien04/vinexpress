@@ -58,6 +58,25 @@ class OrderService {
     }
   }
 
+  Future<void> rateDeliveredOrder({
+    required int orderId,
+    required int stars,
+    String? comment,
+  }) async {
+    try {
+      await _client.rpc(
+        'danh_gia_shipper_don_hang',
+        params: {
+          'p_don_hang_id': orderId,
+          'p_diem': stars,
+          'p_binh_luan': comment?.trim(),
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw OrderServiceException(error.message);
+    }
+  }
+
   Future<OrderQuote> calculateShippingQuote({
     required String senderAddress,
     required String receiverAddress,
