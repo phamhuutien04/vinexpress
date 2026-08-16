@@ -58,6 +58,23 @@ class OrderService {
     }
   }
 
+  Future<void> cancelCustomerOrder({
+    required int orderId,
+    String? reason,
+  }) async {
+    try {
+      await _client.rpc(
+        'huy_don_hang_khach_hang',
+        params: {
+          'p_don_hang_id': orderId,
+          'p_ly_do': reason?.trim(),
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw OrderServiceException(error.message);
+    }
+  }
+
   Future<void> rateDeliveredOrder({
     required int orderId,
     required int stars,

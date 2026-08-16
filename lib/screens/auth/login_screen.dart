@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
+import '../admin/admin_home_screen.dart';
 import '../customer/customer_home_screen.dart';
 import '../employee/delivery_home_screen.dart';
 import '../employee/employee_home_screen.dart';
@@ -46,6 +47,7 @@ class _LoginScreenState extends State<LoginScreen> {
               return const CustomerHomeScreen();
             }
             final role = result.profile['vai_tro'] as String?;
+            if (role == 'ADMIN') return const AdminHomeScreen();
             return role == 'SHIPPER' || role == 'VAN_CHUYEN'
                 ? const DeliveryHomeScreen()
                 : const EmployeeHomeScreen();

@@ -474,4 +474,72 @@ GRANT EXECUTE ON FUNCTION public.tao_don_hang_khach_hang(
 
 REVOKE ALL ON FUNCTION public.don_hang_cua_khach_hang() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.don_hang_cua_khach_hang() TO authenticated;
+
+-- Khách chỉ được hủy khi đơn vẫn chờ lấy và chưa có shipper nhận.
+DROP FUNCTION IF EXISTS public.huy_don_hang_khach_hang(BIGINT, TEXT);
+
+CREATE OR REPLACE FUNCTION public.huy_don_hang_khach_hang(
+    p_don_hang_id BIGINT,
+    p_ly_do TEXT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_don public.don_hang%ROWTYPE;
+BEGIN
+    SELECT dh.* INTO v_don
+    FROM public.don_hang dh
+    JOIN public.khach_hang kh ON kh.id = dh.khach_hang_id
+    WHERE dh.id = p_don_hang_id
+      AND kh.auth_user_id = auth.uid()
+    FOR UPDATE OF dh;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Đơn hàng không tồn tại hoặc không thuộc tài khoản này';
+    END IF;
+
+    IF v_don.trang_thai <> 'CHO_LAY_HANG'
+       OR v_don.nhan_vien_hien_tai_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Không thể hủy vì shipper đã nhận đơn hoặc đơn không còn chờ lấy hàng';
+    END IF;
+
+    UPDATE public.don_hang
+    SET trang_thai = 'DA_HUY',
+        ghi_chu = CONCAT_WS(
+            E'\n', NULLIF(BTRIM(v_don.ghi_chu), ''),
+            'Khách hàng hủy đơn' || CASE
+                WHEN NULLIF(BTRIM(p_ly_do), '') IS NULL THEN ''
+                ELSE ': ' || BTRIM(p_ly_do)
+            END
+        ),
+        ngay_cap_nhat = NOW()
+    WHERE id = p_don_hang_id;
+
+    -- Bảng lời mời được tạo bởi phần phân đơn shipper. Dynamic SQL giúp
+    -- migration này vẫn chạy được nếu phần phân đơn chưa được cài.
+    IF to_regclass('public.loi_moi_don_hang_shipper') IS NOT NULL THEN
+        EXECUTE $sql$
+            UPDATE public.loi_moi_don_hang_shipper
+            SET trang_thai = 'HET_HAN', phan_hoi_luc = NOW()
+            WHERE don_hang_id = $1 AND trang_thai = 'DANG_MOI'
+        $sql$ USING p_don_hang_id;
+    END IF;
+
+    INSERT INTO public.nhat_ky_don_hang (
+        don_hang_id, khach_hang_id, hanh_dong,
+        trang_thai_cu, trang_thai_moi, ghi_chu
+    ) VALUES (
+        v_don.id, v_don.khach_hang_id, 'Khách hàng hủy đơn',
+        v_don.trang_thai, 'DA_HUY', NULLIF(BTRIM(p_ly_do), '')
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.huy_don_hang_khach_hang(BIGINT, TEXT)
+FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.huy_don_hang_khach_hang(BIGINT, TEXT)
+TO authenticated;
 NOTIFY pgrst, 'reload schema';

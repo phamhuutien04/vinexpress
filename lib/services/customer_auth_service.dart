@@ -153,6 +153,14 @@ class CustomerAuthService {
     } on CustomerAuthException {
       rethrow;
     } on AuthException catch (error) {
+      final normalized = error.message.toLowerCase();
+      if (normalized.contains('database error saving new user') ||
+          normalized.contains('unexpected_failure')) {
+        throw const CustomerAuthException(
+          'Không tạo được hồ sơ khách hàng. Email hoặc số điện thoại có thể '
+          'đã được đăng ký. Vui lòng dùng thông tin khác.',
+        );
+      }
       throw CustomerAuthException(_authMessage(error.message));
     } catch (_) {
       throw const CustomerAuthException(
@@ -177,12 +185,30 @@ class CustomerAuthService {
 
     try {
       final normalizedEmail = email.trim().toLowerCase();
+      final normalizedPhone = _normalizePhone(phone);
+      final availability = await _client.rpc(
+        'kiem_tra_dang_ky_nhan_vien',
+        params: {
+          'p_email': normalizedEmail,
+          'p_so_dien_thoai': normalizedPhone,
+        },
+      );
+      if (availability == 'EMAIL_DA_TON_TAI') {
+        throw const CustomerAuthException(
+          'Email này đã được đăng ký. Vui lòng dùng email khác.',
+        );
+      }
+      if (availability == 'SO_DIEN_THOAI_DA_TON_TAI') {
+        throw const CustomerAuthException(
+          'Số điện thoại này đã được đăng ký cho nhân viên khác.',
+        );
+      }
       final response = await _client.auth.signUp(
         email: normalizedEmail,
         password: password,
         data: {
           'ho_ten': fullName.trim(),
-          'so_dien_thoai': _normalizePhone(phone),
+          'so_dien_thoai': normalizedPhone,
           'vai_tro': 'NHAN_VIEN',
           'vai_tro_nhan_vien': employeeRole,
         },
@@ -194,7 +220,24 @@ class CustomerAuthService {
     } on CustomerAuthException {
       rethrow;
     } on AuthException catch (error) {
+      final normalized = error.message.toLowerCase();
+      if (normalized.contains('database error saving new user') ||
+          normalized.contains('unexpected_failure')) {
+        throw const CustomerAuthException(
+          'Không tạo được hồ sơ nhân viên. Email hoặc số điện thoại có thể '
+          'đã được đăng ký, hoặc trigger nhân viên chưa được cài đặt.',
+        );
+      }
       throw CustomerAuthException(_authMessage(error.message));
+    } on PostgrestException catch (error) {
+      if (error.code == 'PGRST202' ||
+          error.message.contains('kiem_tra_dang_ky_nhan_vien')) {
+        throw const CustomerAuthException(
+          'Chưa cài chức năng đăng ký nhân viên trên Supabase. '
+          'Vui lòng chạy lại file employee_auth_setup.sql.',
+        );
+      }
+      throw CustomerAuthException(error.message);
     } catch (_) {
       throw const CustomerAuthException(
         'Không thể kết nối máy chủ. Vui lòng thử lại.',
@@ -230,8 +273,8 @@ class CustomerAuthService {
     }
     if (normalized.contains('database error saving new user') ||
         normalized.contains('unexpected_failure')) {
-      return 'Máy chủ chưa tạo được hồ sơ nhân viên. Vui lòng chạy file '
-          'supabase/employee_auth_setup.sql trong Supabase SQL Editor.';
+      return 'Máy chủ không tạo được hồ sơ. Email hoặc số điện thoại có thể '
+          'đã được đăng ký.';
     }
     return message;
   }

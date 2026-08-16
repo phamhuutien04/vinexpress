@@ -21,17 +21,67 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
   bool _loading = false;
   bool _locationReady = false;
   String? _locationText;
+  Timer? _offerTimer;
+  bool _refreshingExpiredOffer = false;
+  int _offerTicks = 0;
 
   @override
   void initState() {
     super.initState();
+    _offerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted || _activeOrders.isNotEmpty) return;
+      _offerTicks++;
+      final expiredIds = _orders.where((order) {
+        final expiresAt = DateTime.tryParse(
+          '${order['loi_moi_het_han_luc'] ?? ''}',
+        )?.toLocal();
+        return expiresAt != null && !expiresAt.isAfter(DateTime.now());
+      }).map((order) => order['id']).toSet();
+
+      if (expiredIds.isNotEmpty) {
+        setState(
+          () => _orders.removeWhere(
+            (order) => expiredIds.contains(order['id']),
+          ),
+        );
+        unawaited(_refreshExpiredOffer());
+      } else if (_orders.isNotEmpty) {
+        setState(() {});
+      }
+
+      // Tự lấy lời mời mới, không bắt shipper phải nhấn cập nhật vị trí.
+      if (_locationReady && _offerTicks % 5 == 0) {
+        unawaited(_refreshExpiredOffer());
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadActiveOrders());
+  }
+
+  @override
+  void dispose() {
+    _offerTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _refreshExpiredOffer() async {
+    if (_refreshingExpiredOffer) return;
+    _refreshingExpiredOffer = true;
+    try {
+      await _refreshOrdersFromSavedLocation();
+    } finally {
+      _refreshingExpiredOffer = false;
+    }
   }
 
   Future<void> _loadActiveOrders() async {
     try {
       final orders = await _service.getActiveOrders();
-      if (mounted) setState(() => _activeOrders = orders);
+      if (mounted) {
+        setState(() {
+          _activeOrders = orders;
+          if (orders.isNotEmpty) _orders = [];
+        });
+      }
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
     }
@@ -46,7 +96,7 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
       if (!mounted) return;
       setState(() {
         _activeOrders = results[0];
-        _orders = results[1];
+        _orders = results[0].isEmpty ? results[1] : [];
       });
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
@@ -68,7 +118,7 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
             '${position.latitude.toStringAsFixed(5)}, '
             '${position.longitude.toStringAsFixed(5)}';
         _activeOrders = results[0];
-        _orders = results[1];
+        _orders = results[0].isEmpty ? results[1] : [];
       });
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
@@ -104,7 +154,17 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
       }
       unawaited(_refreshOrdersFromSavedLocation());
     } on ShipperServiceException catch (error) {
-      if (mounted) _showError(error.message);
+      if (!mounted) return;
+      final expired = error.message.contains('hết 30 giây') ||
+          error.message.contains('không còn khả dụng');
+      if (expired) {
+        setState(
+          () => _orders.removeWhere((item) => item['id'] == order['id']),
+        );
+        unawaited(_refreshExpiredOffer());
+      } else {
+        _showError(error.message);
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -229,6 +289,25 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
               _ActiveOrderCard(order: order, onResume: () => _resume(order)),
         ),
         const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppColors.warning.withValues(alpha: .12),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: const Row(
+            children: [
+              Icon(Icons.info_outline, color: AppColors.warning),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Hãy hoàn thành đơn hiện tại trước khi nhận đơn mới.',
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
       ],
       Row(
         children: [
@@ -238,11 +317,18 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
               style: Theme.of(context).textTheme.titleMedium,
             ),
           ),
-          Text('${_orders.length} đơn'),
+          Text(
+            _activeOrders.isNotEmpty ? 'Đang khóa' : '${_orders.length} đơn',
+          ),
         ],
       ),
       const SizedBox(height: 12),
-      if (_loading)
+      if (_activeOrders.isNotEmpty)
+        const _EmptyState(
+          icon: Icons.lock_clock_outlined,
+          text: 'Hoàn thành đơn đang giao để mở nhận đơn mới',
+        )
+      else if (_loading)
         const Center(
           child: Padding(
             padding: EdgeInsets.all(32),
@@ -318,6 +404,13 @@ class _NearbyOrderCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final distance = (order['khoang_cach_den_diem_lay_km'] as num).toDouble();
+    final expiresAt = DateTime.tryParse(
+      '${order['loi_moi_het_han_luc'] ?? ''}',
+    )?.toLocal();
+    final secondsLeft = expiresAt == null
+        ? 0
+        : ((expiresAt.difference(DateTime.now()).inMilliseconds + 999) ~/ 1000)
+            .clamp(0, 30);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -334,10 +427,14 @@ class _NearbyOrderCard extends StatelessWidget {
                   ),
                 ),
                 Chip(
-                  avatar: const Icon(Icons.near_me_outlined, size: 16),
-                  label: Text('${distance.toStringAsFixed(1)} km'),
+                  avatar: const Icon(Icons.timer_outlined, size: 16),
+                  label: Text('Còn ${secondsLeft}s'),
                 ),
               ],
+            ),
+            Text(
+              '${distance.toStringAsFixed(1)} km tới điểm lấy • Chỉ bạn đang được mời',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 10),
             _line(Icons.person_outline, order['nguoi_gui_ten'] as String),
@@ -355,7 +452,7 @@ class _NearbyOrderCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: onReject,
+                    onPressed: secondsLeft > 0 ? onReject : null,
                     child: const Text('Từ chối'),
                   ),
                 ),
@@ -363,7 +460,7 @@ class _NearbyOrderCard extends StatelessWidget {
                 Expanded(
                   flex: 2,
                   child: FilledButton.icon(
-                    onPressed: onAccept,
+                    onPressed: secondsLeft > 0 ? onAccept : null,
                     icon: const Icon(Icons.delivery_dining_rounded),
                     label: const Text('Nhận đơn'),
                   ),

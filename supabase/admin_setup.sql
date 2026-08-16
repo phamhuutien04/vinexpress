@@ -1,0 +1,241 @@
+-- VINEXPRESS - QUYỀN VÀ API QUẢN TRỊ CẤP CAO NHẤT
+-- Chạy file này trong Supabase SQL Editor sau employee_auth_setup.sql.
+
+CREATE OR REPLACE FUNCTION public.la_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.nhan_vien nv
+        WHERE nv.auth_user_id = auth.uid()
+          AND nv.vai_tro = 'ADMIN'
+          AND nv.trang_thai_duyet = 'DA_DUYET'
+          AND nv.trang_thai = 'HOAT_DONG'
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_tong_quan()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+    v_ket_qua JSONB;
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được truy cập chức năng này';
+    END IF;
+
+    SELECT jsonb_build_object(
+        'tong_nhan_vien', (SELECT COUNT(*) FROM public.nhan_vien),
+        'nhan_vien_cho_duyet', (
+            SELECT COUNT(*) FROM public.nhan_vien
+            WHERE trang_thai_duyet = 'CHO_DUYET'
+        ),
+        'tong_khach_hang', (SELECT COUNT(*) FROM public.khach_hang),
+        'tong_don_hang', (SELECT COUNT(*) FROM public.don_hang),
+        'don_cho_lay', (
+            SELECT COUNT(*) FROM public.don_hang
+            WHERE trang_thai = 'CHO_LAY_HANG'
+        ),
+        'don_dang_giao', (
+            SELECT COUNT(*) FROM public.don_hang
+            WHERE trang_thai IN (
+                'DA_LAY_HANG', 'DANG_VAN_CHUYEN',
+                'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG'
+            )
+        ),
+        'don_da_giao', (
+            SELECT COUNT(*) FROM public.don_hang
+            WHERE trang_thai = 'DA_GIAO_HANG'
+        ),
+        'tong_doanh_thu_van_chuyen', (
+            SELECT COALESCE(SUM(phi_van_chuyen), 0)
+            FROM public.don_hang WHERE trang_thai = 'DA_GIAO_HANG'
+        )
+    ) INTO v_ket_qua;
+
+    RETURN v_ket_qua;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_nhan_vien()
+RETURNS TABLE (
+    id BIGINT,
+    auth_user_id UUID,
+    ho_ten VARCHAR,
+    so_dien_thoai VARCHAR,
+    email VARCHAR,
+    vai_tro VARCHAR,
+    trang_thai_duyet VARCHAR,
+    trang_thai VARCHAR,
+    kho_hang_id BIGINT,
+    ten_kho VARCHAR,
+    ngay_tao TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem toàn bộ nhân viên';
+    END IF;
+
+    RETURN QUERY
+    SELECT nv.id, nv.auth_user_id, nv.ho_ten::VARCHAR,
+           nv.so_dien_thoai::VARCHAR, nv.email::VARCHAR,
+           nv.vai_tro::VARCHAR, nv.trang_thai_duyet::VARCHAR,
+           nv.trang_thai::VARCHAR, nv.kho_hang_id,
+           kh.ten_kho::VARCHAR, nv.ngay_tao
+    FROM public.nhan_vien nv
+    LEFT JOIN public.kho_hang kh ON kh.id = nv.kho_hang_id
+    ORDER BY
+        CASE WHEN nv.trang_thai_duyet = 'CHO_DUYET' THEN 0 ELSE 1 END,
+        nv.ngay_tao DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_khach_hang()
+RETURNS TABLE (
+    id BIGINT,
+    ho_ten VARCHAR,
+    so_dien_thoai VARCHAR,
+    email VARCHAR,
+    dia_chi TEXT,
+    trang_thai VARCHAR,
+    ngay_tao TIMESTAMPTZ,
+    tong_don BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem toàn bộ khách hàng';
+    END IF;
+
+    RETURN QUERY
+    SELECT kh.id, kh.ho_ten::VARCHAR, kh.so_dien_thoai::VARCHAR,
+           kh.email::VARCHAR, kh.dia_chi, kh.trang_thai::VARCHAR,
+           kh.ngay_tao, COUNT(dh.id)::BIGINT
+    FROM public.khach_hang kh
+    LEFT JOIN public.don_hang dh ON dh.khach_hang_id = kh.id
+    GROUP BY kh.id
+    ORDER BY kh.ngay_tao DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_don_hang()
+RETURNS TABLE (
+    id BIGINT,
+    ma_van_don VARCHAR,
+    trang_thai VARCHAR,
+    khach_hang_ten VARCHAR,
+    nguoi_gui_dia_chi TEXT,
+    nguoi_nhan_ten VARCHAR,
+    nguoi_nhan_dia_chi TEXT,
+    phi_van_chuyen NUMERIC,
+    cod NUMERIC,
+    shipper_ten VARCHAR,
+    ngay_tao TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem toàn bộ đơn hàng';
+    END IF;
+
+    RETURN QUERY
+    SELECT dh.id, dh.ma_van_don::VARCHAR, dh.trang_thai::VARCHAR,
+           kh.ho_ten::VARCHAR, dh.nguoi_gui_dia_chi,
+           dh.nguoi_nhan_ten::VARCHAR,
+           dh.nguoi_nhan_dia_chi, dh.phi_van_chuyen, dh.cod,
+           nv.ho_ten::VARCHAR, dh.ngay_tao
+    FROM public.don_hang dh
+    JOIN public.khach_hang kh ON kh.id = dh.khach_hang_id
+    LEFT JOIN public.nhan_vien nv ON nv.id = dh.nhan_vien_hien_tai_id
+    ORDER BY dh.ngay_tao DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_cap_nhat_nhan_vien(
+    p_nhan_vien_id BIGINT,
+    p_trang_thai_duyet TEXT DEFAULT NULL,
+    p_trang_thai TEXT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_admin_id BIGINT;
+BEGIN
+    SELECT nv.id INTO v_admin_id
+    FROM public.nhan_vien nv
+    WHERE nv.auth_user_id = auth.uid()
+      AND nv.vai_tro = 'ADMIN'
+      AND nv.trang_thai_duyet = 'DA_DUYET'
+      AND nv.trang_thai = 'HOAT_DONG';
+
+    IF v_admin_id IS NULL THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được cập nhật nhân viên';
+    END IF;
+    IF p_nhan_vien_id = v_admin_id AND p_trang_thai = 'TAM_KHOA' THEN
+        RAISE EXCEPTION 'ADMIN không thể tự khóa tài khoản của mình';
+    END IF;
+    IF p_trang_thai_duyet IS NOT NULL
+       AND p_trang_thai_duyet NOT IN ('CHO_DUYET', 'DA_DUYET', 'TU_CHOI') THEN
+        RAISE EXCEPTION 'Trạng thái duyệt không hợp lệ';
+    END IF;
+    IF p_trang_thai IS NOT NULL
+       AND p_trang_thai NOT IN ('HOAT_DONG', 'TAM_KHOA', 'DA_NGHI') THEN
+        RAISE EXCEPTION 'Trạng thái tài khoản không hợp lệ';
+    END IF;
+
+    UPDATE public.nhan_vien
+    SET trang_thai_duyet = COALESCE(p_trang_thai_duyet, trang_thai_duyet),
+        trang_thai = COALESCE(p_trang_thai, trang_thai),
+        ngay_cap_nhat = NOW()
+    WHERE id = p_nhan_vien_id;
+
+    IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy nhân viên'; END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.la_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_tong_quan() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_nhan_vien() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_khach_hang() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_don_hang() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
+FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.la_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_tong_quan() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_nhan_vien() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_khach_hang() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_don_hang() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
+TO authenticated;
+
+-- Chỉ thực hiện một lần để nâng tài khoản quản trị đầu tiên:
+-- UPDATE public.nhan_vien
+-- SET vai_tro = 'ADMIN', trang_thai_duyet = 'DA_DUYET', trang_thai = 'HOAT_DONG'
+-- WHERE email = 'email-admin-cua-ban@example.com';
+
+NOTIFY pgrst, 'reload schema';

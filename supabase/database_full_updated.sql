@@ -1,4 +1,4 @@
-﻿-- ============================================================================
+-- ============================================================================
 -- VINEXPRESS - DATABASE FULL UPDATED
 -- CẢNH BÁO: File này xóa dữ liệu cũ và tạo lại toàn bộ database.
 -- Chỉ chạy trên database mới hoặc khi chấp nhận mất dữ liệu hiện tại.
@@ -1581,6 +1581,52 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_khach_hang_auth_user
 CREATE UNIQUE INDEX IF NOT EXISTS uq_nhan_vien_auth_user
   ON public.nhan_vien(auth_user_id) WHERE auth_user_id IS NOT NULL;
 
+-- Kiểm tra trước khi gọi Supabase Auth để ứng dụng báo đúng dữ liệu bị trùng,
+-- thay vì Auth chỉ trả về lỗi chung "Database error saving new user".
+CREATE OR REPLACE FUNCTION public.kiem_tra_dang_ky_nhan_vien(
+  p_email TEXT,
+  p_so_dien_thoai TEXT
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_email TEXT := LOWER(BTRIM(p_email));
+  v_so_dien_thoai TEXT := REGEXP_REPLACE(
+    COALESCE(p_so_dien_thoai, ''), '[^0-9+]', '', 'g'
+  );
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.nhan_vien nv
+    WHERE LOWER(BTRIM(nv.email)) = v_email
+  ) OR EXISTS (
+    SELECT 1 FROM auth.users au
+    WHERE LOWER(BTRIM(au.email)) = v_email
+  ) THEN
+    RETURN 'EMAIL_DA_TON_TAI';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.nhan_vien nv
+    WHERE REGEXP_REPLACE(
+      COALESCE(nv.so_dien_thoai, ''), '[^0-9+]', '', 'g'
+    ) = v_so_dien_thoai
+  ) THEN
+    RETURN 'SO_DIEN_THOAI_DA_TON_TAI';
+  END IF;
+
+  RETURN 'HOP_LE';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.kiem_tra_dang_ky_nhan_vien(TEXT, TEXT)
+FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.kiem_tra_dang_ky_nhan_vien(TEXT, TEXT)
+TO anon, authenticated;
+
 CREATE OR REPLACE FUNCTION public.tao_ho_so_nguoi_dung()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -1591,10 +1637,29 @@ DECLARE
   v_loai TEXT := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro', 'KHACH_HANG'));
   v_vai_tro TEXT;
 BEGIN
+  IF NULLIF(BTRIM(NEW.email), '') IS NULL THEN
+    RAISE EXCEPTION 'Email không hợp lệ';
+  END IF;
+
   IF v_loai = 'NHAN_VIEN' THEN
     v_vai_tro := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'));
-    IF v_vai_tro NOT IN ('NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER') THEN
+    IF v_vai_tro NOT IN (
+      'QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER'
+    ) THEN
       RAISE EXCEPTION 'Vai trò nhân viên không hợp lệ';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM public.nhan_vien nv
+      WHERE LOWER(BTRIM(nv.email)) = LOWER(BTRIM(NEW.email))
+         OR REGEXP_REPLACE(
+              COALESCE(nv.so_dien_thoai, ''), '[^0-9+]', '', 'g'
+            ) = REGEXP_REPLACE(
+              COALESCE(NEW.raw_user_meta_data->>'so_dien_thoai', ''),
+              '[^0-9+]', '', 'g'
+            )
+    ) THEN
+      RAISE EXCEPTION 'Email hoặc số điện thoại nhân viên đã được đăng ký';
     END IF;
 
     INSERT INTO public.nhan_vien (
@@ -1607,6 +1672,16 @@ BEGIN
       NEW.email, 'SUPABASE_AUTH', v_vai_tro, 'CHO_DUYET', 'HOAT_DONG'
     );
   ELSE
+    IF EXISTS (
+      SELECT 1 FROM public.khach_hang kh
+      WHERE kh.email = NEW.email
+         OR kh.so_dien_thoai = NULLIF(
+              BTRIM(NEW.raw_user_meta_data->>'so_dien_thoai'), ''
+            )
+    ) THEN
+      RAISE EXCEPTION 'Email hoặc số điện thoại khách hàng đã được đăng ký';
+    END IF;
+
     INSERT INTO public.khach_hang (
       auth_user_id, ho_ten, so_dien_thoai, email, mat_khau, dia_chi, trang_thai
     ) VALUES (
@@ -1627,11 +1702,72 @@ CREATE TRIGGER trg_tao_ho_so_nguoi_dung
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.tao_ho_so_nguoi_dung();
 
+-- Khôi phục hồ sơ cho các tài khoản nhân viên đã được tạo trong Auth trước
+-- khi trigger phía trên được cài. Nếu email đã có sẵn trong nhan_vien thì
+-- chỉ liên kết auth_user_id, không tạo thêm bản ghi trùng.
+UPDATE public.nhan_vien nv
+SET auth_user_id = au.id,
+    ho_ten = COALESCE(
+      NULLIF(BTRIM(au.raw_user_meta_data->>'ho_ten'), ''), nv.ho_ten
+    ),
+    so_dien_thoai = COALESCE(
+      NULLIF(BTRIM(au.raw_user_meta_data->>'so_dien_thoai'), ''),
+      nv.so_dien_thoai
+    ),
+    vai_tro = CASE
+      WHEN UPPER(COALESCE(
+        au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+      )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER')
+      THEN UPPER(COALESCE(
+        au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+      ))
+      ELSE nv.vai_tro
+    END,
+    ngay_cap_nhat = NOW()
+FROM auth.users au
+WHERE UPPER(COALESCE(au.raw_user_meta_data->>'vai_tro', '')) = 'NHAN_VIEN'
+  AND LOWER(nv.email) = LOWER(au.email)
+  AND (nv.auth_user_id IS NULL OR nv.auth_user_id = au.id);
+
+INSERT INTO public.nhan_vien (
+  auth_user_id, ho_ten, so_dien_thoai, email, mat_khau,
+  vai_tro, trang_thai_duyet, trang_thai
+)
+SELECT
+  au.id,
+  COALESCE(
+    NULLIF(BTRIM(au.raw_user_meta_data->>'ho_ten'), ''), 'Nhân viên'
+  ),
+  COALESCE(
+    NULLIF(BTRIM(au.raw_user_meta_data->>'so_dien_thoai'), ''), au.id::TEXT
+  ),
+  au.email,
+  'SUPABASE_AUTH',
+  CASE
+    WHEN UPPER(COALESCE(
+      au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+    )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER')
+    THEN UPPER(COALESCE(
+      au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+    ))
+    ELSE 'SHIPPER'
+  END,
+  'CHO_DUYET',
+  'HOAT_DONG'
+FROM auth.users au
+WHERE UPPER(COALESCE(au.raw_user_meta_data->>'vai_tro', '')) = 'NHAN_VIEN'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.nhan_vien nv
+    WHERE nv.auth_user_id = au.id OR LOWER(nv.email) = LOWER(au.email)
+  );
+
 ALTER TABLE public.nhan_vien ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Nhan vien xem ho so cua minh" ON public.nhan_vien;
 CREATE POLICY "Nhan vien xem ho so cua minh" ON public.nhan_vien
   FOR SELECT TO authenticated USING (auth.uid() = auth_user_id);
 GRANT SELECT ON public.nhan_vien TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
 
 -- Sau khi kiểm tra hồ sơ, quản trị viên duyệt tài khoản bằng câu lệnh sau:
 -- UPDATE public.nhan_vien SET trang_thai_duyet = 'DA_DUYET'
@@ -2340,6 +2476,74 @@ GRANT EXECUTE ON FUNCTION public.tao_don_hang_khach_hang(
 
 REVOKE ALL ON FUNCTION public.don_hang_cua_khach_hang() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.don_hang_cua_khach_hang() TO authenticated;
+
+-- Khách chỉ được hủy khi đơn vẫn chờ lấy và chưa có shipper nhận.
+DROP FUNCTION IF EXISTS public.huy_don_hang_khach_hang(BIGINT, TEXT);
+
+CREATE OR REPLACE FUNCTION public.huy_don_hang_khach_hang(
+    p_don_hang_id BIGINT,
+    p_ly_do TEXT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_don public.don_hang%ROWTYPE;
+BEGIN
+    SELECT dh.* INTO v_don
+    FROM public.don_hang dh
+    JOIN public.khach_hang kh ON kh.id = dh.khach_hang_id
+    WHERE dh.id = p_don_hang_id
+      AND kh.auth_user_id = auth.uid()
+    FOR UPDATE OF dh;
+
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Đơn hàng không tồn tại hoặc không thuộc tài khoản này';
+    END IF;
+
+    IF v_don.trang_thai <> 'CHO_LAY_HANG'
+       OR v_don.nhan_vien_hien_tai_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Không thể hủy vì shipper đã nhận đơn hoặc đơn không còn chờ lấy hàng';
+    END IF;
+
+    UPDATE public.don_hang
+    SET trang_thai = 'DA_HUY',
+        ghi_chu = CONCAT_WS(
+            E'\n', NULLIF(BTRIM(v_don.ghi_chu), ''),
+            'Khách hàng hủy đơn' || CASE
+                WHEN NULLIF(BTRIM(p_ly_do), '') IS NULL THEN ''
+                ELSE ': ' || BTRIM(p_ly_do)
+            END
+        ),
+        ngay_cap_nhat = NOW()
+    WHERE id = p_don_hang_id;
+
+    -- Bảng lời mời được tạo bởi phần phân đơn shipper. Dynamic SQL giúp
+    -- migration này vẫn chạy được nếu phần phân đơn chưa được cài.
+    IF to_regclass('public.loi_moi_don_hang_shipper') IS NOT NULL THEN
+        EXECUTE $sql$
+            UPDATE public.loi_moi_don_hang_shipper
+            SET trang_thai = 'HET_HAN', phan_hoi_luc = NOW()
+            WHERE don_hang_id = $1 AND trang_thai = 'DANG_MOI'
+        $sql$ USING p_don_hang_id;
+    END IF;
+
+    INSERT INTO public.nhat_ky_don_hang (
+        don_hang_id, khach_hang_id, hanh_dong,
+        trang_thai_cu, trang_thai_moi, ghi_chu
+    ) VALUES (
+        v_don.id, v_don.khach_hang_id, 'Khách hàng hủy đơn',
+        v_don.trang_thai, 'DA_HUY', NULLIF(BTRIM(p_ly_do), '')
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.huy_don_hang_khach_hang(BIGINT, TEXT)
+FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.huy_don_hang_khach_hang(BIGINT, TEXT)
+TO authenticated;
 NOTIFY pgrst, 'reload schema';
 
 -- ============================================================================
@@ -3076,6 +3280,72 @@ CREATE TABLE IF NOT EXISTS public.vi_tri_nhan_vien (
     thoi_gian_cap_nhat TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE public.don_hang
+    ADD COLUMN IF NOT EXISTS thoi_gian_bat_dau_tim_shipper TIMESTAMPTZ;
+
+ALTER TABLE public.don_hang
+    ALTER COLUMN thoi_gian_bat_dau_tim_shipper SET DEFAULT NOW();
+
+UPDATE public.don_hang
+SET thoi_gian_bat_dau_tim_shipper = NOW()
+WHERE trang_thai = 'CHO_LAY_HANG'
+  AND phuong_tien = 'XE_MAY'
+  AND nhan_vien_hien_tai_id IS NULL
+  AND thoi_gian_bat_dau_tim_shipper IS NULL;
+
+CREATE TABLE IF NOT EXISTS public.loi_moi_don_hang_shipper (
+    id BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+    don_hang_id BIGINT NOT NULL
+        REFERENCES public.don_hang(id) ON DELETE CASCADE,
+    nhan_vien_id BIGINT NOT NULL
+        REFERENCES public.nhan_vien(id) ON DELETE CASCADE,
+    trang_thai VARCHAR(20) NOT NULL DEFAULT 'DANG_MOI'
+        CHECK (trang_thai IN ('DANG_MOI', 'DA_NHAN', 'TU_CHOI', 'HET_HAN')),
+    moi_luc TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    het_han_luc TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '30 seconds',
+    phan_hoi_luc TIMESTAMPTZ,
+    UNIQUE (don_hang_id, nhan_vien_id)
+);
+
+-- Dọn dữ liệu lời mời trùng từ phiên bản cũ trước khi tạo khóa duy nhất.
+WITH loi_moi_xep_hang AS (
+    SELECT id, ROW_NUMBER() OVER (
+        PARTITION BY don_hang_id ORDER BY moi_luc, id
+    ) AS thu_tu
+    FROM public.loi_moi_don_hang_shipper
+    WHERE trang_thai = 'DANG_MOI'
+)
+UPDATE public.loi_moi_don_hang_shipper lm
+SET trang_thai = 'HET_HAN', phan_hoi_luc = NOW()
+FROM loi_moi_xep_hang xh
+WHERE lm.id = xh.id AND xh.thu_tu > 1;
+
+WITH loi_moi_xep_hang AS (
+    SELECT id, ROW_NUMBER() OVER (
+        PARTITION BY nhan_vien_id ORDER BY moi_luc, id
+    ) AS thu_tu
+    FROM public.loi_moi_don_hang_shipper
+    WHERE trang_thai = 'DANG_MOI'
+)
+UPDATE public.loi_moi_don_hang_shipper lm
+SET trang_thai = 'HET_HAN', phan_hoi_luc = NOW()
+FROM loi_moi_xep_hang xh
+WHERE lm.id = xh.id AND xh.thu_tu > 1;
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_loi_moi_dang_hoat_dong
+    ON public.loi_moi_don_hang_shipper(don_hang_id)
+    WHERE trang_thai = 'DANG_MOI';
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_shipper_chi_co_mot_loi_moi
+    ON public.loi_moi_don_hang_shipper(nhan_vien_id)
+    WHERE trang_thai = 'DANG_MOI';
+
+CREATE INDEX IF NOT EXISTS idx_loi_moi_shipper_dang_moi
+    ON public.loi_moi_don_hang_shipper(nhan_vien_id, het_han_luc)
+    WHERE trang_thai = 'DANG_MOI';
+
+REVOKE ALL ON TABLE public.loi_moi_don_hang_shipper FROM anon, authenticated;
+
 CREATE TABLE IF NOT EXISTS public.tu_choi_don_hang_shipper (
     don_hang_id BIGINT NOT NULL
         REFERENCES public.don_hang(id) ON DELETE CASCADE,
@@ -3105,6 +3375,34 @@ CREATE TABLE IF NOT EXISTS public.luong_shipper (
 
 CREATE INDEX IF NOT EXISTS idx_luong_shipper_nhan_vien
     ON public.luong_shipper(nhan_vien_id, ngay_ghi_nhan DESC);
+
+-- Dọn các đơn nhận trùng từ phiên bản cũ. Ưu tiên đơn đã lấy/đang giao;
+-- các đơn còn CHO_LAY_HANG được trả về hàng chờ cho shipper khác.
+UPDATE public.don_hang cho_lay
+SET nhan_vien_hien_tai_id = NULL
+WHERE cho_lay.trang_thai = 'CHO_LAY_HANG'
+  AND cho_lay.nhan_vien_hien_tai_id IS NOT NULL
+  AND EXISTS (
+      SELECT 1 FROM public.don_hang dang_giao
+      WHERE dang_giao.nhan_vien_hien_tai_id = cho_lay.nhan_vien_hien_tai_id
+        AND dang_giao.id <> cho_lay.id
+        AND dang_giao.trang_thai IN (
+            'DA_LAY_HANG', 'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG'
+        )
+  );
+
+WITH xep_hang AS (
+    SELECT id, ROW_NUMBER() OVER (
+        PARTITION BY nhan_vien_hien_tai_id ORDER BY ngay_tao, id
+    ) AS thu_tu
+    FROM public.don_hang
+    WHERE nhan_vien_hien_tai_id IS NOT NULL
+      AND trang_thai = 'CHO_LAY_HANG'
+)
+UPDATE public.don_hang dh
+SET nhan_vien_hien_tai_id = NULL
+FROM xep_hang xh
+WHERE dh.id = xh.id AND xh.thu_tu > 1;
 
 REVOKE ALL ON TABLE public.luong_shipper FROM anon, authenticated;
 
@@ -3168,6 +3466,106 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.xu_ly_phan_don_shipper()
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_don RECORD;
+    v_nhan_vien_id BIGINT;
+BEGIN
+    -- Mọi lời gọi phân đơn chạy tuần tự để hai thiết bị không thể đồng thời
+    -- mời hai shipper cho cùng một đơn hoặc mời một shipper nhiều đơn.
+    PERFORM pg_advisory_xact_lock(982451653);
+
+    -- Lời mời quá 30 giây được đóng để chọn người tiếp theo.
+    UPDATE public.loi_moi_don_hang_shipper
+    SET trang_thai = 'HET_HAN', phan_hoi_luc = NOW()
+    WHERE trang_thai = 'DANG_MOI' AND het_han_luc <= NOW();
+
+    -- Sau tổng cộng 5 phút vẫn chưa ai nhận thì hủy và báo khách đặt lại.
+    UPDATE public.don_hang dh
+    SET trang_thai = 'DA_HUY',
+        ghi_chu = CONCAT_WS(
+            E'\n', NULLIF(BTRIM(dh.ghi_chu), ''),
+            'Hệ thống hủy: không tìm thấy shipper trong vòng 5 phút. Vui lòng đặt lại đơn.'
+        ),
+        ngay_cap_nhat = NOW()
+    WHERE dh.trang_thai = 'CHO_LAY_HANG'
+      AND dh.phuong_tien = 'XE_MAY'
+      AND dh.nhan_vien_hien_tai_id IS NULL
+      AND dh.thoi_gian_bat_dau_tim_shipper <= NOW() - INTERVAL '5 minutes';
+
+    UPDATE public.loi_moi_don_hang_shipper lm
+    SET trang_thai = 'HET_HAN', phan_hoi_luc = NOW()
+    FROM public.don_hang dh
+    WHERE dh.id = lm.don_hang_id
+      AND dh.trang_thai = 'DA_HUY'
+      AND lm.trang_thai = 'DANG_MOI';
+
+    FOR v_don IN
+        SELECT dh.id, dh.nguoi_gui_vi_do, dh.nguoi_gui_kinh_do
+        FROM public.don_hang dh
+        WHERE dh.trang_thai = 'CHO_LAY_HANG'
+          AND dh.phuong_tien = 'XE_MAY'
+          AND dh.nhan_vien_hien_tai_id IS NULL
+          AND dh.thoi_gian_bat_dau_tim_shipper > NOW() - INTERVAL '5 minutes'
+          AND NOT EXISTS (
+              SELECT 1 FROM public.loi_moi_don_hang_shipper lm
+              WHERE lm.don_hang_id = dh.id AND lm.trang_thai = 'DANG_MOI'
+          )
+        ORDER BY dh.thoi_gian_bat_dau_tim_shipper, dh.id
+        FOR UPDATE OF dh SKIP LOCKED
+    LOOP
+        SELECT nv.id INTO v_nhan_vien_id
+        FROM public.nhan_vien nv
+        JOIN public.vi_tri_nhan_vien vt ON vt.nhan_vien_id = nv.id
+        WHERE nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+          AND nv.trang_thai = 'HOAT_DONG'
+          AND nv.trang_thai_duyet = 'DA_DUYET'
+          AND vt.dang_truc_tuyen = TRUE
+          AND vt.thoi_gian_cap_nhat >= NOW() - INTERVAL '15 minutes'
+          AND public.khoang_cach_km(
+              vt.vi_do, vt.kinh_do,
+              v_don.nguoi_gui_vi_do, v_don.nguoi_gui_kinh_do
+          ) <= 10
+          AND NOT EXISTS (
+              SELECT 1 FROM public.don_hang dang_giao
+              WHERE dang_giao.nhan_vien_hien_tai_id = nv.id
+                AND dang_giao.trang_thai IN (
+                    'CHO_LAY_HANG', 'DA_LAY_HANG',
+                    'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG'
+                )
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM public.loi_moi_don_hang_shipper cu
+              WHERE cu.don_hang_id = v_don.id AND cu.nhan_vien_id = nv.id
+          )
+          AND NOT EXISTS (
+              SELECT 1 FROM public.loi_moi_don_hang_shipper dang_moi
+              WHERE dang_moi.nhan_vien_id = nv.id
+                AND dang_moi.trang_thai = 'DANG_MOI'
+                AND dang_moi.het_han_luc > NOW()
+          )
+        ORDER BY public.khoang_cach_km(
+            vt.vi_do, vt.kinh_do,
+            v_don.nguoi_gui_vi_do, v_don.nguoi_gui_kinh_do
+        ), vt.thoi_gian_cap_nhat DESC
+        LIMIT 1;
+
+        IF v_nhan_vien_id IS NOT NULL THEN
+            INSERT INTO public.loi_moi_don_hang_shipper(
+                don_hang_id, nhan_vien_id, het_han_luc
+            ) VALUES (
+                v_don.id, v_nhan_vien_id, NOW() + INTERVAL '30 seconds'
+            ) ON CONFLICT (don_hang_id, nhan_vien_id) DO NOTHING;
+        END IF;
+    END LOOP;
+END;
+$$;
+
 DROP FUNCTION IF EXISTS public.don_hang_gan_shipper(DOUBLE PRECISION);
 
 CREATE OR REPLACE FUNCTION public.don_hang_gan_shipper(
@@ -3190,11 +3588,11 @@ RETURNS TABLE (
     cod NUMERIC,
     phi_van_chuyen NUMERIC,
     tien_shipper_du_kien NUMERIC,
-    khoang_cach_den_diem_lay_km DOUBLE PRECISION
+    khoang_cach_den_diem_lay_km DOUBLE PRECISION,
+    loi_moi_het_han_luc TIMESTAMPTZ
 )
 LANGUAGE plpgsql
 SECURITY DEFINER
-STABLE
 SET search_path = public
 AS $$
 DECLARE
@@ -3202,6 +3600,7 @@ DECLARE
     v_vi_do DOUBLE PRECISION;
     v_kinh_do DOUBLE PRECISION;
 BEGIN
+    PERFORM public.xu_ly_phan_don_shipper();
     SELECT nv.id, vt.vi_do, vt.kinh_do
     INTO v_nhan_vien_id, v_vi_do, v_kinh_do
     FROM public.nhan_vien nv
@@ -3215,6 +3614,18 @@ BEGIN
 
     IF v_nhan_vien_id IS NULL THEN
         RAISE EXCEPTION 'Vui lòng cập nhật vị trí hiện tại trước';
+    END IF;
+
+    -- Shipper đang có đơn thì không trả thêm danh sách đơn có thể nhận.
+    IF EXISTS (
+        SELECT 1 FROM public.don_hang dang_giao
+        WHERE dang_giao.nhan_vien_hien_tai_id = v_nhan_vien_id
+          AND dang_giao.trang_thai IN (
+              'CHO_LAY_HANG', 'DA_LAY_HANG',
+              'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG'
+          )
+    ) THEN
+        RETURN;
     END IF;
 
     RETURN QUERY
@@ -3246,8 +3657,14 @@ BEGIN
         public.khoang_cach_km(
             v_vi_do, v_kinh_do,
             dh.nguoi_gui_vi_do, dh.nguoi_gui_kinh_do
-        ) AS khoang_cach_den_diem_lay_km
+        ) AS khoang_cach_den_diem_lay_km,
+        lm.het_han_luc
     FROM public.don_hang dh
+    JOIN public.loi_moi_don_hang_shipper lm
+      ON lm.don_hang_id = dh.id
+     AND lm.nhan_vien_id = v_nhan_vien_id
+     AND lm.trang_thai = 'DANG_MOI'
+     AND lm.het_han_luc > NOW()
     WHERE dh.trang_thai = 'CHO_LAY_HANG'
       AND dh.phuong_tien = 'XE_MAY'
       AND dh.nhan_vien_hien_tai_id IS NULL
@@ -3278,6 +3695,7 @@ SET search_path = public
 AS $$
 DECLARE
     v_nhan_vien_id BIGINT;
+    v_da_tu_choi INTEGER;
 BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
@@ -3290,13 +3708,17 @@ BEGIN
         RAISE EXCEPTION 'Tài khoản không phải shipper đã được duyệt';
     END IF;
 
-    IF NOT EXISTS (
-        SELECT 1 FROM public.don_hang dh
-        WHERE dh.id = p_don_hang_id
-          AND dh.trang_thai = 'CHO_LAY_HANG'
-          AND dh.nhan_vien_hien_tai_id IS NULL
-    ) THEN
-        RAISE EXCEPTION 'Đơn hàng không còn khả dụng';
+    UPDATE public.loi_moi_don_hang_shipper
+    SET trang_thai = 'TU_CHOI', phan_hoi_luc = NOW()
+    WHERE don_hang_id = p_don_hang_id
+      AND nhan_vien_id = v_nhan_vien_id
+      AND trang_thai = 'DANG_MOI'
+      AND het_han_luc > NOW();
+
+    GET DIAGNOSTICS v_da_tu_choi = ROW_COUNT;
+    IF v_da_tu_choi = 0 THEN
+        PERFORM public.xu_ly_phan_don_shipper();
+        RETURN;
     END IF;
 
     INSERT INTO public.tu_choi_don_hang_shipper (
@@ -3307,6 +3729,8 @@ BEGIN
     ON CONFLICT (don_hang_id, nhan_vien_id) DO UPDATE SET
         ly_do = EXCLUDED.ly_do,
         thoi_gian_tu_choi = NOW();
+
+    PERFORM public.xu_ly_phan_don_shipper();
 END;
 $$;
 
@@ -3404,6 +3828,33 @@ BEGIN
         RAISE EXCEPTION 'Vui lòng cập nhật vị trí hiện tại trước';
     END IF;
 
+    -- Khóa giao dịch theo shipper để hai request nhận đơn đồng thời
+    -- không thể cùng vượt qua bước kiểm tra bên dưới.
+    PERFORM pg_advisory_xact_lock(v_nhan_vien_id);
+
+    IF EXISTS (
+        SELECT 1 FROM public.don_hang dang_giao
+        WHERE dang_giao.nhan_vien_hien_tai_id = v_nhan_vien_id
+          AND dang_giao.trang_thai IN (
+              'CHO_LAY_HANG', 'DA_LAY_HANG',
+              'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG'
+          )
+    ) THEN
+        RAISE EXCEPTION
+            'Bạn đang có một đơn chưa hoàn thành. Hãy giao xong trước khi nhận đơn mới';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1 FROM public.loi_moi_don_hang_shipper lm
+        WHERE lm.don_hang_id = p_don_hang_id
+          AND lm.nhan_vien_id = v_nhan_vien_id
+          AND lm.trang_thai = 'DANG_MOI'
+          AND lm.het_han_luc > NOW()
+    ) THEN
+        RAISE EXCEPTION
+            'Lời mời nhận đơn đã hết 30 giây. Đơn đang được chuyển cho shipper khác';
+    END IF;
+
     SELECT * INTO v_don
     FROM public.don_hang
     WHERE don_hang.id = p_don_hang_id
@@ -3427,6 +3878,12 @@ BEGIN
     UPDATE public.don_hang
     SET nhan_vien_hien_tai_id = v_nhan_vien_id
     WHERE don_hang.id = p_don_hang_id;
+
+    UPDATE public.loi_moi_don_hang_shipper
+    SET trang_thai = 'DA_NHAN', phan_hoi_luc = NOW()
+    WHERE don_hang_id = p_don_hang_id
+      AND nhan_vien_id = v_nhan_vien_id
+      AND trang_thai = 'DANG_MOI';
 
     INSERT INTO public.nhat_ky_don_hang (
         nhan_vien_id, don_hang_id, khach_hang_id,
@@ -3492,7 +3949,13 @@ BEGIN
         END IF;
         UPDATE public.don_hang
         SET trang_thai = 'DA_LAY_HANG', ngay_lay_hang = NOW()
-        WHERE id = p_don_hang_id;
+    WHERE id = p_don_hang_id;
+
+    UPDATE public.loi_moi_don_hang_shipper
+    SET trang_thai = 'DA_NHAN', phan_hoi_luc = NOW()
+    WHERE don_hang_id = p_don_hang_id
+      AND nhan_vien_id = v_nhan_vien_id
+      AND trang_thai = 'DANG_MOI';
     ELSIF v_trang_thai_moi = 'DA_GIAO_HANG'
        AND v_don.trang_thai IN ('DA_LAY_HANG', 'DANG_GIAO_HANG') THEN
         IF p_minh_chung IS NULL OR BTRIM(p_minh_chung) = '' THEN
@@ -3662,6 +4125,30 @@ GRANT EXECUTE ON FUNCTION public.don_hang_dang_giao_cua_shipper()
 TO authenticated;
 GRANT EXECUTE ON FUNCTION public.theo_doi_don_hang_khach_hang(BIGINT)
 TO authenticated;
+
+-- Chạy nền để hết 30 giây tự chuyển người và hết 5 phút tự hủy,
+-- kể cả khi shipper không mở màn hình tìm đơn.
+CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+DO $$
+DECLARE
+    v_job_id BIGINT;
+BEGIN
+    SELECT jobid INTO v_job_id
+    FROM cron.job
+    WHERE jobname = 'vinexpress-phan-don-5-giay';
+
+    IF v_job_id IS NOT NULL THEN
+        PERFORM cron.unschedule(v_job_id);
+    END IF;
+
+    PERFORM cron.schedule(
+        'vinexpress-phan-don-5-giay',
+        '5 seconds',
+        'SELECT public.xu_ly_phan_don_shipper();'
+    );
+END;
+$$;
 
 -- Yêu cầu PostgREST nạp ngay chữ ký RPC mới có tham số p_minh_chung.
 NOTIFY pgrst, 'reload schema';
@@ -3888,4 +4375,249 @@ GRANT EXECUTE ON FUNCTION public.lich_su_don_hang_shipper() TO authenticated;
 
 -- Xem lương đã ghi nhận:
 -- SELECT * FROM public.luong_shipper ORDER BY ngay_ghi_nhan DESC;
+
+-- ============================================================================
+-- SOURCE: admin_setup.sql
+-- ============================================================================
+-- VINEXPRESS - QUYỀN VÀ API QUẢN TRỊ CẤP CAO NHẤT
+-- Chạy file này trong Supabase SQL Editor sau employee_auth_setup.sql.
+
+CREATE OR REPLACE FUNCTION public.la_admin()
+RETURNS BOOLEAN
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+    SELECT EXISTS (
+        SELECT 1
+        FROM public.nhan_vien nv
+        WHERE nv.auth_user_id = auth.uid()
+          AND nv.vai_tro = 'ADMIN'
+          AND nv.trang_thai_duyet = 'DA_DUYET'
+          AND nv.trang_thai = 'HOAT_DONG'
+    );
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_tong_quan()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+    v_ket_qua JSONB;
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được truy cập chức năng này';
+    END IF;
+
+    SELECT jsonb_build_object(
+        'tong_nhan_vien', (SELECT COUNT(*) FROM public.nhan_vien),
+        'nhan_vien_cho_duyet', (
+            SELECT COUNT(*) FROM public.nhan_vien
+            WHERE trang_thai_duyet = 'CHO_DUYET'
+        ),
+        'tong_khach_hang', (SELECT COUNT(*) FROM public.khach_hang),
+        'tong_don_hang', (SELECT COUNT(*) FROM public.don_hang),
+        'don_cho_lay', (
+            SELECT COUNT(*) FROM public.don_hang
+            WHERE trang_thai = 'CHO_LAY_HANG'
+        ),
+        'don_dang_giao', (
+            SELECT COUNT(*) FROM public.don_hang
+            WHERE trang_thai IN (
+                'DA_LAY_HANG', 'DANG_VAN_CHUYEN',
+                'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG'
+            )
+        ),
+        'don_da_giao', (
+            SELECT COUNT(*) FROM public.don_hang
+            WHERE trang_thai = 'DA_GIAO_HANG'
+        ),
+        'tong_doanh_thu_van_chuyen', (
+            SELECT COALESCE(SUM(phi_van_chuyen), 0)
+            FROM public.don_hang WHERE trang_thai = 'DA_GIAO_HANG'
+        )
+    ) INTO v_ket_qua;
+
+    RETURN v_ket_qua;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_nhan_vien()
+RETURNS TABLE (
+    id BIGINT,
+    auth_user_id UUID,
+    ho_ten VARCHAR,
+    so_dien_thoai VARCHAR,
+    email VARCHAR,
+    vai_tro VARCHAR,
+    trang_thai_duyet VARCHAR,
+    trang_thai VARCHAR,
+    kho_hang_id BIGINT,
+    ten_kho VARCHAR,
+    ngay_tao TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem toàn bộ nhân viên';
+    END IF;
+
+    RETURN QUERY
+    SELECT nv.id, nv.auth_user_id, nv.ho_ten::VARCHAR,
+           nv.so_dien_thoai::VARCHAR, nv.email::VARCHAR,
+           nv.vai_tro::VARCHAR, nv.trang_thai_duyet::VARCHAR,
+           nv.trang_thai::VARCHAR, nv.kho_hang_id,
+           kh.ten_kho::VARCHAR, nv.ngay_tao
+    FROM public.nhan_vien nv
+    LEFT JOIN public.kho_hang kh ON kh.id = nv.kho_hang_id
+    ORDER BY
+        CASE WHEN nv.trang_thai_duyet = 'CHO_DUYET' THEN 0 ELSE 1 END,
+        nv.ngay_tao DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_khach_hang()
+RETURNS TABLE (
+    id BIGINT,
+    ho_ten VARCHAR,
+    so_dien_thoai VARCHAR,
+    email VARCHAR,
+    dia_chi TEXT,
+    trang_thai VARCHAR,
+    ngay_tao TIMESTAMPTZ,
+    tong_don BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem toàn bộ khách hàng';
+    END IF;
+
+    RETURN QUERY
+    SELECT kh.id, kh.ho_ten::VARCHAR, kh.so_dien_thoai::VARCHAR,
+           kh.email::VARCHAR, kh.dia_chi, kh.trang_thai::VARCHAR,
+           kh.ngay_tao, COUNT(dh.id)::BIGINT
+    FROM public.khach_hang kh
+    LEFT JOIN public.don_hang dh ON dh.khach_hang_id = kh.id
+    GROUP BY kh.id
+    ORDER BY kh.ngay_tao DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_don_hang()
+RETURNS TABLE (
+    id BIGINT,
+    ma_van_don VARCHAR,
+    trang_thai VARCHAR,
+    khach_hang_ten VARCHAR,
+    nguoi_gui_dia_chi TEXT,
+    nguoi_nhan_ten VARCHAR,
+    nguoi_nhan_dia_chi TEXT,
+    phi_van_chuyen NUMERIC,
+    cod NUMERIC,
+    shipper_ten VARCHAR,
+    ngay_tao TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem toàn bộ đơn hàng';
+    END IF;
+
+    RETURN QUERY
+    SELECT dh.id, dh.ma_van_don::VARCHAR, dh.trang_thai::VARCHAR,
+           kh.ho_ten::VARCHAR, dh.nguoi_gui_dia_chi,
+           dh.nguoi_nhan_ten::VARCHAR,
+           dh.nguoi_nhan_dia_chi, dh.phi_van_chuyen, dh.cod,
+           nv.ho_ten::VARCHAR, dh.ngay_tao
+    FROM public.don_hang dh
+    JOIN public.khach_hang kh ON kh.id = dh.khach_hang_id
+    LEFT JOIN public.nhan_vien nv ON nv.id = dh.nhan_vien_hien_tai_id
+    ORDER BY dh.ngay_tao DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_cap_nhat_nhan_vien(
+    p_nhan_vien_id BIGINT,
+    p_trang_thai_duyet TEXT DEFAULT NULL,
+    p_trang_thai TEXT DEFAULT NULL
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_admin_id BIGINT;
+BEGIN
+    SELECT nv.id INTO v_admin_id
+    FROM public.nhan_vien nv
+    WHERE nv.auth_user_id = auth.uid()
+      AND nv.vai_tro = 'ADMIN'
+      AND nv.trang_thai_duyet = 'DA_DUYET'
+      AND nv.trang_thai = 'HOAT_DONG';
+
+    IF v_admin_id IS NULL THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được cập nhật nhân viên';
+    END IF;
+    IF p_nhan_vien_id = v_admin_id AND p_trang_thai = 'TAM_KHOA' THEN
+        RAISE EXCEPTION 'ADMIN không thể tự khóa tài khoản của mình';
+    END IF;
+    IF p_trang_thai_duyet IS NOT NULL
+       AND p_trang_thai_duyet NOT IN ('CHO_DUYET', 'DA_DUYET', 'TU_CHOI') THEN
+        RAISE EXCEPTION 'Trạng thái duyệt không hợp lệ';
+    END IF;
+    IF p_trang_thai IS NOT NULL
+       AND p_trang_thai NOT IN ('HOAT_DONG', 'TAM_KHOA', 'DA_NGHI') THEN
+        RAISE EXCEPTION 'Trạng thái tài khoản không hợp lệ';
+    END IF;
+
+    UPDATE public.nhan_vien
+    SET trang_thai_duyet = COALESCE(p_trang_thai_duyet, trang_thai_duyet),
+        trang_thai = COALESCE(p_trang_thai, trang_thai),
+        ngay_cap_nhat = NOW()
+    WHERE id = p_nhan_vien_id;
+
+    IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy nhân viên'; END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.la_admin() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_tong_quan() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_nhan_vien() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_khach_hang() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_don_hang() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
+FROM PUBLIC;
+
+GRANT EXECUTE ON FUNCTION public.la_admin() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_tong_quan() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_nhan_vien() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_khach_hang() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_don_hang() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
+TO authenticated;
+
+-- Chỉ thực hiện một lần để nâng tài khoản quản trị đầu tiên:
+-- UPDATE public.nhan_vien
+-- SET vai_tro = 'ADMIN', trang_thai_duyet = 'DA_DUYET', trang_thai = 'HOAT_DONG'
+-- WHERE email = 'email-admin-cua-ban@example.com';
+
+NOTIFY pgrst, 'reload schema';
 

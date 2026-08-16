@@ -61,9 +61,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(_isEmployee
-              ? 'Đăng ký nhân viên thành công. Vui lòng chờ quản trị viên duyệt tài khoản.'
-              : 'Đăng ký thành công. Vui lòng đăng nhập.'),
+          content: Text(
+            _isEmployee
+                ? 'Đăng ký nhân viên thành công. Vui lòng chờ quản trị viên duyệt tài khoản.'
+                : 'Đăng ký thành công. Vui lòng đăng nhập.',
+          ),
           backgroundColor: AppColors.success,
         ),
       );
@@ -112,11 +114,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     const SizedBox(height: 28),
                     SegmentedButton<bool>(
                       segments: const [
-                        ButtonSegment(value: false, label: Text('Khách hàng'), icon: Icon(Icons.person_outline)),
-                        ButtonSegment(value: true, label: Text('Nhân viên'), icon: Icon(Icons.badge_outlined)),
+                        ButtonSegment(
+                          value: false,
+                          label: Text('Khách hàng'),
+                          icon: Icon(Icons.person_outline),
+                        ),
+                        ButtonSegment(
+                          value: true,
+                          label: Text('Nhân viên'),
+                          icon: Icon(Icons.badge_outlined),
+                        ),
                       ],
                       selected: {_isEmployee},
-                      onSelectionChanged: (value) => setState(() => _isEmployee = value.first),
+                      onSelectionChanged: (value) =>
+                          setState(() => _isEmployee = value.first),
                     ),
                     const SizedBox(height: 20),
                     _field(
@@ -159,17 +170,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     if (_isEmployee) ...[
                       const SizedBox(height: 14),
                       DropdownButtonFormField<String>(
-                        value: _employeeRole,
+                        initialValue: _employeeRole,
                         decoration: const InputDecoration(
                           labelText: 'Vị trí ứng tuyển',
                           prefixIcon: Icon(Icons.work_outline),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'SHIPPER', child: Text('Shipper')),
-                          DropdownMenuItem(value: 'VAN_CHUYEN', child: Text('Nhân viên vận chuyển')),
-                          DropdownMenuItem(value: 'NHAN_VIEN_KHO', child: Text('Nhân viên kho')),
+                          DropdownMenuItem(
+                            value: 'SHIPPER',
+                            child: Text('Shipper'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'VAN_CHUYEN',
+                            child: Text('Nhân viên vận chuyển'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'NHAN_VIEN_KHO',
+                            child: Text('Nhân viên kho'),
+                          ),
                         ],
-                        onChanged: (value) => setState(() => _employeeRole = value!),
+                        onChanged: (value) =>
+                            setState(() => _employeeRole = value!),
                       ),
                     ] else ...[
                       const SizedBox(height: 14),
@@ -229,7 +250,11 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 color: Colors.white,
                               ),
                             )
-                          : Text(_isEmployee ? 'Gửi đăng ký nhân viên' : 'Tạo tài khoản'),
+                          : Text(
+                              _isEmployee
+                                  ? 'Gửi đăng ký nhân viên'
+                                  : 'Tạo tài khoản',
+                            ),
                     ),
                   ],
                 ),

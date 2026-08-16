@@ -4,6 +4,7 @@ import 'core/config/supabase_config.dart';
 import 'core/theme/app_theme.dart';
 import 'core/theme/theme_provider.dart';
 import 'screens/auth/login_screen.dart';
+import 'screens/admin/admin_home_screen.dart';
 import 'screens/customer/customer_home_screen.dart';
 import 'screens/employee/delivery_home_screen.dart';
 import 'screens/employee/employee_home_screen.dart';
@@ -66,6 +67,7 @@ class _SessionGateState extends State<_SessionGate> {
           return const CustomerHomeScreen();
         }
         final role = result.profile['vai_tro'] as String?;
+        if (role == 'ADMIN') return const AdminHomeScreen();
         return role == 'SHIPPER' || role == 'VAN_CHUYEN'
             ? const DeliveryHomeScreen()
             : const EmployeeHomeScreen();

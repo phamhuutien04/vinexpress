@@ -34,6 +34,52 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_khach_hang_auth_user
 CREATE UNIQUE INDEX IF NOT EXISTS uq_nhan_vien_auth_user
   ON public.nhan_vien(auth_user_id) WHERE auth_user_id IS NOT NULL;
 
+-- Kiểm tra trước khi gọi Supabase Auth để ứng dụng báo đúng dữ liệu bị trùng,
+-- thay vì Auth chỉ trả về lỗi chung "Database error saving new user".
+CREATE OR REPLACE FUNCTION public.kiem_tra_dang_ky_nhan_vien(
+  p_email TEXT,
+  p_so_dien_thoai TEXT
+)
+RETURNS TEXT
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_email TEXT := LOWER(BTRIM(p_email));
+  v_so_dien_thoai TEXT := REGEXP_REPLACE(
+    COALESCE(p_so_dien_thoai, ''), '[^0-9+]', '', 'g'
+  );
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM public.nhan_vien nv
+    WHERE LOWER(BTRIM(nv.email)) = v_email
+  ) OR EXISTS (
+    SELECT 1 FROM auth.users au
+    WHERE LOWER(BTRIM(au.email)) = v_email
+  ) THEN
+    RETURN 'EMAIL_DA_TON_TAI';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM public.nhan_vien nv
+    WHERE REGEXP_REPLACE(
+      COALESCE(nv.so_dien_thoai, ''), '[^0-9+]', '', 'g'
+    ) = v_so_dien_thoai
+  ) THEN
+    RETURN 'SO_DIEN_THOAI_DA_TON_TAI';
+  END IF;
+
+  RETURN 'HOP_LE';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.kiem_tra_dang_ky_nhan_vien(TEXT, TEXT)
+FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.kiem_tra_dang_ky_nhan_vien(TEXT, TEXT)
+TO anon, authenticated;
+
 CREATE OR REPLACE FUNCTION public.tao_ho_so_nguoi_dung()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -44,10 +90,29 @@ DECLARE
   v_loai TEXT := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro', 'KHACH_HANG'));
   v_vai_tro TEXT;
 BEGIN
+  IF NULLIF(BTRIM(NEW.email), '') IS NULL THEN
+    RAISE EXCEPTION 'Email không hợp lệ';
+  END IF;
+
   IF v_loai = 'NHAN_VIEN' THEN
     v_vai_tro := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'));
-    IF v_vai_tro NOT IN ('NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER') THEN
+    IF v_vai_tro NOT IN (
+      'QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER'
+    ) THEN
       RAISE EXCEPTION 'Vai trò nhân viên không hợp lệ';
+    END IF;
+
+    IF EXISTS (
+      SELECT 1 FROM public.nhan_vien nv
+      WHERE LOWER(BTRIM(nv.email)) = LOWER(BTRIM(NEW.email))
+         OR REGEXP_REPLACE(
+              COALESCE(nv.so_dien_thoai, ''), '[^0-9+]', '', 'g'
+            ) = REGEXP_REPLACE(
+              COALESCE(NEW.raw_user_meta_data->>'so_dien_thoai', ''),
+              '[^0-9+]', '', 'g'
+            )
+    ) THEN
+      RAISE EXCEPTION 'Email hoặc số điện thoại nhân viên đã được đăng ký';
     END IF;
 
     INSERT INTO public.nhan_vien (
@@ -60,6 +125,16 @@ BEGIN
       NEW.email, 'SUPABASE_AUTH', v_vai_tro, 'CHO_DUYET', 'HOAT_DONG'
     );
   ELSE
+    IF EXISTS (
+      SELECT 1 FROM public.khach_hang kh
+      WHERE kh.email = NEW.email
+         OR kh.so_dien_thoai = NULLIF(
+              BTRIM(NEW.raw_user_meta_data->>'so_dien_thoai'), ''
+            )
+    ) THEN
+      RAISE EXCEPTION 'Email hoặc số điện thoại khách hàng đã được đăng ký';
+    END IF;
+
     INSERT INTO public.khach_hang (
       auth_user_id, ho_ten, so_dien_thoai, email, mat_khau, dia_chi, trang_thai
     ) VALUES (
@@ -80,11 +155,72 @@ CREATE TRIGGER trg_tao_ho_so_nguoi_dung
 AFTER INSERT ON auth.users
 FOR EACH ROW EXECUTE FUNCTION public.tao_ho_so_nguoi_dung();
 
+-- Khôi phục hồ sơ cho các tài khoản nhân viên đã được tạo trong Auth trước
+-- khi trigger phía trên được cài. Nếu email đã có sẵn trong nhan_vien thì
+-- chỉ liên kết auth_user_id, không tạo thêm bản ghi trùng.
+UPDATE public.nhan_vien nv
+SET auth_user_id = au.id,
+    ho_ten = COALESCE(
+      NULLIF(BTRIM(au.raw_user_meta_data->>'ho_ten'), ''), nv.ho_ten
+    ),
+    so_dien_thoai = COALESCE(
+      NULLIF(BTRIM(au.raw_user_meta_data->>'so_dien_thoai'), ''),
+      nv.so_dien_thoai
+    ),
+    vai_tro = CASE
+      WHEN UPPER(COALESCE(
+        au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+      )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER')
+      THEN UPPER(COALESCE(
+        au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+      ))
+      ELSE nv.vai_tro
+    END,
+    ngay_cap_nhat = NOW()
+FROM auth.users au
+WHERE UPPER(COALESCE(au.raw_user_meta_data->>'vai_tro', '')) = 'NHAN_VIEN'
+  AND LOWER(nv.email) = LOWER(au.email)
+  AND (nv.auth_user_id IS NULL OR nv.auth_user_id = au.id);
+
+INSERT INTO public.nhan_vien (
+  auth_user_id, ho_ten, so_dien_thoai, email, mat_khau,
+  vai_tro, trang_thai_duyet, trang_thai
+)
+SELECT
+  au.id,
+  COALESCE(
+    NULLIF(BTRIM(au.raw_user_meta_data->>'ho_ten'), ''), 'Nhân viên'
+  ),
+  COALESCE(
+    NULLIF(BTRIM(au.raw_user_meta_data->>'so_dien_thoai'), ''), au.id::TEXT
+  ),
+  au.email,
+  'SUPABASE_AUTH',
+  CASE
+    WHEN UPPER(COALESCE(
+      au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+    )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER')
+    THEN UPPER(COALESCE(
+      au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
+    ))
+    ELSE 'SHIPPER'
+  END,
+  'CHO_DUYET',
+  'HOAT_DONG'
+FROM auth.users au
+WHERE UPPER(COALESCE(au.raw_user_meta_data->>'vai_tro', '')) = 'NHAN_VIEN'
+  AND NOT EXISTS (
+    SELECT 1 FROM public.nhan_vien nv
+    WHERE nv.auth_user_id = au.id OR LOWER(nv.email) = LOWER(au.email)
+  );
+
 ALTER TABLE public.nhan_vien ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Nhan vien xem ho so cua minh" ON public.nhan_vien;
 CREATE POLICY "Nhan vien xem ho so cua minh" ON public.nhan_vien
   FOR SELECT TO authenticated USING (auth.uid() = auth_user_id);
 GRANT SELECT ON public.nhan_vien TO authenticated;
+
+NOTIFY pgrst, 'reload schema';
 
 -- Sau khi kiểm tra hồ sơ, quản trị viên duyệt tài khoản bằng câu lệnh sau:
 -- UPDATE public.nhan_vien SET trang_thai_duyet = 'DA_DUYET'

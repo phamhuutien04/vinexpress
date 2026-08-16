@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/order_service.dart';
+import 'create_order_screen.dart';
 import 'order_tracking_screen.dart';
 
 class OrderHistoryScreen extends StatefulWidget {
@@ -129,6 +130,7 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                   return _OrderHistoryCard(
                     order: filteredOrders[index - 1],
                     onRated: _load,
+                    onCancelled: _load,
                   );
                 },
               ),
@@ -269,9 +271,14 @@ class _OrderFilters extends StatelessWidget {
 }
 
 class _OrderHistoryCard extends StatelessWidget {
-  const _OrderHistoryCard({required this.order, required this.onRated});
+  const _OrderHistoryCard({
+    required this.order,
+    required this.onRated,
+    required this.onCancelled,
+  });
   final Map<String, dynamic> order;
   final Future<void> Function() onRated;
+  final Future<void> Function() onCancelled;
 
   @override
   Widget build(BuildContext context) {
@@ -285,6 +292,8 @@ class _OrderHistoryCard extends StatelessWidget {
       'DANG_GIAO_HANG',
     }.contains(status);
     final rating = (order['diem_danh_gia'] as num?)?.toInt();
+    final canCancel = status == 'CHO_LAY_HANG' &&
+        order['nhan_vien_giao_id'] == null;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -369,6 +378,47 @@ class _OrderHistoryCard extends StatelessWidget {
                 ),
               ),
             ],
+            if (canCancel) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => _confirmCancel(context),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.error,
+                  ),
+                  icon: const Icon(Icons.cancel_outlined),
+                  label: const Text('Hủy đơn hàng'),
+                ),
+              ),
+            ],
+            if (status == 'DA_HUY') ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withValues(alpha: .08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  '${order['ghi_chu'] ?? 'Không tìm thấy shipper. Vui lòng đặt lại đơn.'}',
+                ),
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => const CreateOrderScreen(),
+                    ),
+                  ),
+                  icon: const Icon(Icons.replay),
+                  label: const Text('Tạo lại đơn hàng'),
+                ),
+              ),
+            ],
             if (status == 'DA_GIAO_HANG') ...[
               const SizedBox(height: 12),
               if (rating == null)
@@ -426,6 +476,51 @@ class _OrderHistoryCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _confirmCancel(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Hủy đơn hàng?'),
+        content: const Text(
+          'Bạn chỉ có thể hủy khi chưa có shipper nhận đơn. Bạn có chắc muốn hủy không?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Không'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+            child: const Text('Hủy đơn'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      await OrderService().cancelCustomerOrder(
+        orderId: (order['id'] as num).toInt(),
+        reason: 'Khách hàng chủ động hủy trước khi shipper nhận',
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã hủy đơn hàng')),
+      );
+      await onCancelled();
+    } on OrderServiceException catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ),
+      );
+      await onCancelled();
+    }
   }
 
   Future<void> _showRatingDialog(BuildContext context) async {
