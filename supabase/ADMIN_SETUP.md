@@ -1,6 +1,8 @@
 # Cài đặt trang Admin VinExpress
 
-1. Chạy `admin_setup.sql` trong Supabase SQL Editor.
+1. Chạy `warehouse_hierarchy_setup.sql`, sau đó chạy `admin_setup.sql`
+   trong Supabase SQL Editor. Mục Kho hàng hỗ trợ kho trung tâm cấp 1 và
+   kho vệ tinh cấp 2 trực thuộc kho cấp 1 cùng tỉnh/thành.
 2. Nâng một tài khoản nhân viên hiện có thành Admin:
 
 ```sql

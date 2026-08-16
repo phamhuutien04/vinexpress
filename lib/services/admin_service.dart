@@ -31,6 +31,12 @@ class AdminService {
   Future<List<Map<String, dynamic>>> getOrders() =>
       _list('admin_danh_sach_don_hang');
 
+  Future<List<Map<String, dynamic>>> getWarehouses() =>
+      _list('admin_danh_sach_kho');
+
+  Future<List<Map<String, dynamic>>> getRegions() =>
+      _list('admin_danh_sach_khu_vuc');
+
   Future<List<Map<String, dynamic>>> _list(String function) async {
     try {
       final data = await _client.rpc(function);
@@ -90,6 +96,33 @@ class AdminService {
           ? '${details['error'] ?? error.reasonPhrase}'
           : '${error.reasonPhrase ?? details}';
       throw AdminServiceException(message);
+    }
+  }
+
+  Future<void> createWarehouse({
+    required String code,
+    required String name,
+    required String address,
+    required int regionId,
+    required int level,
+    String? phone,
+    int? parentWarehouseId,
+  }) async {
+    try {
+      await _client.rpc(
+        'admin_tao_kho',
+        params: {
+          'p_ma_kho': code.trim(),
+          'p_ten_kho': name.trim(),
+          'p_dia_chi': address.trim(),
+          'p_khu_vuc_id': regionId,
+          'p_so_dien_thoai': phone?.trim(),
+          'p_cap_kho': level,
+          'p_kho_trung_tam_id': level == 2 ? parentWarehouseId : null,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw AdminServiceException(_message(error));
     }
   }
 

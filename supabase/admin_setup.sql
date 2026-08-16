@@ -33,10 +33,14 @@ BEGIN
     END IF;
 
     SELECT jsonb_build_object(
-        'tong_nhan_vien', (SELECT COUNT(*) FROM public.nhan_vien),
+        'tong_nhan_vien', (
+            SELECT COUNT(*) FROM public.nhan_vien
+            WHERE auth_user_id IS DISTINCT FROM auth.uid()
+        ),
         'nhan_vien_cho_duyet', (
             SELECT COUNT(*) FROM public.nhan_vien
             WHERE trang_thai_duyet = 'CHO_DUYET'
+              AND auth_user_id IS DISTINCT FROM auth.uid()
         ),
         'tong_khach_hang', (SELECT COUNT(*) FROM public.khach_hang),
         'tong_don_hang', (SELECT COUNT(*) FROM public.don_hang),
@@ -97,6 +101,9 @@ BEGIN
            kh.ten_kho::VARCHAR, nv.ngay_tao
     FROM public.nhan_vien nv
     LEFT JOIN public.kho_hang kh ON kh.id = nv.kho_hang_id
+    -- Tài khoản Admin vẫn nằm trong bảng nhan_vien. Chỉ không lặp lại
+    -- chính tài khoản đang đăng nhập trong danh sách nhân sự cần quản lý.
+    WHERE nv.auth_user_id IS DISTINCT FROM auth.uid()
     ORDER BY
         CASE WHEN nv.trang_thai_duyet = 'CHO_DUYET' THEN 0 ELSE 1 END,
         nv.ngay_tao DESC;
@@ -172,6 +179,119 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_kho()
+RETURNS TABLE (
+    id BIGINT,
+    ma_kho VARCHAR,
+    ten_kho VARCHAR,
+    dia_chi TEXT,
+    so_dien_thoai VARCHAR,
+    trang_thai VARCHAR,
+    cap_kho SMALLINT,
+    kho_trung_tam_id BIGINT,
+    ten_kho_trung_tam VARCHAR,
+    khu_vuc_id BIGINT,
+    tinh_thanh VARCHAR,
+    phuong_xa VARCHAR,
+    ngay_tao TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem danh sách kho';
+    END IF;
+
+    RETURN QUERY
+    SELECT kh.id, kh.ma_kho::VARCHAR, kh.ten_kho::VARCHAR, kh.dia_chi,
+           kh.so_dien_thoai::VARCHAR, kh.trang_thai::VARCHAR, kh.cap_kho,
+           kh.kho_trung_tam_id, trung_tam.ten_kho::VARCHAR, kh.khu_vuc_id,
+           kv.tinh_thanh::VARCHAR, kv.phuong_xa::VARCHAR, kh.ngay_tao
+    FROM public.kho_hang kh
+    JOIN public.khu_vuc kv ON kv.id = kh.khu_vuc_id
+    LEFT JOIN public.kho_hang trung_tam ON trung_tam.id = kh.kho_trung_tam_id
+    ORDER BY kh.cap_kho, kv.tinh_thanh, kh.ten_kho;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_danh_sach_khu_vuc()
+RETURNS TABLE (
+    id BIGINT,
+    ten_khu_vuc VARCHAR,
+    tinh_thanh VARCHAR,
+    quan_huyen VARCHAR,
+    phuong_xa VARCHAR
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được xem danh sách khu vực';
+    END IF;
+
+    RETURN QUERY
+    SELECT kv.id, kv.ten_khu_vuc::VARCHAR, kv.tinh_thanh::VARCHAR,
+           kv.quan_huyen::VARCHAR, kv.phuong_xa::VARCHAR
+    FROM public.khu_vuc kv
+    ORDER BY kv.tinh_thanh, kv.quan_huyen NULLS FIRST, kv.phuong_xa NULLS FIRST;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_tao_kho(
+    p_ma_kho TEXT,
+    p_ten_kho TEXT,
+    p_dia_chi TEXT,
+    p_khu_vuc_id BIGINT,
+    p_so_dien_thoai TEXT,
+    p_cap_kho SMALLINT,
+    p_kho_trung_tam_id BIGINT DEFAULT NULL
+)
+RETURNS BIGINT
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_kho_id BIGINT;
+BEGIN
+    IF NOT public.la_admin() THEN
+        RAISE EXCEPTION 'Chỉ ADMIN mới được tạo kho';
+    END IF;
+    IF NULLIF(BTRIM(p_ma_kho), '') IS NULL
+       OR NULLIF(BTRIM(p_ten_kho), '') IS NULL
+       OR NULLIF(BTRIM(p_dia_chi), '') IS NULL THEN
+        RAISE EXCEPTION 'Mã kho, tên kho và địa chỉ không được để trống';
+    END IF;
+    IF p_cap_kho NOT IN (1, 2) THEN
+        RAISE EXCEPTION 'Cấp kho chỉ được là 1 hoặc 2';
+    END IF;
+    IF p_cap_kho = 1 AND p_kho_trung_tam_id IS NOT NULL THEN
+        RAISE EXCEPTION 'Kho cấp 1 không được chọn kho trung tâm cha';
+    END IF;
+    IF p_cap_kho = 2 AND p_kho_trung_tam_id IS NULL THEN
+        RAISE EXCEPTION 'Kho cấp 2 phải chọn kho cấp 1 trực thuộc';
+    END IF;
+
+    INSERT INTO public.kho_hang (
+        ma_kho, ten_kho, dia_chi, khu_vuc_id, so_dien_thoai,
+        trang_thai, cap_kho, kho_trung_tam_id
+    ) VALUES (
+        UPPER(BTRIM(p_ma_kho)), BTRIM(p_ten_kho), BTRIM(p_dia_chi),
+        p_khu_vuc_id, NULLIF(BTRIM(p_so_dien_thoai), ''),
+        'HOAT_DONG', p_cap_kho, p_kho_trung_tam_id
+    )
+    RETURNING id INTO v_kho_id;
+
+    RETURN v_kho_id;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.admin_cap_nhat_nhan_vien(
     p_nhan_vien_id BIGINT,
     p_trang_thai_duyet TEXT DEFAULT NULL,
@@ -222,6 +342,11 @@ REVOKE ALL ON FUNCTION public.admin_tong_quan() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_danh_sach_nhan_vien() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_danh_sach_khach_hang() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_danh_sach_don_hang() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_kho() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_danh_sach_khu_vuc() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_tao_kho(
+    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
 FROM PUBLIC;
 
@@ -230,6 +355,11 @@ GRANT EXECUTE ON FUNCTION public.admin_tong_quan() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_danh_sach_nhan_vien() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_danh_sach_khach_hang() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_danh_sach_don_hang() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_kho() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_danh_sach_khu_vuc() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_tao_kho(
+    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
 TO authenticated;
 
