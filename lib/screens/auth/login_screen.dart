@@ -5,6 +5,7 @@ import '../admin/admin_home_screen.dart';
 import '../customer/customer_home_screen.dart';
 import '../employee/delivery_home_screen.dart';
 import '../transport/transport_driver_home_screen.dart';
+import '../warehouse/warehouse_manager_home_screen.dart';
 import '../employee/employee_home_screen.dart';
 import 'register_screen.dart';
 
@@ -52,6 +53,9 @@ class _LoginScreenState extends State<LoginScreen> {
             if (role == 'SHIPPER') return const DeliveryHomeScreen();
             if (role == 'VAN_CHUYEN') {
               return const TransportDriverHomeScreen();
+            }
+            if (role == 'QUAN_LY_KHO') {
+              return const WarehouseManagerHomeScreen();
             }
             return const EmployeeHomeScreen();
           },

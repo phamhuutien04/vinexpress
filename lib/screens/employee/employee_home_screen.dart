@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
+import '../../services/warehouse_employee_service.dart';
+import '../../widgets/address_input.dart';
 import '../auth/login_screen.dart';
 
 /// Home page for warehouse and office employees.
@@ -15,6 +17,23 @@ class EmployeeHomeScreen extends StatefulWidget {
 
 class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   int _tab = 0;
+  final _warehouseService = WarehouseEmployeeService();
+  Map<String, dynamic> _warehousePermission = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWarehousePermission();
+  }
+
+  Future<void> _loadWarehousePermission() async {
+    try {
+      final data = await _warehouseService.level2CreationPermission();
+      if (mounted) setState(() => _warehousePermission = data);
+    } catch (_) {
+      // Tài khoản không thuộc kho cấp 1 thì không hiển thị chức năng tạo kho.
+    }
+  }
 
   Map<String, dynamic> get _employee =>
       CustomerAuthService.currentEmployee ?? <String, dynamic>{};
@@ -50,7 +69,30 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           ),
         ],
       ),
+      floatingActionButton: _tab == 0 && _warehousePermission['duoc_phep'] == true
+          ? FloatingActionButton.extended(
+              onPressed: _showCreateLevel2Warehouse,
+              icon: const Icon(Icons.add_business),
+              label: const Text('Thêm kho cấp 2'),
+            )
+          : null,
     );
+  }
+
+  Future<void> _showCreateLevel2Warehouse() async {
+    final created = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _CreateLevel2WarehouseDialog(
+        service: _warehouseService,
+        parentName: '${_warehousePermission['ten_kho'] ?? ''}',
+      ),
+    );
+    if (created == true && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã tạo kho cấp 2 trực thuộc')),
+      );
+    }
   }
 
   Future<void> _logout() async {
@@ -169,4 +211,103 @@ class _Account extends StatelessWidget {
           ],
         ),
       );
+}
+
+class _CreateLevel2WarehouseDialog extends StatefulWidget {
+  const _CreateLevel2WarehouseDialog({required this.service, required this.parentName});
+  final WarehouseEmployeeService service;
+  final String parentName;
+  @override
+  State<_CreateLevel2WarehouseDialog> createState() => _CreateLevel2WarehouseDialogState();
+}
+
+class _CreateLevel2WarehouseDialogState extends State<_CreateLevel2WarehouseDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _address = TextEditingController();
+  final _phone = TextEditingController();
+  String? _province;
+  String? _ward;
+  bool _saving = false;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _address.dispose();
+    _phone.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+        title: const Text('Tạo kho cấp 2'),
+        content: SizedBox(
+          width: 520,
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                ListTile(
+                  leading: const Icon(Icons.hub_outlined, color: AppColors.primary),
+                  title: const Text('Trực thuộc kho cấp 1'),
+                  subtitle: Text(widget.parentName),
+                ),
+                TextFormField(
+                  controller: _name,
+                  decoration: const InputDecoration(labelText: 'Tên kho', prefixIcon: Icon(Icons.warehouse_outlined)),
+                  validator: (value) => (value ?? '').trim().isEmpty ? 'Hãy nhập tên kho' : null,
+                ),
+                const SizedBox(height: 12),
+                AddressInput(
+                  controller: _address,
+                  label: 'Địa chỉ kho',
+                  hint: 'Chọn tỉnh/thành, phường/xã và nhập số nhà',
+                  validator: (_) => _province == null || _ward == null ? 'Hãy chọn địa chỉ hành chính' : null,
+                  onAddressChanged: () {
+                    if (_province != null || _ward != null) setState(() { _province = null; _ward = null; });
+                  },
+                  onAdministrativeAddressSelected: (selection) => setState(() {
+                    _province = selection.province;
+                    _ward = selection.ward;
+                  }),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _phone,
+                  decoration: const InputDecoration(labelText: 'Số điện thoại (không bắt buộc)', prefixIcon: Icon(Icons.phone_outlined)),
+                ),
+              ]),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Hủy')),
+          FilledButton.icon(
+            onPressed: _saving ? null : _submit,
+            icon: const Icon(Icons.add_business),
+            label: Text(_saving ? 'Đang tạo...' : 'Tạo kho'),
+          ),
+        ],
+      );
+
+  Future<void> _submit() async {
+    if (!_formKey.currentState!.validate()) return;
+    setState(() => _saving = true);
+    try {
+      await widget.service.createLevel2Warehouse(
+        name: _name.text,
+        address: _address.text,
+        province: _province!,
+        ward: _ward!,
+        phone: _phone.text,
+      );
+      if (mounted) Navigator.pop(context, true);
+    } on WarehouseEmployeeException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+      );
+      setState(() => _saving = false);
+    }
+  }
 }

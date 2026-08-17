@@ -1,0 +1,41 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/config/supabase_config.dart';
+
+class WarehouseEmployeeException implements Exception {
+  const WarehouseEmployeeException(this.message);
+  final String message;
+}
+
+class WarehouseEmployeeService {
+  SupabaseClient get _client => SupabaseConfig.client;
+
+  Future<Map<String, dynamic>> level2CreationPermission() async {
+    try {
+      final data = await _client.rpc('thong_tin_quyen_tao_kho_cap_2');
+      return Map<String, dynamic>.from(data as Map);
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
+  Future<void> createLevel2Warehouse({
+    required String name,
+    required String address,
+    required String province,
+    required String ward,
+    String? phone,
+  }) async {
+    try {
+      await _client.rpc('nhan_vien_tao_kho_cap_2', params: {
+        'p_ten_kho': name.trim(),
+        'p_dia_chi': address.trim(),
+        'p_tinh_thanh': province.trim(),
+        'p_phuong_xa': ward.trim(),
+        'p_so_dien_thoai': phone?.trim(),
+      });
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+}

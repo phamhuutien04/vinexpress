@@ -258,7 +258,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final created = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _CreateEmployeeDialog(service: _service),
+      builder: (_) => _CreateEmployeeDialog(
+        service: _service,
+        warehouses: _warehouses,
+      ),
     );
     if (created == true) await _loadAll();
   }
@@ -592,7 +595,11 @@ class _EmployeeList extends StatelessWidget {
             child: ListTile(
               leading: CircleAvatar(child: Text('${item['ho_ten']}'.substring(0, 1).toUpperCase())),
               title: Text('${item['ho_ten']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('${_role(item['vai_tro'])} • ${item['email']}\n${item['so_dien_thoai']} • ${item['trang_thai_duyet']}'),
+              subtitle: Text(
+                '${_role(item['vai_tro'])} • ${item['email']}\n'
+                '${item['so_dien_thoai']} • ${item['trang_thai_duyet']}'
+                '${item['ten_kho'] == null ? '' : '\nKho: ${item['ten_kho']}'}',
+              ),
               isThreeLine: true,
               trailing: PopupMenuButton<String>(
                 onSelected: (value) => onAction(item, value),
@@ -964,8 +971,12 @@ class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
 }
 
 class _CreateEmployeeDialog extends StatefulWidget {
-  const _CreateEmployeeDialog({required this.service});
+  const _CreateEmployeeDialog({
+    required this.service,
+    required this.warehouses,
+  });
   final AdminService service;
+  final List<Map<String, dynamic>> warehouses;
 
   @override
   State<_CreateEmployeeDialog> createState() => _CreateEmployeeDialogState();
@@ -980,6 +991,7 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
   final _licensePlate = TextEditingController();
   final _payload = TextEditingController();
   String _role = 'SHIPPER';
+  int? _warehouseId;
   bool _saving = false;
 
   @override
@@ -1023,6 +1035,33 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
                     ],
                     onChanged: _saving ? null : (value) => setState(() => _role = value!),
                   ),
+                  if (_role == 'QUAN_LY_KHO' || _role == 'NHAN_VIEN_KHO') ...[
+                    const SizedBox(height: 12),
+                    DropdownButtonFormField<int>(
+                      initialValue: _warehouseId,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Kho làm việc',
+                        prefixIcon: Icon(Icons.warehouse_outlined),
+                      ),
+                      items: widget.warehouses.map((warehouse) {
+                        return DropdownMenuItem(
+                          value: (warehouse['id'] as num).toInt(),
+                          child: Text(
+                            '${warehouse['ten_kho']} (${warehouse['ma_kho']})',
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        );
+                      }).toList(),
+                      validator: (value) =>
+                          (_role == 'QUAN_LY_KHO' || _role == 'NHAN_VIEN_KHO') && value == null
+                              ? 'Hãy chọn kho làm việc'
+                              : null,
+                      onChanged: _saving
+                          ? null
+                          : (value) => setState(() => _warehouseId = value),
+                    ),
+                  ],
                   if (_role == 'VAN_CHUYEN') ...[
                     const SizedBox(height: 12),
                     _field(_licensePlate, 'Biển số xe tải', Icons.local_shipping_outlined),
@@ -1079,6 +1118,9 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
         email: _email.text,
         password: _password.text,
         role: _role,
+        warehouseId: _role == 'QUAN_LY_KHO' || _role == 'NHAN_VIEN_KHO'
+            ? _warehouseId
+            : null,
         licensePlate: _role == 'VAN_CHUYEN' ? _licensePlate.text : null,
         payloadKg: _role == 'VAN_CHUYEN'
             ? double.tryParse(_payload.text.replaceAll(',', '.'))

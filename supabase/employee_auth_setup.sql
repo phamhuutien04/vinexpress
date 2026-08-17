@@ -94,6 +94,12 @@ BEGIN
     RAISE EXCEPTION 'Email không hợp lệ';
   END IF;
 
+  -- Tài khoản do Edge Function của Admin tạo sẽ được Edge Function tự chèn
+  -- hồ sơ để có thể gán kho/quyền ngay và không phụ thuộc trigger Auth.
+  IF COALESCE((NEW.raw_user_meta_data->>'admin_tao_ho_so')::BOOLEAN, FALSE) THEN
+    RETURN NEW;
+  END IF;
+
   IF v_loai = 'NHAN_VIEN' THEN
     v_vai_tro := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'));
     IF v_vai_tro NOT IN (
