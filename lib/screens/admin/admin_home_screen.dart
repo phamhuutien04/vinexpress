@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/admin_service.dart';
 import '../../services/customer_auth_service.dart';
+import '../../widgets/address_input.dart';
 import '../auth/login_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
@@ -22,7 +23,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> _customers = [];
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _warehouses = [];
-  List<Map<String, dynamic>> _regions = [];
 
   static const _titles = [
     'Tổng quan',
@@ -77,7 +77,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _service.getCustomers(),
         _service.getOrders(),
         _service.getWarehouses(),
-        _service.getRegions(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -86,7 +85,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _customers = result[2] as List<Map<String, dynamic>>;
         _orders = result[3] as List<Map<String, dynamic>>;
         _warehouses = result[4] as List<Map<String, dynamic>>;
-        _regions = result[5] as List<Map<String, dynamic>>;
       });
     } on AdminServiceException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -272,7 +270,6 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       builder: (_) => _CreateWarehouseDialog(
         service: _service,
         warehouses: _warehouses,
-        regions: _regions,
       ),
     );
     if (created == true) await _loadAll();
@@ -767,11 +764,9 @@ class _CreateWarehouseDialog extends StatefulWidget {
   const _CreateWarehouseDialog({
     required this.service,
     required this.warehouses,
-    required this.regions,
   });
   final AdminService service;
   final List<Map<String, dynamic>> warehouses;
-  final List<Map<String, dynamic>> regions;
 
   @override
   State<_CreateWarehouseDialog> createState() =>
@@ -780,33 +775,24 @@ class _CreateWarehouseDialog extends StatefulWidget {
 
 class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
   final _formKey = GlobalKey<FormState>();
-  final _code = TextEditingController();
   final _name = TextEditingController();
   final _address = TextEditingController();
   final _phone = TextEditingController();
   int _level = 1;
-  int? _regionId;
+  String? _province;
+  String? _ward;
   int? _parentId;
   bool _saving = false;
 
   List<Map<String, dynamic>> get _availableParents {
-    Map<String, dynamic>? selectedRegion;
-    for (final item in widget.regions) {
-      if (item['id'] == _regionId) {
-        selectedRegion = item;
-        break;
-      }
-    }
-    final province = selectedRegion?['tinh_thanh'];
     return widget.warehouses.where((item) {
       return item['cap_kho'] == 1 &&
-          (province == null || item['tinh_thanh'] == province);
+          (_province == null || item['tinh_thanh'] == _province);
     }).toList();
   }
 
   @override
   void dispose() {
-    _code.dispose();
     _name.dispose();
     _address.dispose();
     _phone.dispose();
@@ -846,45 +832,39 @@ class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
                           }),
                   ),
                   const SizedBox(height: 16),
-                  _warehouseField(_code, 'Mã kho', Icons.qr_code),
-                  const SizedBox(height: 12),
                   _warehouseField(_name, 'Tên kho', Icons.warehouse_outlined),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<int>(
-                    initialValue: _regionId,
-                    isExpanded: true,
-                    menuMaxHeight: 320,
-                    decoration: const InputDecoration(
-                      labelText: 'Khu vực',
-                      prefixIcon: Icon(Icons.location_on_outlined),
+                  const SizedBox(height: 6),
+                  const Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Mã kho được hệ thống tạo tự động khi lưu.',
+                      style: TextStyle(fontSize: 12),
                     ),
-                    items: widget.regions.map((item) {
-                      final id = (item['id'] as num).toInt();
-                      final ward = '${item['phuong_xa'] ?? ''}'.trim();
-                      return DropdownMenuItem(
-                        value: id,
-                        child: Text(
-                          ward.isEmpty
-                              ? '${item['tinh_thanh']}'
-                              : '$ward, ${item['tinh_thanh']}',
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      );
-                    }).toList(),
-                    validator: (value) =>
-                        value == null ? 'Hãy chọn khu vực' : null,
-                    onChanged: _saving
-                        ? null
-                        : (value) => setState(() {
-                            _regionId = value;
-                            _parentId = null;
-                          }),
                   ),
                   const SizedBox(height: 12),
-                  _warehouseField(
-                    _address,
-                    'Địa chỉ chi tiết',
-                    Icons.home_work_outlined,
+                  AddressInput(
+                    controller: _address,
+                    label: 'Địa chỉ kho',
+                    hint: 'Chọn Tỉnh/Thành, Phường/Xã và nhập số nhà',
+                    validator: (_) => _province == null || _ward == null
+                        ? 'Hãy chọn địa chỉ bằng nút bên dưới'
+                        : null,
+                    onAddressChanged: () {
+                      if (_province != null || _ward != null) {
+                        setState(() {
+                          _province = null;
+                          _ward = null;
+                          _parentId = null;
+                        });
+                      }
+                    },
+                    onAdministrativeAddressSelected: (selection) {
+                      setState(() {
+                        _province = selection.province;
+                        _ward = selection.ward;
+                        _parentId = null;
+                      });
+                    },
                   ),
                   const SizedBox(height: 12),
                   _warehouseField(
@@ -964,10 +944,10 @@ class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
     setState(() => _saving = true);
     try {
       await widget.service.createWarehouse(
-        code: _code.text,
         name: _name.text,
         address: _address.text,
-        regionId: _regionId!,
+        province: _province!,
+        ward: _ward!,
         level: _level,
         phone: _phone.text,
         parentWarehouseId: _parentId,
@@ -997,6 +977,8 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
   final _phone = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
+  final _licensePlate = TextEditingController();
+  final _payload = TextEditingController();
   String _role = 'SHIPPER';
   bool _saving = false;
 
@@ -1006,6 +988,8 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
     _phone.dispose();
     _email.dispose();
     _password.dispose();
+    _licensePlate.dispose();
+    _payload.dispose();
     super.dispose();
   }
 
@@ -1033,12 +1017,30 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
                     decoration: const InputDecoration(labelText: 'Vai trò', prefixIcon: Icon(Icons.badge_outlined)),
                     items: const [
                       DropdownMenuItem(value: 'SHIPPER', child: Text('Shipper')),
-                      DropdownMenuItem(value: 'VAN_CHUYEN', child: Text('Nhân viên vận chuyển')),
+                      DropdownMenuItem(value: 'VAN_CHUYEN', child: Text('Tài xế xe tải')),
                       DropdownMenuItem(value: 'NHAN_VIEN_KHO', child: Text('Nhân viên kho')),
                       DropdownMenuItem(value: 'QUAN_LY_KHO', child: Text('Quản lý kho')),
                     ],
                     onChanged: _saving ? null : (value) => setState(() => _role = value!),
                   ),
+                  if (_role == 'VAN_CHUYEN') ...[
+                    const SizedBox(height: 12),
+                    _field(_licensePlate, 'Biển số xe tải', Icons.local_shipping_outlined),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _payload,
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: const InputDecoration(
+                        labelText: 'Tải trọng (kg)',
+                        prefixIcon: Icon(Icons.scale_outlined),
+                      ),
+                      validator: (value) {
+                        if (_role != 'VAN_CHUYEN') return null;
+                        final number = double.tryParse((value ?? '').replaceAll(',', '.'));
+                        return number == null || number <= 0 ? 'Tải trọng phải lớn hơn 0' : null;
+                      },
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1077,6 +1079,10 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
         email: _email.text,
         password: _password.text,
         role: _role,
+        licensePlate: _role == 'VAN_CHUYEN' ? _licensePlate.text : null,
+        payloadKg: _role == 'VAN_CHUYEN'
+            ? double.tryParse(_payload.text.replaceAll(',', '.'))
+            : null,
       );
       if (mounted) Navigator.pop(context, true);
     } on AdminServiceException catch (error) {

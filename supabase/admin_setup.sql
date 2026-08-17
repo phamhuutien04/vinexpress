@@ -243,11 +243,18 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.admin_tao_kho(
+    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+);
+DROP FUNCTION IF EXISTS public.admin_tao_kho(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, SMALLINT, BIGINT
+);
+
 CREATE OR REPLACE FUNCTION public.admin_tao_kho(
-    p_ma_kho TEXT,
     p_ten_kho TEXT,
     p_dia_chi TEXT,
-    p_khu_vuc_id BIGINT,
+    p_tinh_thanh TEXT,
+    p_phuong_xa TEXT,
     p_so_dien_thoai TEXT,
     p_cap_kho SMALLINT,
     p_kho_trung_tam_id BIGINT DEFAULT NULL
@@ -259,14 +266,17 @@ SET search_path = public
 AS $$
 DECLARE
     v_kho_id BIGINT;
+    v_khu_vuc_id BIGINT;
+    v_ma_kho TEXT;
 BEGIN
     IF NOT public.la_admin() THEN
         RAISE EXCEPTION 'Chỉ ADMIN mới được tạo kho';
     END IF;
-    IF NULLIF(BTRIM(p_ma_kho), '') IS NULL
-       OR NULLIF(BTRIM(p_ten_kho), '') IS NULL
-       OR NULLIF(BTRIM(p_dia_chi), '') IS NULL THEN
-        RAISE EXCEPTION 'Mã kho, tên kho và địa chỉ không được để trống';
+    IF NULLIF(BTRIM(p_ten_kho), '') IS NULL
+       OR NULLIF(BTRIM(p_dia_chi), '') IS NULL
+       OR NULLIF(BTRIM(p_tinh_thanh), '') IS NULL
+       OR NULLIF(BTRIM(p_phuong_xa), '') IS NULL THEN
+        RAISE EXCEPTION 'Tên kho và địa chỉ hành chính không được để trống';
     END IF;
     IF p_cap_kho NOT IN (1, 2) THEN
         RAISE EXCEPTION 'Cấp kho chỉ được là 1 hoặc 2';
@@ -278,12 +288,36 @@ BEGIN
         RAISE EXCEPTION 'Kho cấp 2 phải chọn kho cấp 1 trực thuộc';
     END IF;
 
+    SELECT kv.id INTO v_khu_vuc_id
+    FROM public.khu_vuc kv
+    WHERE LOWER(BTRIM(kv.tinh_thanh)) = LOWER(BTRIM(p_tinh_thanh))
+      AND LOWER(BTRIM(COALESCE(kv.phuong_xa, ''))) = LOWER(BTRIM(p_phuong_xa))
+    ORDER BY kv.id
+    LIMIT 1;
+
+    IF v_khu_vuc_id IS NULL THEN
+        INSERT INTO public.khu_vuc (
+            ten_khu_vuc, tinh_thanh, quan_huyen, phuong_xa
+        ) VALUES (
+            BTRIM(p_phuong_xa) || ', ' || BTRIM(p_tinh_thanh),
+            BTRIM(p_tinh_thanh), NULL, BTRIM(p_phuong_xa)
+        ) RETURNING id INTO v_khu_vuc_id;
+    END IF;
+
+    LOOP
+        v_ma_kho := 'K' || p_cap_kho::TEXT || '-' ||
+            UPPER(SUBSTRING(REPLACE(gen_random_uuid()::TEXT, '-', '') FROM 1 FOR 8));
+        EXIT WHEN NOT EXISTS (
+            SELECT 1 FROM public.kho_hang kh WHERE kh.ma_kho = v_ma_kho
+        );
+    END LOOP;
+
     INSERT INTO public.kho_hang (
         ma_kho, ten_kho, dia_chi, khu_vuc_id, so_dien_thoai,
         trang_thai, cap_kho, kho_trung_tam_id
     ) VALUES (
-        UPPER(BTRIM(p_ma_kho)), BTRIM(p_ten_kho), BTRIM(p_dia_chi),
-        p_khu_vuc_id, NULLIF(BTRIM(p_so_dien_thoai), ''),
+        v_ma_kho, BTRIM(p_ten_kho), BTRIM(p_dia_chi),
+        v_khu_vuc_id, NULLIF(BTRIM(p_so_dien_thoai), ''),
         'HOAT_DONG', p_cap_kho, p_kho_trung_tam_id
     )
     RETURNING id INTO v_kho_id;
@@ -345,7 +379,7 @@ REVOKE ALL ON FUNCTION public.admin_danh_sach_don_hang() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_danh_sach_kho() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_danh_sach_khu_vuc() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_tao_kho(
-    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+    TEXT, TEXT, TEXT, TEXT, TEXT, SMALLINT, BIGINT
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
 FROM PUBLIC;
@@ -358,7 +392,7 @@ GRANT EXECUTE ON FUNCTION public.admin_danh_sach_don_hang() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_danh_sach_kho() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_danh_sach_khu_vuc() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_tao_kho(
-    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+    TEXT, TEXT, TEXT, TEXT, TEXT, SMALLINT, BIGINT
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
 TO authenticated;

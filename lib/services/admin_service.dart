@@ -72,6 +72,8 @@ class AdminService {
     required String password,
     required String role,
     int? warehouseId,
+    String? licensePlate,
+    double? payloadKg,
   }) async {
     try {
       final response = await _client.functions.invoke(
@@ -83,6 +85,8 @@ class AdminService {
           'password': password,
           'vai_tro': role,
           'kho_hang_id': warehouseId,
+          'bien_so_xe': licensePlate?.trim().toUpperCase(),
+          'tai_trong': payloadKg,
         },
       );
       if (response.status < 200 || response.status >= 300) {
@@ -100,10 +104,10 @@ class AdminService {
   }
 
   Future<void> createWarehouse({
-    required String code,
     required String name,
     required String address,
-    required int regionId,
+    required String province,
+    required String ward,
     required int level,
     String? phone,
     int? parentWarehouseId,
@@ -112,10 +116,10 @@ class AdminService {
       await _client.rpc(
         'admin_tao_kho',
         params: {
-          'p_ma_kho': code.trim(),
           'p_ten_kho': name.trim(),
           'p_dia_chi': address.trim(),
-          'p_khu_vuc_id': regionId,
+          'p_tinh_thanh': province.trim(),
+          'p_phuong_xa': ward.trim(),
           'p_so_dien_thoai': phone?.trim(),
           'p_cap_kho': level,
           'p_kho_trung_tam_id': level == 2 ? parentWarehouseId : null,

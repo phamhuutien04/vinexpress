@@ -3,6 +3,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
 Deno.serve(async (request) => {
@@ -42,12 +43,17 @@ Deno.serve(async (request) => {
     const soDienThoai = String(body.so_dien_thoai ?? '').replace(/[^0-9+]/g, '')
     const vaiTro = String(body.vai_tro ?? '').toUpperCase()
     const khoHangId = body.kho_hang_id == null ? null : Number(body.kho_hang_id)
+    const bienSoXe = String(body.bien_so_xe ?? '').trim().toUpperCase()
+    const taiTrong = Number(body.tai_trong ?? 0)
     const allowedRoles = ['QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER']
 
     if (!email || !hoTen || !soDienThoai || password.length < 6) {
       throw new Error('Thông tin nhân viên chưa đầy đủ hoặc mật khẩu dưới 6 ký tự')
     }
     if (!allowedRoles.includes(vaiTro)) throw new Error('Vai trò nhân viên không hợp lệ')
+    if (vaiTro === 'VAN_CHUYEN' && (!bienSoXe || !Number.isFinite(taiTrong) || taiTrong <= 0)) {
+      throw new Error('Tài xế xe tải phải có biển số và tải trọng hợp lệ')
+    }
 
     const { data: created, error: createError } = await adminClient.auth.admin.createUser({
       email,
@@ -62,7 +68,7 @@ Deno.serve(async (request) => {
     })
     if (createError) throw createError
 
-    const { error: updateError } = await adminClient
+    const { data: employee, error: updateError } = await adminClient
       .from('nhan_vien')
       .update({
         trang_thai_duyet: 'DA_DUYET',
@@ -70,9 +76,26 @@ Deno.serve(async (request) => {
         kho_hang_id: khoHangId,
       })
       .eq('auth_user_id', created.user.id)
-    if (updateError) {
+      .select('id')
+      .single()
+    if (updateError || !employee) {
       await adminClient.auth.admin.deleteUser(created.user.id)
-      throw updateError
+      throw updateError ?? new Error(
+        'Không tạo được hồ sơ trong bảng nhan_vien. Hãy chạy employee_auth_setup.sql.',
+      )
+    }
+
+    if (vaiTro === 'VAN_CHUYEN') {
+      const { error: vehicleError } = await adminClient.from('xe').insert({
+        tai_xe_id: employee.id,
+        bien_so_xe: bienSoXe,
+        tai_trong: taiTrong,
+        trang_thai: 'SAN_SANG',
+      })
+      if (vehicleError) {
+        await adminClient.auth.admin.deleteUser(created.user.id)
+        throw vehicleError
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, user_id: created.user.id }), {
@@ -80,6 +103,7 @@ Deno.serve(async (request) => {
       status: 200,
     })
   } catch (error) {
+    console.error('admin-create-employee:', error)
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,

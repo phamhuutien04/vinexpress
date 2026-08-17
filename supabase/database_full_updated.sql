@@ -1,12 +1,8 @@
--- ============================================================================
--- VINEXPRESS - DATABASE FULL UPDATED
--- CẢNH BÁO: File này xóa dữ liệu cũ và tạo lại toàn bộ database.
--- Chỉ chạy trên database mới hoặc khi chấp nhận mất dữ liệu hiện tại.
--- ============================================================================
 
--- ============================================================================
--- SOURCE: database_complete.sql
--- ============================================================================
+-- ============================================================
+-- SOURCE: supabase/database_complete.sql
+-- ============================================================
+
 -- ============================================================
 -- HỆ THỐNG QUẢN LÝ VẬN CHUYỂN - SUPABASE POSTGRESQL
 -- LƯU Ý: Script này xóa dữ liệu bảng cũ và tạo lại từ đầu.
@@ -1452,9 +1448,11 @@ CREATE POLICY "Nhan vien xem ho so cua minh" ON nhan_vien FOR SELECT TO authenti
 CREATE POLICY "Nhan vien cap nhat ho so cua minh" ON nhan_vien FOR UPDATE TO authenticated USING (auth.uid()=auth_user_id) WITH CHECK (auth.uid()=auth_user_id);
 GRANT SELECT,UPDATE ON khach_hang,nhan_vien TO authenticated;
 
--- ============================================================================
--- SOURCE: supabase_auth_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/supabase_auth_setup.sql
+-- ============================================================
+
 -- Chạy toàn bộ file này trong Supabase Dashboard > SQL Editor.
 -- Giữ database ban đầu và bổ sung auth_user_id để liên kết Supabase Auth.
 
@@ -1542,9 +1540,11 @@ CREATE POLICY "Khach hang cap nhat ho so cua minh"
 GRANT SELECT, UPDATE ON TABLE public.khach_hang TO authenticated;
 REVOKE ALL ON TABLE public.khach_hang FROM anon;
 
--- ============================================================================
--- SOURCE: employee_auth_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/employee_auth_setup.sql
+-- ============================================================
+
 -- Chạy file này trong Supabase Dashboard > SQL Editor.
 -- File thay thế trigger chỉ tạo khách hàng bằng trigger hỗ trợ cả khách hàng và nhân viên.
 
@@ -1773,9 +1773,11 @@ NOTIFY pgrst, 'reload schema';
 -- UPDATE public.nhan_vien SET trang_thai_duyet = 'DA_DUYET'
 -- WHERE email = 'email-nhan-vien@example.com';
 
--- ============================================================================
--- SOURCE: warehouse_hierarchy_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/warehouse_hierarchy_setup.sql
+-- ============================================================
+
 -- ============================================================
 -- PHÂN CẤP KHO
 -- Cấp 1: kho trung tâm tỉnh/thành, được phép vận chuyển liên tỉnh.
@@ -1878,9 +1880,11 @@ FROM public.kho_hang AS kh
 LEFT JOIN public.kho_hang AS trung_tam ON trung_tam.id = kh.kho_trung_tam_id
 ORDER BY kh.ma_kho;
 
--- ============================================================================
--- SOURCE: seed_warehouses.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/seed_warehouses.sql
+-- ============================================================
+
 -- ============================================================
 -- DỮ LIỆU MẪU KHU VỰC VÀ KHO HÀNG
 -- Dùng mô hình hành chính mới từ 01/07/2025:
@@ -1997,9 +2001,11 @@ FROM public.kho_hang AS kh
 JOIN public.khu_vuc AS kv ON kv.id = kh.khu_vuc_id
 ORDER BY kh.ma_kho;
 
--- ============================================================================
--- SOURCE: customer_orders_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/customer_orders_setup.sql
+-- ============================================================
+
 -- Chạy toàn bộ file này trong Supabase Dashboard > SQL Editor.
 -- <= 50 km: giao trực tiếp bằng xe máy, không cần kho.
 -- > 50 km: bắt buộc địa chỉ gửi và nhận phải có kho hoạt động.
@@ -2546,9 +2552,11 @@ GRANT EXECUTE ON FUNCTION public.huy_don_hang_khach_hang(BIGINT, TEXT)
 TO authenticated;
 NOTIFY pgrst, 'reload schema';
 
--- ============================================================================
--- SOURCE: wallet_shared_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/wallet_shared_setup.sql
+-- ============================================================
+
 -- ============================================================
 -- VÍ DÙNG CHUNG CHO KHÁCH HÀNG VÀ NHÂN VIÊN
 -- Chạy sau shipper_wallet_setup.sql và trước shipper_nearby_orders_setup.sql.
@@ -3249,9 +3257,11 @@ DROP TABLE IF EXISTS public.vi_shipper;
 -- Yêu cầu PostgREST nạp lại danh sách RPC mới ngay sau migration.
 NOTIFY pgrst, 'reload schema';
 
--- ============================================================================
--- SOURCE: shipper_nearby_orders_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/shipper_nearby_orders_setup.sql
+-- ============================================================
+
 -- Chạy trong Supabase Dashboard > SQL Editor sau customer_orders_setup.sql.
 -- Bán kính mặc định để shipper thấy/nhận đơn: 10 km.
 
@@ -3442,7 +3452,7 @@ BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET';
 
@@ -3522,7 +3532,7 @@ BEGIN
         SELECT nv.id INTO v_nhan_vien_id
         FROM public.nhan_vien nv
         JOIN public.vi_tri_nhan_vien vt ON vt.nhan_vien_id = nv.id
-        WHERE nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+        WHERE nv.vai_tro = 'SHIPPER'
           AND nv.trang_thai = 'HOAT_DONG'
           AND nv.trang_thai_duyet = 'DA_DUYET'
           AND vt.dang_truc_tuyen = TRUE
@@ -3606,7 +3616,7 @@ BEGIN
     FROM public.nhan_vien nv
     JOIN public.vi_tri_nhan_vien vt ON vt.nhan_vien_id = nv.id
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET'
       AND vt.dang_truc_tuyen = TRUE
@@ -3700,7 +3710,7 @@ BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET';
 
@@ -3818,7 +3828,7 @@ BEGIN
     FROM public.nhan_vien nv
     JOIN public.vi_tri_nhan_vien vt ON vt.nhan_vien_id = nv.id
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET'
       AND vt.dang_truc_tuyen = TRUE
@@ -3928,7 +3938,7 @@ BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET';
 
@@ -4153,9 +4163,11 @@ $$;
 -- Yêu cầu PostgREST nạp ngay chữ ký RPC mới có tham số p_minh_chung.
 NOTIFY pgrst, 'reload schema';
 
--- ============================================================================
--- SOURCE: shipper_salary_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/shipper_salary_setup.sql
+-- ============================================================
+
 -- ============================================================
 -- GHI NHẬN LƯƠNG SHIPPER KHI ĐƠN GIAO THÀNH CÔNG
 -- Chạy sau wallet_shared_setup.sql.
@@ -4376,9 +4388,11 @@ GRANT EXECUTE ON FUNCTION public.lich_su_don_hang_shipper() TO authenticated;
 -- Xem lương đã ghi nhận:
 -- SELECT * FROM public.luong_shipper ORDER BY ngay_ghi_nhan DESC;
 
--- ============================================================================
--- SOURCE: admin_setup.sql
--- ============================================================================
+
+-- ============================================================
+-- SOURCE: supabase/admin_setup.sql
+-- ============================================================
+
 -- VINEXPRESS - QUYỀN VÀ API QUẢN TRỊ CẤP CAO NHẤT
 -- Chạy file này trong Supabase SQL Editor sau employee_auth_setup.sql.
 
@@ -4624,11 +4638,18 @@ BEGIN
 END;
 $$;
 
+DROP FUNCTION IF EXISTS public.admin_tao_kho(
+    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+);
+DROP FUNCTION IF EXISTS public.admin_tao_kho(
+    TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, SMALLINT, BIGINT
+);
+
 CREATE OR REPLACE FUNCTION public.admin_tao_kho(
-    p_ma_kho TEXT,
     p_ten_kho TEXT,
     p_dia_chi TEXT,
-    p_khu_vuc_id BIGINT,
+    p_tinh_thanh TEXT,
+    p_phuong_xa TEXT,
     p_so_dien_thoai TEXT,
     p_cap_kho SMALLINT,
     p_kho_trung_tam_id BIGINT DEFAULT NULL
@@ -4640,14 +4661,17 @@ SET search_path = public
 AS $$
 DECLARE
     v_kho_id BIGINT;
+    v_khu_vuc_id BIGINT;
+    v_ma_kho TEXT;
 BEGIN
     IF NOT public.la_admin() THEN
         RAISE EXCEPTION 'Chỉ ADMIN mới được tạo kho';
     END IF;
-    IF NULLIF(BTRIM(p_ma_kho), '') IS NULL
-       OR NULLIF(BTRIM(p_ten_kho), '') IS NULL
-       OR NULLIF(BTRIM(p_dia_chi), '') IS NULL THEN
-        RAISE EXCEPTION 'Mã kho, tên kho và địa chỉ không được để trống';
+    IF NULLIF(BTRIM(p_ten_kho), '') IS NULL
+       OR NULLIF(BTRIM(p_dia_chi), '') IS NULL
+       OR NULLIF(BTRIM(p_tinh_thanh), '') IS NULL
+       OR NULLIF(BTRIM(p_phuong_xa), '') IS NULL THEN
+        RAISE EXCEPTION 'Tên kho và địa chỉ hành chính không được để trống';
     END IF;
     IF p_cap_kho NOT IN (1, 2) THEN
         RAISE EXCEPTION 'Cấp kho chỉ được là 1 hoặc 2';
@@ -4659,12 +4683,36 @@ BEGIN
         RAISE EXCEPTION 'Kho cấp 2 phải chọn kho cấp 1 trực thuộc';
     END IF;
 
+    SELECT kv.id INTO v_khu_vuc_id
+    FROM public.khu_vuc kv
+    WHERE LOWER(BTRIM(kv.tinh_thanh)) = LOWER(BTRIM(p_tinh_thanh))
+      AND LOWER(BTRIM(COALESCE(kv.phuong_xa, ''))) = LOWER(BTRIM(p_phuong_xa))
+    ORDER BY kv.id
+    LIMIT 1;
+
+    IF v_khu_vuc_id IS NULL THEN
+        INSERT INTO public.khu_vuc (
+            ten_khu_vuc, tinh_thanh, quan_huyen, phuong_xa
+        ) VALUES (
+            BTRIM(p_phuong_xa) || ', ' || BTRIM(p_tinh_thanh),
+            BTRIM(p_tinh_thanh), NULL, BTRIM(p_phuong_xa)
+        ) RETURNING id INTO v_khu_vuc_id;
+    END IF;
+
+    LOOP
+        v_ma_kho := 'K' || p_cap_kho::TEXT || '-' ||
+            UPPER(SUBSTRING(REPLACE(gen_random_uuid()::TEXT, '-', '') FROM 1 FOR 8));
+        EXIT WHEN NOT EXISTS (
+            SELECT 1 FROM public.kho_hang kh WHERE kh.ma_kho = v_ma_kho
+        );
+    END LOOP;
+
     INSERT INTO public.kho_hang (
         ma_kho, ten_kho, dia_chi, khu_vuc_id, so_dien_thoai,
         trang_thai, cap_kho, kho_trung_tam_id
     ) VALUES (
-        UPPER(BTRIM(p_ma_kho)), BTRIM(p_ten_kho), BTRIM(p_dia_chi),
-        p_khu_vuc_id, NULLIF(BTRIM(p_so_dien_thoai), ''),
+        v_ma_kho, BTRIM(p_ten_kho), BTRIM(p_dia_chi),
+        v_khu_vuc_id, NULLIF(BTRIM(p_so_dien_thoai), ''),
         'HOAT_DONG', p_cap_kho, p_kho_trung_tam_id
     )
     RETURNING id INTO v_kho_id;
@@ -4726,7 +4774,7 @@ REVOKE ALL ON FUNCTION public.admin_danh_sach_don_hang() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_danh_sach_kho() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_danh_sach_khu_vuc() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_tao_kho(
-    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+    TEXT, TEXT, TEXT, TEXT, TEXT, SMALLINT, BIGINT
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
 FROM PUBLIC;
@@ -4739,7 +4787,7 @@ GRANT EXECUTE ON FUNCTION public.admin_danh_sach_don_hang() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_danh_sach_kho() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_danh_sach_khu_vuc() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_tao_kho(
-    TEXT, TEXT, TEXT, BIGINT, TEXT, SMALLINT, BIGINT
+    TEXT, TEXT, TEXT, TEXT, TEXT, SMALLINT, BIGINT
 ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.admin_cap_nhat_nhan_vien(BIGINT, TEXT, TEXT)
 TO authenticated;
@@ -4748,6 +4796,188 @@ TO authenticated;
 -- UPDATE public.nhan_vien
 -- SET vai_tro = 'ADMIN', trang_thai_duyet = 'DA_DUYET', trang_thai = 'HOAT_DONG'
 -- WHERE email = 'email-admin-cua-ban@example.com';
+
+NOTIFY pgrst, 'reload schema';
+
+
+-- ============================================================
+-- SOURCE: supabase/transport_driver_setup.sql
+-- ============================================================
+
+-- VINEXPRESS - Nghiệp vụ tài xế xe tải vận chuyển giữa các kho.
+
+CREATE OR REPLACE FUNCTION public.thong_tin_tai_xe_van_chuyen()
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+    v_result JSONB;
+BEGIN
+    SELECT jsonb_build_object(
+        'nhan_vien_id', nv.id,
+        'ho_ten', nv.ho_ten,
+        'so_dien_thoai', nv.so_dien_thoai,
+        'email', nv.email,
+        'kho_hang_id', nv.kho_hang_id,
+        'xe_id', x.id,
+        'bien_so_xe', x.bien_so_xe,
+        'tai_trong', x.tai_trong,
+        'xe_trang_thai', x.trang_thai
+    ) INTO v_result
+    FROM public.nhan_vien nv
+    LEFT JOIN public.xe x ON x.tai_xe_id = nv.id
+       AND x.trang_thai <> 'NGUNG_HOAT_DONG'
+    WHERE nv.auth_user_id = auth.uid()
+      AND nv.vai_tro = 'VAN_CHUYEN'
+      AND nv.trang_thai_duyet = 'DA_DUYET'
+      AND nv.trang_thai = 'HOAT_DONG'
+    ORDER BY x.id
+    LIMIT 1;
+
+    IF v_result IS NULL THEN
+        RAISE EXCEPTION 'Tài khoản không phải tài xế vận chuyển hoặc chưa được duyệt';
+    END IF;
+    RETURN v_result;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.chuyen_xe_cua_tai_xe()
+RETURNS TABLE (
+    id BIGINT,
+    ma_chuyen VARCHAR,
+    trang_thai VARCHAR,
+    ngay_khoi_hanh TIMESTAMPTZ,
+    ngay_du_kien TIMESTAMPTZ,
+    ngay_den_thuc_te TIMESTAMPTZ,
+    bien_so_xe VARCHAR,
+    tai_trong NUMERIC,
+    kho_di_ten VARCHAR,
+    kho_den_ten VARCHAR,
+    so_don_hang BIGINT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM public.nhan_vien nv
+        WHERE nv.auth_user_id = auth.uid()
+          AND nv.vai_tro = 'VAN_CHUYEN'
+          AND nv.trang_thai_duyet = 'DA_DUYET'
+          AND nv.trang_thai = 'HOAT_DONG'
+    ) THEN
+        RAISE EXCEPTION 'Không có quyền xem chuyến xe';
+    END IF;
+
+    RETURN QUERY
+    SELECT cx.id, cx.ma_chuyen::VARCHAR, cx.trang_thai::VARCHAR,
+           cx.ngay_khoi_hanh, cx.ngay_du_kien, cx.ngay_den_thuc_te,
+           x.bien_so_xe::VARCHAR, x.tai_trong,
+           kd.ten_kho::VARCHAR, kden.ten_kho::VARCHAR,
+           (SELECT COUNT(*) FROM public.chi_tiet_chuyen_xe ct
+            WHERE ct.chuyen_xe_id = cx.id)::BIGINT
+    FROM public.chuyen_xe cx
+    JOIN public.xe x ON x.id = cx.xe_id
+    JOIN public.nhan_vien nv ON nv.id = x.tai_xe_id
+    LEFT JOIN LATERAL (
+        SELECT c.kho_di_id FROM public.chuyen_xe_chang c
+        WHERE c.chuyen_xe_id = cx.id ORDER BY c.thu_tu_chuyen LIMIT 1
+    ) dau ON TRUE
+    LEFT JOIN LATERAL (
+        SELECT c.kho_den_id FROM public.chuyen_xe_chang c
+        WHERE c.chuyen_xe_id = cx.id ORDER BY c.thu_tu_chuyen DESC LIMIT 1
+    ) cuoi ON TRUE
+    LEFT JOIN public.kho_hang kd ON kd.id = dau.kho_di_id
+    LEFT JOIN public.kho_hang kden ON kden.id = cuoi.kho_den_id
+    WHERE nv.auth_user_id = auth.uid()
+    ORDER BY
+        CASE cx.trang_thai
+          WHEN 'DANG_DI' THEN 1 WHEN 'DANG_XEP_HANG' THEN 2
+          WHEN 'CHO_KHOI_HANH' THEN 3 WHEN 'DA_DEN' THEN 4 ELSE 5
+        END,
+        cx.ngay_tao DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.cap_nhat_chuyen_xe_tai_xe(
+    p_chuyen_xe_id BIGINT,
+    p_trang_thai_moi TEXT
+)
+RETURNS VOID
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+    v_trang_thai VARCHAR(30);
+    v_xe_id BIGINT;
+BEGIN
+    SELECT cx.trang_thai, x.id INTO v_trang_thai, v_xe_id
+    FROM public.chuyen_xe cx
+    JOIN public.xe x ON x.id = cx.xe_id
+    JOIN public.nhan_vien nv ON nv.id = x.tai_xe_id
+    WHERE cx.id = p_chuyen_xe_id
+      AND nv.auth_user_id = auth.uid()
+      AND nv.vai_tro = 'VAN_CHUYEN'
+      AND nv.trang_thai_duyet = 'DA_DUYET'
+      AND nv.trang_thai = 'HOAT_DONG'
+    FOR UPDATE OF cx;
+
+    IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy chuyến xe được phân công'; END IF;
+
+    IF NOT (
+        (v_trang_thai IN ('CHO_KHOI_HANH', 'DANG_XEP_HANG') AND p_trang_thai_moi = 'DANG_DI') OR
+        (v_trang_thai = 'DANG_DI' AND p_trang_thai_moi = 'DA_DEN') OR
+        (v_trang_thai = 'DA_DEN' AND p_trang_thai_moi = 'DA_HOAN_THANH')
+    ) THEN
+        RAISE EXCEPTION 'Không thể chuyển trạng thái từ % sang %', v_trang_thai, p_trang_thai_moi;
+    END IF;
+
+    UPDATE public.chuyen_xe
+    SET trang_thai = p_trang_thai_moi,
+        ngay_khoi_hanh = CASE WHEN p_trang_thai_moi = 'DANG_DI'
+            THEN COALESCE(ngay_khoi_hanh, NOW()) ELSE ngay_khoi_hanh END,
+        ngay_den_thuc_te = CASE WHEN p_trang_thai_moi IN ('DA_DEN', 'DA_HOAN_THANH')
+            THEN COALESCE(ngay_den_thuc_te, NOW()) ELSE ngay_den_thuc_te END,
+        ngay_cap_nhat = NOW()
+    WHERE id = p_chuyen_xe_id;
+
+    UPDATE public.xe SET
+        trang_thai = CASE WHEN p_trang_thai_moi = 'DA_HOAN_THANH'
+            THEN 'SAN_SANG' ELSE 'DANG_CHAY' END,
+        ngay_cap_nhat = NOW()
+    WHERE id = v_xe_id;
+
+    IF p_trang_thai_moi = 'DANG_DI' THEN
+        UPDATE public.chuyen_xe_chang SET trang_thai = 'DANG_DI',
+            ngay_khoi_hanh = COALESCE(ngay_khoi_hanh, NOW()), ngay_cap_nhat = NOW()
+        WHERE chuyen_xe_id = p_chuyen_xe_id AND trang_thai = 'CHO_KHOI_HANH';
+        UPDATE public.chi_tiet_chuyen_xe SET trang_thai = 'DANG_VAN_CHUYEN'
+        WHERE chuyen_xe_id = p_chuyen_xe_id AND trang_thai = 'DA_XEP_HANG';
+    ELSIF p_trang_thai_moi IN ('DA_DEN', 'DA_HOAN_THANH') THEN
+        UPDATE public.chuyen_xe_chang SET trang_thai = 'DA_DEN',
+            ngay_den_thuc_te = COALESCE(ngay_den_thuc_te, NOW()), ngay_cap_nhat = NOW()
+        WHERE chuyen_xe_id = p_chuyen_xe_id AND trang_thai = 'DANG_DI';
+        IF p_trang_thai_moi = 'DA_HOAN_THANH' THEN
+            UPDATE public.chi_tiet_chuyen_xe SET trang_thai = 'DA_DO_HANG',
+                ngay_do_hang = COALESCE(ngay_do_hang, NOW())
+            WHERE chuyen_xe_id = p_chuyen_xe_id;
+        END IF;
+    END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.thong_tin_tai_xe_van_chuyen() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.chuyen_xe_cua_tai_xe() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.cap_nhat_chuyen_xe_tai_xe(BIGINT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.thong_tin_tai_xe_van_chuyen() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.chuyen_xe_cua_tai_xe() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.cap_nhat_chuyen_xe_tai_xe(BIGINT, TEXT) TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
 

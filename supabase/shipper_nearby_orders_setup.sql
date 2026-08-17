@@ -188,7 +188,7 @@ BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET';
 
@@ -268,7 +268,7 @@ BEGIN
         SELECT nv.id INTO v_nhan_vien_id
         FROM public.nhan_vien nv
         JOIN public.vi_tri_nhan_vien vt ON vt.nhan_vien_id = nv.id
-        WHERE nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+        WHERE nv.vai_tro = 'SHIPPER'
           AND nv.trang_thai = 'HOAT_DONG'
           AND nv.trang_thai_duyet = 'DA_DUYET'
           AND vt.dang_truc_tuyen = TRUE
@@ -352,7 +352,7 @@ BEGIN
     FROM public.nhan_vien nv
     JOIN public.vi_tri_nhan_vien vt ON vt.nhan_vien_id = nv.id
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET'
       AND vt.dang_truc_tuyen = TRUE
@@ -446,7 +446,7 @@ BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET';
 
@@ -564,7 +564,7 @@ BEGIN
     FROM public.nhan_vien nv
     JOIN public.vi_tri_nhan_vien vt ON vt.nhan_vien_id = nv.id
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET'
       AND vt.dang_truc_tuyen = TRUE
@@ -674,7 +674,7 @@ BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
     WHERE nv.auth_user_id = auth.uid()
-      AND nv.vai_tro IN ('SHIPPER', 'VAN_CHUYEN')
+      AND nv.vai_tro = 'SHIPPER'
       AND nv.trang_thai = 'HOAT_DONG'
       AND nv.trang_thai_duyet = 'DA_DUYET';
 

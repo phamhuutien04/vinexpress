@@ -20,6 +20,10 @@ supabase functions deploy admin-create-employee \
   --project-ref klhzughpwbnyffxwcjyx
 ```
 
+Mỗi khi sửa chức năng tạo nhân viên (ví dụ thêm tài xế xe tải, biển số và
+tải trọng), phải chạy lại lệnh deploy trên. Chỉ lưu file trong dự án sẽ không
+tự cập nhật Edge Function đang chạy trên Supabase.
+
 `SUPABASE_URL`, `SUPABASE_ANON_KEY` và `SUPABASE_SERVICE_ROLE_KEY` được Supabase
 tự cung cấp trong môi trường Edge Function. Không đưa service-role key vào Flutter.
 

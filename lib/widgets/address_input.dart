@@ -5,6 +5,18 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import '../core/constants/app_colors.dart';
 
+class AdministrativeAddressSelection {
+  const AdministrativeAddressSelection({
+    required this.address,
+    required this.province,
+    required this.ward,
+  });
+
+  final String address;
+  final String province;
+  final String ward;
+}
+
 class AddressInput extends StatefulWidget {
   const AddressInput({
     super.key,
@@ -15,6 +27,7 @@ class AddressInput extends StatefulWidget {
     this.onCurrentLocationSelected,
     this.onAddressChanged,
     this.onAddressSelected,
+    this.onAdministrativeAddressSelected,
     this.validator,
   });
 
@@ -26,6 +39,8 @@ class AddressInput extends StatefulWidget {
   onCurrentLocationSelected;
   final VoidCallback? onAddressChanged;
   final VoidCallback? onAddressSelected;
+  final ValueChanged<AdministrativeAddressSelection>?
+  onAdministrativeAddressSelected;
   final String? Function(String?)? validator;
 
   @override
@@ -139,16 +154,17 @@ class _AddressInputState extends State<AddressInput> {
   }
 
   Future<void> _selectAddress() async {
-    final address = await showModalBottomSheet<String>(
+    final selection = await showModalBottomSheet<AdministrativeAddressSelection>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
       builder: (_) => const _AdministrativeAddressPicker(),
     );
-    if (address != null && address.isNotEmpty) {
-      widget.controller.text = address;
+    if (selection != null && selection.address.isNotEmpty) {
+      widget.controller.text = selection.address;
       widget.onAddressChanged?.call();
       widget.onAddressSelected?.call();
+      widget.onAdministrativeAddressSelected?.call(selection);
     }
   }
 
@@ -388,7 +404,12 @@ class _AdministrativeAddressPickerState
                   }
                   Navigator.pop(
                     context,
-                    '$street, ${_ward!['name']}, ${_province!['name']}',
+                    AdministrativeAddressSelection(
+                      address:
+                          '$street, ${_ward!['name']}, ${_province!['name']}',
+                      province: '${_province!['name']}',
+                      ward: '${_ward!['name']}',
+                    ),
                   );
                 },
                 child: const Text('Sử dụng địa chỉ này'),
