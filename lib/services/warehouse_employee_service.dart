@@ -19,6 +19,24 @@ class WarehouseEmployeeService {
     }
   }
 
+  Future<Map<String, dynamic>> overview() async {
+    try {
+      final data = await _client.rpc('nhan_vien_kho_tong_quan');
+      return Map<String, dynamic>.from(data as Map);
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> assignedOrders() async {
+    try {
+      final data = await _client.rpc('nhan_vien_kho_don_can_xu_ly');
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
   Future<void> createLevel2Warehouse({
     required String name,
     required String address,

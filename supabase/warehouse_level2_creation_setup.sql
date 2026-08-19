@@ -90,8 +90,56 @@ CREATE TRIGGER trg_kiem_tra_chang_kho_cap_2
 BEFORE INSERT OR UPDATE OF kho_di_id,kho_den_id ON public.chuyen_xe_chang
 FOR EACH ROW EXECUTE FUNCTION public.kiem_tra_chang_kho_cap_2();
 
+CREATE OR REPLACE FUNCTION public.nhan_vien_kho_tong_quan()
+RETURNS JSONB
+LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public AS $$
+DECLARE v_nv public.nhan_vien%ROWTYPE; v_kho public.kho_hang%ROWTYPE;
+BEGIN
+    SELECT * INTO v_nv FROM public.nhan_vien WHERE auth_user_id=auth.uid()
+      AND vai_tro='NHAN_VIEN_KHO' AND trang_thai_duyet='DA_DUYET' AND trang_thai='HOAT_DONG';
+    IF NOT FOUND OR v_nv.kho_hang_id IS NULL THEN RAISE EXCEPTION 'Nhân viên chưa được gán kho'; END IF;
+    SELECT * INTO v_kho FROM public.kho_hang WHERE id=v_nv.kho_hang_id;
+    RETURN jsonb_build_object(
+      'nhan_vien_id',v_nv.id,'ho_ten',v_nv.ho_ten,'so_dien_thoai',v_nv.so_dien_thoai,
+      'email',v_nv.email,'kho_id',v_kho.id,'ma_kho',v_kho.ma_kho,'ten_kho',v_kho.ten_kho,
+      'dia_chi',v_kho.dia_chi,'cap_kho',v_kho.cap_kho,
+      'don_tai_kho',(SELECT COUNT(*) FROM public.don_hang dh WHERE dh.kho_hien_tai_id=v_kho.id),
+      'cho_xu_ly',(SELECT COUNT(*) FROM public.don_hang dh WHERE dh.kho_hien_tai_id=v_kho.id
+        AND dh.trang_thai IN ('DA_LAY_HANG','DEN_KHO_TRUNG_CHUYEN','DEN_KHO_DICH')),
+      'da_xu_ly_hom_nay',(SELECT COUNT(*) FROM public.nhat_ky_don_hang nk
+        WHERE nk.nhan_vien_id=v_nv.id AND nk.thoi_gian::DATE=CURRENT_DATE)
+    );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.nhan_vien_kho_don_can_xu_ly()
+RETURNS TABLE(id BIGINT,ma_van_don VARCHAR,nguoi_gui_ten VARCHAR,nguoi_nhan_ten VARCHAR,
+  nguoi_nhan_dia_chi TEXT,can_nang NUMERIC,trang_thai VARCHAR,ngay_cap_nhat TIMESTAMPTZ)
+LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public AS $$
+DECLARE v_kho_id BIGINT;
+BEGIN
+    SELECT nv.kho_hang_id INTO v_kho_id FROM public.nhan_vien nv
+    WHERE nv.auth_user_id=auth.uid()
+      AND nv.vai_tro='NHAN_VIEN_KHO'
+      AND nv.trang_thai_duyet='DA_DUYET'
+      AND nv.trang_thai='HOAT_DONG';
+    IF v_kho_id IS NULL THEN RAISE EXCEPTION 'Nhân viên chưa được gán kho'; END IF;
+    RETURN QUERY SELECT dh.id,dh.ma_van_don::VARCHAR,dh.nguoi_gui_ten::VARCHAR,
+      dh.nguoi_nhan_ten::VARCHAR,dh.nguoi_nhan_dia_chi,dh.can_nang,
+      dh.trang_thai::VARCHAR,dh.ngay_cap_nhat FROM public.don_hang dh
+    WHERE dh.kho_hien_tai_id=v_kho_id OR
+      ((dh.kho_gui_id=v_kho_id OR dh.kho_dich_id=v_kho_id) AND dh.trang_thai IN
+       ('DA_LAY_HANG','DANG_VAN_CHUYEN','DEN_KHO_TRUNG_CHUYEN','DEN_KHO_DICH'))
+    ORDER BY dh.ngay_cap_nhat DESC LIMIT 200;
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.thong_tin_quyen_tao_kho_cap_2() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.nhan_vien_tao_kho_cap_2(TEXT,TEXT,TEXT,TEXT,TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.thong_tin_quyen_tao_kho_cap_2() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nhan_vien_tao_kho_cap_2(TEXT,TEXT,TEXT,TEXT,TEXT) TO authenticated;
+REVOKE ALL ON FUNCTION public.nhan_vien_kho_tong_quan() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.nhan_vien_kho_don_can_xu_ly() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_tong_quan() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_don_can_xu_ly() TO authenticated;
 NOTIFY pgrst, 'reload schema';
