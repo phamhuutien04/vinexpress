@@ -118,7 +118,8 @@ BEGIN
     LEFT JOIN public.xe x ON x.tai_xe_id = nv.id
     WHERE nv.kho_hang_id = v_kho_id
       AND nv.auth_user_id IS DISTINCT FROM auth.uid()
-      AND nv.vai_tro IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN')
+      AND nv.vai_tro IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN',
+                          'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG')
     ORDER BY nv.ngay_tao DESC;
 END;
 $$;
@@ -229,8 +230,15 @@ BEGIN
         nv.trang_thai::VARCHAR, x.bien_so_xe::VARCHAR, x.tai_trong
     FROM public.nhan_vien nv LEFT JOIN public.xe x ON x.tai_xe_id = nv.id
     WHERE nv.kho_hang_id = p_kho_id AND nv.auth_user_id IS DISTINCT FROM auth.uid()
-      AND nv.vai_tro IN ('QUAN_LY_KHO','NHAN_VIEN_KHO','VAN_CHUYEN') ORDER BY
-        CASE nv.vai_tro WHEN 'QUAN_LY_KHO' THEN 0 WHEN 'NHAN_VIEN_KHO' THEN 1 ELSE 2 END,
+      AND nv.vai_tro IN ('QUAN_LY_KHO','NHAN_VIEN_KHO','VAN_CHUYEN',
+                         'NHAN_VIEN_LAY_HANG','NHAN_VIEN_GIAO_HANG') ORDER BY
+        CASE nv.vai_tro
+          WHEN 'QUAN_LY_KHO' THEN 0
+          WHEN 'NHAN_VIEN_KHO' THEN 1
+          WHEN 'NHAN_VIEN_LAY_HANG' THEN 2
+          WHEN 'NHAN_VIEN_GIAO_HANG' THEN 3
+          ELSE 4
+        END,
         nv.ngay_tao DESC;
 END;
 $$;

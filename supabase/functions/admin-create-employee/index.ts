@@ -51,19 +51,22 @@ Deno.serve(async (request) => {
     const password = String(body.password ?? '')
     const hoTen = String(body.ho_ten ?? '').trim()
     const soDienThoai = String(body.so_dien_thoai ?? '').replace(/[^0-9+]/g, '')
-    const vaiTro = String(body.vai_tro ?? '').toUpperCase()
+    const vaiTro = String(body.vai_tro ?? '').trim().toUpperCase()
     const bienSoXe = String(body.bien_so_xe ?? '').trim().toUpperCase()
     const taiTrong = Number(body.tai_trong ?? 0)
     let khoHangId = body.kho_hang_id == null ? null : Number(body.kho_hang_id)
+    let khuVucId = body.khu_vuc_id == null ? null : Number(body.khu_vuc_id)
+    const tinhThanh = String(body.tinh_thanh ?? '').trim()
+    const phuongXa = String(body.phuong_xa ?? '').trim()
 
     if (!email || !hoTen || !soDienThoai || password.length < 6) throw new Error('Thông tin chưa đầy đủ hoặc mật khẩu dưới 6 ký tự')
-    if (!['QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER'].includes(vaiTro)) throw new Error('Vai trò nhân viên không hợp lệ')
+    if (!['QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER', 'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG'].includes(vaiTro)) throw new Error(`Vai trò nhân viên không hợp lệ: ${vaiTro || '(trống)'}`)
     if (creator.vai_tro === 'QUAN_LY_KHO') {
       if (!creator.kho_hang_id) throw new Error('Quản lý chưa được gán kho')
-      if (!['QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN'].includes(vaiTro)) throw new Error('Vai trò không thuộc quyền của quản lý kho')
+      if (!['QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG'].includes(vaiTro)) throw new Error('Vai trò không thuộc quyền của quản lý kho')
       khoHangId = khoHangId ?? Number(creator.kho_hang_id)
       const scopeUrl = new URL(`${supabaseUrl}/rest/v1/kho_hang`)
-      scopeUrl.searchParams.set('select', 'id,cap_kho,kho_trung_tam_id')
+      scopeUrl.searchParams.set('select', 'id,cap_kho,kho_trung_tam_id,khu_vuc_id')
       scopeUrl.searchParams.set('id', `eq.${khoHangId}`)
       scopeUrl.searchParams.set('or', `(id.eq.${creator.kho_hang_id},kho_trung_tam_id.eq.${creator.kho_hang_id})`)
       scopeUrl.searchParams.set('limit', '1')
@@ -79,8 +82,32 @@ Deno.serve(async (request) => {
         throw new Error('Chỉ được tạo quản lý cho kho cấp 2 trực thuộc')
       }
     }
-    if (['QUAN_LY_KHO', 'NHAN_VIEN_KHO'].includes(vaiTro) && (!khoHangId || khoHangId <= 0)) throw new Error('Nhân viên phải được gán kho làm việc')
+    if (['QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG'].includes(vaiTro) && (!khoHangId || khoHangId <= 0)) throw new Error('Nhân viên phải được gán kho làm việc')
+    if (['NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG'].includes(vaiTro) && ((!khuVucId || khuVucId <= 0) && (!tinhThanh || !phuongXa))) throw new Error('Hãy chọn phường/xã nhân viên phụ trách')
     if (vaiTro === 'VAN_CHUYEN' && (!bienSoXe || !Number.isFinite(taiTrong) || taiTrong <= 0)) throw new Error('Tài xế phải có biển số và tải trọng hợp lệ')
+
+    if (['NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG'].includes(vaiTro) && (!khuVucId || khuVucId <= 0)) {
+      const findRegionUrl = new URL(`${supabaseUrl}/rest/v1/khu_vuc`)
+      findRegionUrl.searchParams.set('select', 'id')
+      findRegionUrl.searchParams.set('tinh_thanh', `eq.${tinhThanh}`)
+      findRegionUrl.searchParams.set('phuong_xa', `eq.${phuongXa}`)
+      findRegionUrl.searchParams.set('limit', '1')
+      const findRegionResponse = await fetch(findRegionUrl, { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } })
+      const foundRegions = await findRegionResponse.json()
+      if (!findRegionResponse.ok) throw new Error(foundRegions.message ?? 'Không kiểm tra được phường/xã')
+      if (Array.isArray(foundRegions) && foundRegions[0]?.id) {
+        khuVucId = Number(foundRegions[0].id)
+      } else {
+        const createRegionResponse = await fetch(`${supabaseUrl}/rest/v1/khu_vuc?select=id`, {
+          method: 'POST',
+          headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+          body: JSON.stringify({ ten_khu_vuc: `${phuongXa}, ${tinhThanh}`, tinh_thanh: tinhThanh, quan_huyen: '', phuong_xa: phuongXa }),
+        })
+        const createdRegions = await createRegionResponse.json()
+        if (!createRegionResponse.ok || !createdRegions[0]?.id) throw new Error(createdRegions.message ?? 'Không lưu được phường/xã từ API')
+        khuVucId = Number(createdRegions[0].id)
+      }
+    }
 
     const authResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
       method: 'POST',
@@ -113,6 +140,7 @@ Deno.serve(async (request) => {
       body: JSON.stringify({
         auth_user_id: createdUserId,
         kho_hang_id: khoHangId,
+        khu_vuc_id: khuVucId,
         ho_ten: hoTen,
         so_dien_thoai: soDienThoai,
         email,

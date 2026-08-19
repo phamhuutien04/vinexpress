@@ -10,6 +10,7 @@ import 'screens/employee/delivery_home_screen.dart';
 import 'screens/transport/transport_driver_home_screen.dart';
 import 'screens/warehouse/warehouse_manager_home_screen.dart';
 import 'screens/employee/employee_home_screen.dart';
+import 'screens/employee/last_mile_staff_screen.dart';
 import 'services/customer_auth_service.dart';
 
 Future<void> main() async {
@@ -71,6 +72,9 @@ class _SessionGateState extends State<_SessionGate> {
         final role = result.profile['vai_tro'] as String?;
         if (role == 'ADMIN') return const AdminHomeScreen();
         if (role == 'SHIPPER') return const DeliveryHomeScreen();
+        if (role == 'NHAN_VIEN_LAY_HANG' || role == 'NHAN_VIEN_GIAO_HANG') {
+          return const LastMileStaffScreen();
+        }
         if (role == 'VAN_CHUYEN') return const TransportDriverHomeScreen();
         if (role == 'QUAN_LY_KHO') return const WarehouseManagerHomeScreen();
         return const EmployeeHomeScreen();

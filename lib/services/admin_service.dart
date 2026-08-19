@@ -72,6 +72,7 @@ class AdminService {
     required String password,
     required String role,
     int? warehouseId,
+    int? regionId,
     String? licensePlate,
     double? payloadKg,
   }) async {
@@ -85,6 +86,7 @@ class AdminService {
           'password': password,
           'vai_tro': role,
           'kho_hang_id': warehouseId,
+          'khu_vuc_id': regionId,
           'bien_so_xe': licensePlate?.trim().toUpperCase(),
           'tai_trong': payloadKg,
         },

@@ -55,6 +55,15 @@ class WarehouseManagerService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> regions() async {
+    try {
+      final data = await _client.rpc('danh_sach_khu_vuc_phan_cong');
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw WarehouseManagerException(_message(error));
+    }
+  }
+
   Future<void> createEmployee({
     required String fullName,
     required String phone,
@@ -62,6 +71,7 @@ class WarehouseManagerService {
     required String password,
     required String role,
     required int warehouseId,
+    int? regionId,
     String? licensePlate,
     double? payloadKg,
   }) async {
@@ -75,6 +85,7 @@ class WarehouseManagerService {
           'password': password,
           'vai_tro': role,
           'kho_hang_id': warehouseId,
+          'khu_vuc_id': regionId,
           'bien_so_xe': licensePlate?.trim().toUpperCase(),
           'tai_trong': payloadKg,
         },
@@ -103,13 +114,16 @@ class WarehouseManagerService {
     String? phone,
   }) async {
     try {
-      await _client.rpc('nhan_vien_tao_kho_cap_2', params: {
-        'p_ten_kho': name.trim(),
-        'p_dia_chi': address.trim(),
-        'p_tinh_thanh': province.trim(),
-        'p_phuong_xa': ward.trim(),
-        'p_so_dien_thoai': phone?.trim(),
-      });
+      await _client.rpc(
+        'nhan_vien_tao_kho_cap_2',
+        params: {
+          'p_ten_kho': name.trim(),
+          'p_dia_chi': address.trim(),
+          'p_tinh_thanh': province.trim(),
+          'p_phuong_xa': ward.trim(),
+          'p_so_dien_thoai': phone?.trim(),
+        },
+      );
     } on PostgrestException catch (error) {
       throw WarehouseManagerException(_message(error));
     }

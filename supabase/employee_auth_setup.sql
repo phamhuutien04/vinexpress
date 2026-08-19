@@ -19,7 +19,7 @@ CREATE TABLE IF NOT EXISTS public.nhan_vien (
   ngay_tao TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   ngay_cap_nhat TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   CONSTRAINT chk_nhan_vien_vai_tro CHECK (
-    vai_tro IN ('ADMIN', 'QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER')
+    vai_tro IN ('ADMIN', 'QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER', 'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG')
   ),
   CONSTRAINT chk_nhan_vien_duyet CHECK (
     trang_thai_duyet IN ('CHO_DUYET', 'DA_DUYET', 'TU_CHOI')
@@ -103,7 +103,7 @@ BEGIN
   IF v_loai = 'NHAN_VIEN' THEN
     v_vai_tro := UPPER(COALESCE(NEW.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'));
     IF v_vai_tro NOT IN (
-      'QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER'
+      'QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER', 'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG'
     ) THEN
       RAISE EXCEPTION 'Vai trò nhân viên không hợp lệ';
     END IF;
@@ -176,7 +176,7 @@ SET auth_user_id = au.id,
     vai_tro = CASE
       WHEN UPPER(COALESCE(
         au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
-      )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER')
+      )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER', 'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG')
       THEN UPPER(COALESCE(
         au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
       ))
@@ -205,7 +205,7 @@ SELECT
   CASE
     WHEN UPPER(COALESCE(
       au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
-    )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER')
+    )) IN ('QUAN_LY_KHO', 'NHAN_VIEN_KHO', 'VAN_CHUYEN', 'SHIPPER', 'NHAN_VIEN_LAY_HANG', 'NHAN_VIEN_GIAO_HANG')
     THEN UPPER(COALESCE(
       au.raw_user_meta_data->>'vai_tro_nhan_vien', 'SHIPPER'
     ))

@@ -5,7 +5,7 @@
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>VinExpress sử dụng vị trí để điền nhanh địa chỉ lấy hàng.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>VinExpress sử dụng camera để chụp ảnh minh chứng lấy và giao hàng.</string>
+	<string>VinExpress sử dụng camera để quét mã kiện hàng và chụp ảnh minh chứng lấy, giao hàng.</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>

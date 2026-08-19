@@ -23,6 +23,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> _customers = [];
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _warehouses = [];
+  List<Map<String, dynamic>> _regions = [];
 
   static const _titles = [
     'Tổng quan',
@@ -77,6 +78,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _service.getCustomers(),
         _service.getOrders(),
         _service.getWarehouses(),
+        _service.getRegions(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -85,6 +87,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _customers = result[2] as List<Map<String, dynamic>>;
         _orders = result[3] as List<Map<String, dynamic>>;
         _warehouses = result[4] as List<Map<String, dynamic>>;
+        _regions = result[5] as List<Map<String, dynamic>>;
       });
     } on AdminServiceException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -124,15 +127,15 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           body: _body(),
           floatingActionButton: switch (_selected) {
             1 => FloatingActionButton.extended(
-                onPressed: _showCreateEmployee,
-                icon: const Icon(Icons.person_add_alt_1),
-                label: const Text('Tạo nhân viên'),
-              ),
+              onPressed: _showCreateEmployee,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Tạo nhân viên'),
+            ),
             4 => FloatingActionButton.extended(
-                onPressed: _showCreateWarehouse,
-                icon: const Icon(Icons.add_business),
-                label: const Text('Thêm kho'),
-              ),
+              onPressed: _showCreateWarehouse,
+              icon: const Icon(Icons.add_business),
+              label: const Text('Thêm kho'),
+            ),
             _ => null,
           },
           bottomNavigationBar: desktop
@@ -160,7 +163,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   child: CircleAvatar(
                     radius: 25,
                     backgroundColor: AppColors.primary,
-                    child: Icon(Icons.admin_panel_settings, color: Colors.white),
+                    child: Icon(
+                      Icons.admin_panel_settings,
+                      color: Colors.white,
+                    ),
                   ),
                 ),
                 destinations: _destinations
@@ -207,10 +213,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     }
     return switch (_selected) {
       0 => _AdminOverview(data: _overview, onRefresh: _loadAll),
-      1 => _EmployeeList(
-          employees: _employees,
-          onAction: _updateEmployee,
-        ),
+      1 => _EmployeeList(employees: _employees, onAction: _updateEmployee),
       2 => _CustomerList(customers: _customers),
       3 => _OrderList(orders: _orders),
       _ => _WarehouseList(warehouses: _warehouses),
@@ -261,6 +264,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       builder: (_) => _CreateEmployeeDialog(
         service: _service,
         warehouses: _warehouses,
+        regions: _regions,
       ),
     );
     if (created == true) await _loadAll();
@@ -270,10 +274,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     final created = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (_) => _CreateWarehouseDialog(
-        service: _service,
-        warehouses: _warehouses,
-      ),
+      builder: (_) =>
+          _CreateWarehouseDialog(service: _service, warehouses: _warehouses),
     );
     if (created == true) await _loadAll();
   }
@@ -480,15 +482,15 @@ class _SectionTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
-          ),
-          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-        ],
-      );
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Text(
+        title,
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+      ),
+      Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+    ],
+  );
 }
 
 class _SummaryCard extends StatelessWidget {
@@ -505,46 +507,46 @@ class _SummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        margin: EdgeInsets.zero,
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Row(
-            children: [
-              Container(
-                width: 42,
-                height: 42,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: .12),
-                  borderRadius: BorderRadius.circular(13),
-                ),
-                child: Icon(icon, color: color, size: 23),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+    margin: EdgeInsets.zero,
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: .12),
+              borderRadius: BorderRadius.circular(13),
+            ),
+            child: Icon(icon, color: color, size: 23),
           ),
-        ),
-      );
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _OrderMetric extends StatelessWidget {
@@ -559,21 +561,21 @@ class _OrderMetric extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Expanded(
-        child: Column(
-          children: [
-            Text(
-              '${value ?? 0}',
-              style: TextStyle(
-                color: color,
-                fontSize: 23,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            const SizedBox(height: 3),
-            Text(label, style: Theme.of(context).textTheme.bodySmall),
-          ],
+    child: Column(
+      children: [
+        Text(
+          '${value ?? 0}',
+          style: TextStyle(
+            color: color,
+            fontSize: 23,
+            fontWeight: FontWeight.w900,
+          ),
         ),
-      );
+        const SizedBox(height: 3),
+        Text(label, style: Theme.of(context).textTheme.bodySmall),
+      ],
+    ),
+  );
 }
 
 class _EmployeeList extends StatelessWidget {
@@ -583,36 +585,49 @@ class _EmployeeList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView.builder(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-        itemCount: employees.length,
-        itemBuilder: (_, index) {
-          final item = employees[index];
-          final pending = item['trang_thai_duyet'] == 'CHO_DUYET';
-          final locked = item['trang_thai'] != 'HOAT_DONG';
-          return Card(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            margin: const EdgeInsets.only(bottom: 10),
-            child: ListTile(
-              leading: CircleAvatar(child: Text('${item['ho_ten']}'.substring(0, 1).toUpperCase())),
-              title: Text('${item['ho_ten']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(
-                '${_role(item['vai_tro'])} • ${item['email']}\n'
-                '${item['so_dien_thoai']} • ${item['trang_thai_duyet']}'
-                '${item['ten_kho'] == null ? '' : '\nKho: ${item['ten_kho']}'}',
+    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+    itemCount: employees.length,
+    itemBuilder: (_, index) {
+      final item = employees[index];
+      final pending = item['trang_thai_duyet'] == 'CHO_DUYET';
+      final locked = item['trang_thai'] != 'HOAT_DONG';
+      return Card(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        margin: const EdgeInsets.only(bottom: 10),
+        child: ListTile(
+          leading: CircleAvatar(
+            child: Text('${item['ho_ten']}'.substring(0, 1).toUpperCase()),
+          ),
+          title: Text(
+            '${item['ho_ten']}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '${_role(item['vai_tro'])} • ${item['email']}\n'
+            '${item['so_dien_thoai']} • ${item['trang_thai_duyet']}'
+            '${item['ten_kho'] == null ? '' : '\nKho: ${item['ten_kho']}'}',
+          ),
+          isThreeLine: true,
+          trailing: PopupMenuButton<String>(
+            onSelected: (value) => onAction(item, value),
+            itemBuilder: (_) => [
+              if (pending)
+                const PopupMenuItem(
+                  value: 'approve',
+                  child: Text('Duyệt tài khoản'),
+                ),
+              if (pending)
+                const PopupMenuItem(value: 'reject', child: Text('Từ chối')),
+              PopupMenuItem(
+                value: locked ? 'unlock' : 'lock',
+                child: Text(locked ? 'Mở khóa' : 'Khóa tài khoản'),
               ),
-              isThreeLine: true,
-              trailing: PopupMenuButton<String>(
-                onSelected: (value) => onAction(item, value),
-                itemBuilder: (_) => [
-                  if (pending) const PopupMenuItem(value: 'approve', child: Text('Duyệt tài khoản')),
-                  if (pending) const PopupMenuItem(value: 'reject', child: Text('Từ chối')),
-                  PopupMenuItem(value: locked ? 'unlock' : 'lock', child: Text(locked ? 'Mở khóa' : 'Khóa tài khoản')),
-                ],
-              ),
-            ),
-          );
-        },
+            ],
+          ),
+        ),
       );
+    },
+  );
 }
 
 class _CustomerList extends StatelessWidget {
@@ -621,21 +636,24 @@ class _CustomerList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: customers.length,
-        itemBuilder: (_, index) {
-          final item = customers[index];
-          return Card(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.person_outline)),
-              title: Text('${item['ho_ten']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('${item['email']}\n${item['so_dien_thoai']}'),
-              trailing: Text('${item['tong_don']} đơn'),
-            ),
-          );
-        },
+    padding: const EdgeInsets.all(16),
+    itemCount: customers.length,
+    itemBuilder: (_, index) {
+      final item = customers[index];
+      return Card(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        child: ListTile(
+          leading: const CircleAvatar(child: Icon(Icons.person_outline)),
+          title: Text(
+            '${item['ho_ten']}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text('${item['email']}\n${item['so_dien_thoai']}'),
+          trailing: Text('${item['tong_don']} đơn'),
+        ),
       );
+    },
+  );
 }
 
 class _OrderList extends StatelessWidget {
@@ -644,22 +662,35 @@ class _OrderList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: orders.length,
-        itemBuilder: (_, index) {
-          final item = orders[index];
-          return Card(
-            color: Theme.of(context).colorScheme.surfaceContainerLow,
-            child: ListTile(
-              leading: const CircleAvatar(child: Icon(Icons.local_shipping_outlined)),
-              title: Text('${item['ma_van_don']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('${item['khach_hang_ten']} → ${item['nguoi_nhan_ten']}\n${item['trang_thai']} • ${item['shipper_ten'] ?? 'Chưa có shipper'}'),
-              isThreeLine: true,
-              trailing: Text(_money(item['phi_van_chuyen']), style: const TextStyle(color: AppColors.primary, fontWeight: FontWeight.bold)),
+    padding: const EdgeInsets.all(16),
+    itemCount: orders.length,
+    itemBuilder: (_, index) {
+      final item = orders[index];
+      return Card(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        child: ListTile(
+          leading: const CircleAvatar(
+            child: Icon(Icons.local_shipping_outlined),
+          ),
+          title: Text(
+            '${item['ma_van_don']}',
+            style: const TextStyle(fontWeight: FontWeight.bold),
+          ),
+          subtitle: Text(
+            '${item['khach_hang_ten']} → ${item['nguoi_nhan_ten']}\n${item['trang_thai']} • ${item['shipper_ten'] ?? 'Chưa có shipper'}',
+          ),
+          isThreeLine: true,
+          trailing: Text(
+            _money(item['phi_van_chuyen']),
+            style: const TextStyle(
+              color: AppColors.primary,
+              fontWeight: FontWeight.bold,
             ),
-          );
-        },
+          ),
+        ),
       );
+    },
+  );
 }
 
 class _WarehouseList extends StatelessWidget {
@@ -776,8 +807,7 @@ class _CreateWarehouseDialog extends StatefulWidget {
   final List<Map<String, dynamic>> warehouses;
 
   @override
-  State<_CreateWarehouseDialog> createState() =>
-      _CreateWarehouseDialogState();
+  State<_CreateWarehouseDialog> createState() => _CreateWarehouseDialogState();
 }
 
 class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
@@ -808,126 +838,126 @@ class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Thêm kho hàng'),
-        content: SizedBox(
-          width: 520,
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SegmentedButton<int>(
-                    segments: const [
-                      ButtonSegment(
-                        value: 1,
-                        icon: Icon(Icons.hub_outlined),
-                        label: Text('Kho cấp 1'),
-                      ),
-                      ButtonSegment(
-                        value: 2,
-                        icon: Icon(Icons.account_tree_outlined),
-                        label: Text('Kho cấp 2'),
-                      ),
-                    ],
-                    selected: {_level},
-                    onSelectionChanged: _saving
-                        ? null
-                        : (value) => setState(() {
-                            _level = value.first;
-                            _parentId = null;
-                          }),
+    title: const Text('Thêm kho hàng'),
+    content: SizedBox(
+      width: 520,
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(
+                    value: 1,
+                    icon: Icon(Icons.hub_outlined),
+                    label: Text('Kho cấp 1'),
                   ),
-                  const SizedBox(height: 16),
-                  _warehouseField(_name, 'Tên kho', Icons.warehouse_outlined),
-                  const SizedBox(height: 6),
-                  const Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      'Mã kho được hệ thống tạo tự động khi lưu.',
-                      style: TextStyle(fontSize: 12),
-                    ),
+                  ButtonSegment(
+                    value: 2,
+                    icon: Icon(Icons.account_tree_outlined),
+                    label: Text('Kho cấp 2'),
                   ),
-                  const SizedBox(height: 12),
-                  AddressInput(
-                    controller: _address,
-                    label: 'Địa chỉ kho',
-                    hint: 'Chọn Tỉnh/Thành, Phường/Xã và nhập số nhà',
-                    validator: (_) => _province == null || _ward == null
-                        ? 'Hãy chọn địa chỉ bằng nút bên dưới'
-                        : null,
-                    onAddressChanged: () {
-                      if (_province != null || _ward != null) {
-                        setState(() {
-                          _province = null;
-                          _ward = null;
-                          _parentId = null;
-                        });
-                      }
-                    },
-                    onAdministrativeAddressSelected: (selection) {
-                      setState(() {
-                        _province = selection.province;
-                        _ward = selection.ward;
-                        _parentId = null;
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _warehouseField(
-                    _phone,
-                    'Số điện thoại (không bắt buộc)',
-                    Icons.phone_outlined,
-                    required: false,
-                  ),
-                  if (_level == 2) ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int>(
-                      initialValue: _parentId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Kho cấp 1 trực thuộc',
-                        prefixIcon: Icon(Icons.account_tree_outlined),
-                      ),
-                      items: _availableParents.map((item) {
-                        return DropdownMenuItem(
-                          value: (item['id'] as num).toInt(),
-                          child: Text(
-                            '${item['ten_kho']} (${item['ma_kho']})',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                      validator: (value) => _level == 2 && value == null
-                          ? 'Hãy chọn kho cấp 1'
-                          : null,
-                      onChanged: _saving
-                          ? null
-                          : (value) => setState(() => _parentId = value),
-                    ),
-                  ],
                 ],
+                selected: {_level},
+                onSelectionChanged: _saving
+                    ? null
+                    : (value) => setState(() {
+                        _level = value.first;
+                        _parentId = null;
+                      }),
               ),
-            ),
+              const SizedBox(height: 16),
+              _warehouseField(_name, 'Tên kho', Icons.warehouse_outlined),
+              const SizedBox(height: 6),
+              const Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Mã kho được hệ thống tạo tự động khi lưu.',
+                  style: TextStyle(fontSize: 12),
+                ),
+              ),
+              const SizedBox(height: 12),
+              AddressInput(
+                controller: _address,
+                label: 'Địa chỉ kho',
+                hint: 'Chọn Tỉnh/Thành, Phường/Xã và nhập số nhà',
+                validator: (_) => _province == null || _ward == null
+                    ? 'Hãy chọn địa chỉ bằng nút bên dưới'
+                    : null,
+                onAddressChanged: () {
+                  if (_province != null || _ward != null) {
+                    setState(() {
+                      _province = null;
+                      _ward = null;
+                      _parentId = null;
+                    });
+                  }
+                },
+                onAdministrativeAddressSelected: (selection) {
+                  setState(() {
+                    _province = selection.province;
+                    _ward = selection.ward;
+                    _parentId = null;
+                  });
+                },
+              ),
+              const SizedBox(height: 12),
+              _warehouseField(
+                _phone,
+                'Số điện thoại (không bắt buộc)',
+                Icons.phone_outlined,
+                required: false,
+              ),
+              if (_level == 2) ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: _parentId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Kho cấp 1 trực thuộc',
+                    prefixIcon: Icon(Icons.account_tree_outlined),
+                  ),
+                  items: _availableParents.map((item) {
+                    return DropdownMenuItem(
+                      value: (item['id'] as num).toInt(),
+                      child: Text(
+                        '${item['ten_kho']} (${item['ma_kho']})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  validator: (value) => _level == 2 && value == null
+                      ? 'Hãy chọn kho cấp 1'
+                      : null,
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() => _parentId = value),
+                ),
+              ],
+            ],
           ),
         ),
-        actions: [
-          TextButton(
-            onPressed: _saving ? null : () => Navigator.pop(context),
-            child: const Text('Hủy'),
-          ),
-          FilledButton.icon(
-            onPressed: _saving ? null : _create,
-            icon: _saving
-                ? const SizedBox.square(
-                    dimension: 17,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.add_business),
-            label: const Text('Tạo kho'),
-          ),
-        ],
-      );
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.pop(context),
+        child: const Text('Hủy'),
+      ),
+      FilledButton.icon(
+        onPressed: _saving ? null : _create,
+        icon: _saving
+            ? const SizedBox.square(
+                dimension: 17,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Icon(Icons.add_business),
+        label: const Text('Tạo kho'),
+      ),
+    ],
+  );
 
   TextFormField _warehouseField(
     TextEditingController controller,
@@ -939,9 +969,8 @@ class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
       controller: controller,
       decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
       validator: required
-          ? (value) => (value?.trim().isEmpty ?? true)
-              ? 'Không được để trống'
-              : null
+          ? (value) =>
+                (value?.trim().isEmpty ?? true) ? 'Không được để trống' : null
           : null,
     );
   }
@@ -963,7 +992,10 @@ class _CreateWarehouseDialogState extends State<_CreateWarehouseDialog> {
     } on AdminServiceException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ),
       );
       setState(() => _saving = false);
     }
@@ -974,9 +1006,11 @@ class _CreateEmployeeDialog extends StatefulWidget {
   const _CreateEmployeeDialog({
     required this.service,
     required this.warehouses,
+    required this.regions,
   });
   final AdminService service;
   final List<Map<String, dynamic>> warehouses;
+  final List<Map<String, dynamic>> regions;
 
   @override
   State<_CreateEmployeeDialog> createState() => _CreateEmployeeDialogState();
@@ -992,7 +1026,22 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
   final _payload = TextEditingController();
   String _role = 'SHIPPER';
   int? _warehouseId;
+  int? _regionId;
   bool _saving = false;
+
+  bool get _isAreaEmployee =>
+      _role == 'NHAN_VIEN_LAY_HANG' || _role == 'NHAN_VIEN_GIAO_HANG';
+
+  void _syncWarehouseRegion() {
+    if (_warehouseId == null) {
+      _regionId = null;
+      return;
+    }
+    final warehouse = widget.warehouses.firstWhere(
+      (item) => (item['id'] as num).toInt() == _warehouseId,
+    );
+    _regionId = (warehouse['khu_vuc_id'] as num?)?.toInt();
+  }
 
   @override
   void dispose() {
@@ -1007,109 +1056,187 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-        title: const Text('Tạo tài khoản nhân viên'),
-        content: SizedBox(
-          width: 480,
-          child: Form(
-            key: _formKey,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _field(_name, 'Họ và tên', Icons.person_outline),
-                  const SizedBox(height: 12),
-                  _field(_phone, 'Số điện thoại', Icons.phone_outlined),
-                  const SizedBox(height: 12),
-                  _field(_email, 'Email', Icons.email_outlined),
-                  const SizedBox(height: 12),
-                  _field(_password, 'Mật khẩu ban đầu', Icons.lock_outline, obscure: true),
-                  const SizedBox(height: 12),
-                  DropdownButtonFormField<String>(
-                    initialValue: _role,
-                    decoration: const InputDecoration(labelText: 'Vai trò', prefixIcon: Icon(Icons.badge_outlined)),
-                    items: const [
-                      DropdownMenuItem(value: 'SHIPPER', child: Text('Shipper')),
-                      DropdownMenuItem(value: 'VAN_CHUYEN', child: Text('Tài xế xe tải')),
-                      DropdownMenuItem(value: 'NHAN_VIEN_KHO', child: Text('Nhân viên kho')),
-                      DropdownMenuItem(value: 'QUAN_LY_KHO', child: Text('Quản lý kho')),
-                    ],
-                    onChanged: _saving ? null : (value) => setState(() => _role = value!),
-                  ),
-                  if (_role == 'QUAN_LY_KHO' || _role == 'NHAN_VIEN_KHO') ...[
-                    const SizedBox(height: 12),
-                    DropdownButtonFormField<int>(
-                      initialValue: _warehouseId,
-                      isExpanded: true,
-                      decoration: const InputDecoration(
-                        labelText: 'Kho làm việc',
-                        prefixIcon: Icon(Icons.warehouse_outlined),
-                      ),
-                      items: widget.warehouses.map((warehouse) {
-                        return DropdownMenuItem(
-                          value: (warehouse['id'] as num).toInt(),
-                          child: Text(
-                            '${warehouse['ten_kho']} (${warehouse['ma_kho']})',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      }).toList(),
-                      validator: (value) =>
-                          (_role == 'QUAN_LY_KHO' || _role == 'NHAN_VIEN_KHO') && value == null
-                              ? 'Hãy chọn kho làm việc'
-                              : null,
-                      onChanged: _saving
-                          ? null
-                          : (value) => setState(() => _warehouseId = value),
-                    ),
-                  ],
-                  if (_role == 'VAN_CHUYEN') ...[
-                    const SizedBox(height: 12),
-                    _field(_licensePlate, 'Biển số xe tải', Icons.local_shipping_outlined),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _payload,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(
-                        labelText: 'Tải trọng (kg)',
-                        prefixIcon: Icon(Icons.scale_outlined),
-                      ),
-                      validator: (value) {
-                        if (_role != 'VAN_CHUYEN') return null;
-                        final number = double.tryParse((value ?? '').replaceAll(',', '.'));
-                        return number == null || number <= 0 ? 'Tải trọng phải lớn hơn 0' : null;
-                      },
-                    ),
-                  ],
-                ],
+    title: const Text('Tạo tài khoản nhân viên'),
+    content: SizedBox(
+      width: 480,
+      child: Form(
+        key: _formKey,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _field(_name, 'Họ và tên', Icons.person_outline),
+              const SizedBox(height: 12),
+              _field(_phone, 'Số điện thoại', Icons.phone_outlined),
+              const SizedBox(height: 12),
+              _field(_email, 'Email', Icons.email_outlined),
+              const SizedBox(height: 12),
+              _field(
+                _password,
+                'Mật khẩu ban đầu',
+                Icons.lock_outline,
+                obscure: true,
               ),
-            ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                initialValue: _role,
+                decoration: const InputDecoration(
+                  labelText: 'Vai trò',
+                  prefixIcon: Icon(Icons.badge_outlined),
+                ),
+                items: const [
+                  DropdownMenuItem(value: 'SHIPPER', child: Text('Shipper')),
+                  DropdownMenuItem(
+                    value: 'VAN_CHUYEN',
+                    child: Text('Tài xế xe tải'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'NHAN_VIEN_KHO',
+                    child: Text('Nhân viên kho'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'QUAN_LY_KHO',
+                    child: Text('Quản lý kho'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'NHAN_VIEN_LAY_HANG',
+                    child: Text('Nhân viên lấy hàng'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'NHAN_VIEN_GIAO_HANG',
+                    child: Text('Nhân viên giao hàng'),
+                  ),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) => setState(() {
+                        _role = value!;
+                        if (_isAreaEmployee) _syncWarehouseRegion();
+                      }),
+              ),
+              if (_role == 'QUAN_LY_KHO' ||
+                  _role == 'NHAN_VIEN_KHO' ||
+                  _role == 'NHAN_VIEN_LAY_HANG' ||
+                  _role == 'NHAN_VIEN_GIAO_HANG') ...[
+                const SizedBox(height: 12),
+                DropdownButtonFormField<int>(
+                  initialValue: _warehouseId,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Kho làm việc',
+                    prefixIcon: Icon(Icons.warehouse_outlined),
+                  ),
+                  items: widget.warehouses.map((warehouse) {
+                    return DropdownMenuItem(
+                      value: (warehouse['id'] as num).toInt(),
+                      child: Text(
+                        '${warehouse['ten_kho']} (${warehouse['ma_kho']})',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    );
+                  }).toList(),
+                  validator: (value) =>
+                      (_role == 'QUAN_LY_KHO' ||
+                              _role == 'NHAN_VIEN_KHO' ||
+                              _role == 'NHAN_VIEN_LAY_HANG' ||
+                              _role == 'NHAN_VIEN_GIAO_HANG') &&
+                          value == null
+                      ? 'Hãy chọn kho làm việc'
+                      : null,
+                  onChanged: _saving
+                      ? null
+                      : (value) => setState(() {
+                          _warehouseId = value;
+                          if (_isAreaEmployee) _syncWarehouseRegion();
+                        }),
+                ),
+              ],
+              if (_role == 'NHAN_VIEN_LAY_HANG' ||
+                  _role == 'NHAN_VIEN_GIAO_HANG') ...[
+                const SizedBox(height: 12),
+                InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Phường/Xã phụ trách',
+                    prefixIcon: Icon(Icons.location_on_outlined),
+                  ),
+                  child: Text(_automaticWarehouseWard),
+                ),
+              ],
+              if (_role == 'VAN_CHUYEN') ...[
+                const SizedBox(height: 12),
+                _field(
+                  _licensePlate,
+                  'Biển số xe tải',
+                  Icons.local_shipping_outlined,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: _payload,
+                  keyboardType: const TextInputType.numberWithOptions(
+                    decimal: true,
+                  ),
+                  decoration: const InputDecoration(
+                    labelText: 'Tải trọng (kg)',
+                    prefixIcon: Icon(Icons.scale_outlined),
+                  ),
+                  validator: (value) {
+                    if (_role != 'VAN_CHUYEN') return null;
+                    final number = double.tryParse(
+                      (value ?? '').replaceAll(',', '.'),
+                    );
+                    return number == null || number <= 0
+                        ? 'Tải trọng phải lớn hơn 0'
+                        : null;
+                  },
+                ),
+              ],
+            ],
           ),
         ),
-        actions: [
-          TextButton(onPressed: _saving ? null : () => Navigator.pop(context), child: const Text('Hủy')),
-          FilledButton(
-            onPressed: _saving ? null : _submit,
-            child: _saving
-                ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Text('Tạo tài khoản'),
-          ),
-        ],
-      );
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.pop(context),
+        child: const Text('Hủy'),
+      ),
+      FilledButton(
+        onPressed: _saving ? null : _submit,
+        child: _saving
+            ? const SizedBox.square(
+                dimension: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              )
+            : const Text('Tạo tài khoản'),
+      ),
+    ],
+  );
 
-  TextFormField _field(TextEditingController controller, String label, IconData icon, {bool obscure = false}) => TextFormField(
-        controller: controller,
-        obscureText: obscure,
-        decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
-        validator: (value) {
-          final text = value?.trim() ?? '';
-          if (text.isEmpty) return 'Không được để trống';
-          if (obscure && text.length < 6) return 'Tối thiểu 6 ký tự';
-          return null;
-        },
-      );
+  TextFormField _field(
+    TextEditingController controller,
+    String label,
+    IconData icon, {
+    bool obscure = false,
+  }) => TextFormField(
+    controller: controller,
+    obscureText: obscure,
+    decoration: InputDecoration(labelText: label, prefixIcon: Icon(icon)),
+    validator: (value) {
+      final text = value?.trim() ?? '';
+      if (text.isEmpty) return 'Không được để trống';
+      if (obscure && text.length < 6) return 'Tối thiểu 6 ký tự';
+      return null;
+    },
+  );
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
+    if (_isAreaEmployee && _regionId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Hãy chọn phường/xã phụ trách')),
+      );
+      return;
+    }
     setState(() => _saving = true);
     try {
       await widget.service.createEmployee(
@@ -1118,9 +1245,14 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
         email: _email.text,
         password: _password.text,
         role: _role,
-        warehouseId: _role == 'QUAN_LY_KHO' || _role == 'NHAN_VIEN_KHO'
+        warehouseId:
+            _role == 'QUAN_LY_KHO' ||
+                _role == 'NHAN_VIEN_KHO' ||
+                _role == 'NHAN_VIEN_LAY_HANG' ||
+                _role == 'NHAN_VIEN_GIAO_HANG'
             ? _warehouseId
             : null,
+        regionId: _regionId,
         licensePlate: _role == 'VAN_CHUYEN' ? _licensePlate.text : null,
         payloadKg: _role == 'VAN_CHUYEN'
             ? double.tryParse(_payload.text.replaceAll(',', '.'))
@@ -1130,20 +1262,33 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
     } on AdminServiceException catch (error) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ),
       );
       setState(() => _saving = false);
     }
   }
+
+  String get _automaticWarehouseWard {
+    if (_warehouseId == null) return 'Hãy chọn kho làm việc';
+    final warehouse = widget.warehouses.firstWhere(
+      (item) => (item['id'] as num).toInt() == _warehouseId,
+    );
+    return '${warehouse['phuong_xa'] ?? ''}, ${warehouse['tinh_thanh'] ?? ''}';
+  }
 }
 
 String _role(dynamic value) => switch ('$value') {
-      'ADMIN' => 'Quản trị viên',
-      'QUAN_LY_KHO' => 'Quản lý kho',
-      'NHAN_VIEN_KHO' => 'Nhân viên kho',
-      'VAN_CHUYEN' => 'Vận chuyển',
-      _ => 'Shipper',
-    };
+  'ADMIN' => 'Quản trị viên',
+  'QUAN_LY_KHO' => 'Quản lý kho',
+  'NHAN_VIEN_KHO' => 'Nhân viên kho',
+  'VAN_CHUYEN' => 'Vận chuyển',
+  'NHAN_VIEN_LAY_HANG' => 'Nhân viên lấy hàng',
+  'NHAN_VIEN_GIAO_HANG' => 'Nhân viên giao hàng',
+  _ => 'Shipper',
+};
 
 String _money(dynamic value) {
   final amount = (value as num?)?.round() ?? 0;

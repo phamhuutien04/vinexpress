@@ -7,6 +7,7 @@ import '../employee/delivery_home_screen.dart';
 import '../transport/transport_driver_home_screen.dart';
 import '../warehouse/warehouse_manager_home_screen.dart';
 import '../employee/employee_home_screen.dart';
+import '../employee/last_mile_staff_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -51,6 +52,9 @@ class _LoginScreenState extends State<LoginScreen> {
             final role = result.profile['vai_tro'] as String?;
             if (role == 'ADMIN') return const AdminHomeScreen();
             if (role == 'SHIPPER') return const DeliveryHomeScreen();
+            if (role == 'NHAN_VIEN_LAY_HANG' || role == 'NHAN_VIEN_GIAO_HANG') {
+              return const LastMileStaffScreen();
+            }
             if (role == 'VAN_CHUYEN') {
               return const TransportDriverHomeScreen();
             }

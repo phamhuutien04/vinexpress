@@ -154,12 +154,13 @@ class _AddressInputState extends State<AddressInput> {
   }
 
   Future<void> _selectAddress() async {
-    final selection = await showModalBottomSheet<AdministrativeAddressSelection>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (_) => const _AdministrativeAddressPicker(),
-    );
+    final selection =
+        await showModalBottomSheet<AdministrativeAddressSelection>(
+          context: context,
+          isScrollControlled: true,
+          showDragHandle: true,
+          builder: (_) => const _AdministrativeAddressPicker(),
+        );
     if (selection != null && selection.address.isNotEmpty) {
       widget.controller.text = selection.address;
       widget.onAddressChanged?.call();
@@ -226,6 +227,7 @@ class _AdministrativeAddressPickerState
     extends State<_AdministrativeAddressPicker> {
   static List<Map<String, dynamic>>? _cachedProvinces;
   final _street = TextEditingController();
+  final _subArea = TextEditingController();
   List<Map<String, dynamic>> _provinces = [];
   Map<String, dynamic>? _province;
   Map<String, dynamic>? _ward;
@@ -324,6 +326,7 @@ class _AdministrativeAddressPickerState
   @override
   void dispose() {
     _street.dispose();
+    _subArea.dispose();
     super.dispose();
   }
 
@@ -387,6 +390,17 @@ class _AdministrativeAddressPickerState
               ),
               const SizedBox(height: 12),
               TextField(
+                controller: _subArea,
+                decoration: InputDecoration(
+                  labelText: _isCommune ? 'Ấp/thôn' : 'Khu phố',
+                  hintText: _isCommune
+                      ? 'Ví dụ: Ấp 1 hoặc Thôn Đông'
+                      : 'Ví dụ: Khu phố 3',
+                  prefixIcon: const Icon(Icons.map_outlined),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
                 controller: _street,
                 autofocus: true,
                 decoration: const InputDecoration(
@@ -399,14 +413,18 @@ class _AdministrativeAddressPickerState
               FilledButton(
                 onPressed: () {
                   final street = _street.text.trim();
-                  if (street.isEmpty || _province == null || _ward == null) {
+                  final subArea = _subArea.text.trim();
+                  if (street.isEmpty ||
+                      subArea.isEmpty ||
+                      _province == null ||
+                      _ward == null) {
                     return;
                   }
                   Navigator.pop(
                     context,
                     AdministrativeAddressSelection(
                       address:
-                          '$street, ${_ward!['name']}, ${_province!['name']}',
+                          '$street, $subArea, ${_ward!['name']}, ${_province!['name']}',
                       province: '${_province!['name']}',
                       ward: '${_ward!['name']}',
                     ),
@@ -419,6 +437,11 @@ class _AdministrativeAddressPickerState
         ),
       ),
     );
+  }
+
+  bool get _isCommune {
+    final name = '${_ward?['name'] ?? ''}'.toLowerCase();
+    return name.startsWith('xã ');
   }
 }
 
