@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/order_service.dart';
 import 'create_order_screen.dart';
+import 'invoice_preview_screen.dart';
 import 'order_tracking_screen.dart';
 
 class OrderHistoryScreen extends StatefulWidget {
@@ -294,6 +295,9 @@ class _OrderHistoryCard extends StatelessWidget {
     final rating = (order['diem_danh_gia'] as num?)?.toInt();
     final canCancel = status == 'CHO_LAY_HANG' &&
         order['nhan_vien_giao_id'] == null;
+    final canPrintInvoice =
+        ((order['khoang_cach_km'] as num?)?.toDouble() ?? 0) > 50 &&
+        status != 'DA_HUY';
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(
@@ -375,6 +379,21 @@ class _OrderHistoryCard extends StatelessWidget {
                   ),
                   icon: const Icon(Icons.my_location),
                   label: const Text('Theo dõi đơn hàng'),
+                ),
+              ),
+            ],
+            if (canPrintInvoice) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => InvoicePreviewScreen(order: order),
+                    ),
+                  ),
+                  icon: const Icon(Icons.print_outlined),
+                  label: const Text('Xem / In phiếu gửi hàng'),
                 ),
               ),
             ],

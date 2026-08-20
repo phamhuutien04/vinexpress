@@ -14,86 +14,107 @@ class InvoiceService {
       await rootBundle.load('assets/fonts/NotoSans-Bold.ttf'),
     );
     final theme = pw.ThemeData.withFont(base: regular, bold: bold);
+    final trackingCode = '${order['ma_van_don']}'.trim();
 
     document.addPage(
-      pw.MultiPage(
+      pw.Page(
         pageFormat: PdfPageFormat.a4,
-        margin: const pw.EdgeInsets.all(36),
+        margin: const pw.EdgeInsets.all(28),
         theme: theme,
-        header: (_) => pw.Row(
-          mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        build: (_) => pw.Column(
+          crossAxisAlignment: pw.CrossAxisAlignment.stretch,
           children: [
-            pw.Text(
-              'VINEXPRESS',
-              style: pw.TextStyle(
-                fontSize: 20,
-                fontWeight: pw.FontWeight.bold,
-                color: PdfColor.fromHex('#00BFA5'),
-              ),
-            ),
-            pw.Text('HÓA ĐƠN VẬN CHUYỂN'),
-          ],
-        ),
-        footer: (context) => pw.Align(
-          alignment: pw.Alignment.centerRight,
-          child: pw.Text(
-            'Trang ${context.pageNumber}/${context.pagesCount}',
-            style: const pw.TextStyle(fontSize: 9, color: PdfColors.grey700),
-          ),
-        ),
-        build: (_) => [
-          pw.SizedBox(height: 22),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(14),
-            decoration: pw.BoxDecoration(
-              color: PdfColor.fromHex('#E7F8F4'),
-              borderRadius: pw.BorderRadius.circular(8),
-            ),
-            child: pw.Row(
+            pw.Row(
               mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
               children: [
-                _labelValue('Mã vận đơn', '${order['ma_van_don']}', bold),
-                _labelValue(
-                  'Quãng đường',
-                  '${order['khoang_cach_km']} km',
-                  bold,
-                  alignRight: true,
+                pw.Text(
+                  'VINEXPRESS',
+                  style: pw.TextStyle(
+                    fontSize: 20,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColor.fromHex('#00BFA5'),
+                  ),
                 ),
+                pw.Text('PHIẾU GỬI HÀNG', style: pw.TextStyle(font: bold)),
               ],
             ),
-          ),
-          pw.SizedBox(height: 20),
-          _section('THÔNG TIN NGƯỜI GỬI', [
-            ['Họ tên', '${order['nguoi_gui_ten']}'],
-            ['Số điện thoại', '${order['nguoi_gui_sdt']}'],
-            ['Địa chỉ', '${order['nguoi_gui_dia_chi']}'],
-          ], bold),
-          pw.SizedBox(height: 16),
-          _section('THÔNG TIN NGƯỜI NHẬN', [
-            ['Họ tên', '${order['nguoi_nhan_ten']}'],
-            ['Số điện thoại', '${order['nguoi_nhan_sdt']}'],
-            ['Địa chỉ', '${order['nguoi_nhan_dia_chi']}'],
-          ], bold),
-          pw.SizedBox(height: 16),
-          _section('CHI TIẾT VẬN CHUYỂN', [
-            ['Phương tiện', 'Xe tải'],
-            ['Khối lượng', '${order['can_nang']} kg'],
-            ['Giá trị hàng', _money(order['gia_tri_hang'])],
-            ['Tiền thu hộ (COD)', _money(order['cod'])],
-            ['Phí vận chuyển', _money(order['phi_van_chuyen'])],
-            ['Trạng thái', 'Chờ lấy hàng'],
-            ['Ghi chú', _nullableText(order['ghi_chu'])],
-          ], bold),
-          pw.SizedBox(height: 28),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: pw.CrossAxisAlignment.start,
-            children: [
-              _signature('Người gửi', 'Ký và ghi rõ họ tên', bold),
-              _signature('Nhân viên tiếp nhận', 'Ký và ghi rõ họ tên', bold),
-            ],
-          ),
-        ],
+            pw.SizedBox(height: 14),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                color: PdfColor.fromHex('#E7F8F4'),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.start,
+                children: [
+                  _labelValue('Mã vận đơn', '${order['ma_van_don']}', bold),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+            pw.Container(
+              padding: const pw.EdgeInsets.all(14),
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.grey400),
+                borderRadius: pw.BorderRadius.circular(8),
+              ),
+              child: pw.Row(
+                crossAxisAlignment: pw.CrossAxisAlignment.center,
+                children: [
+                  pw.BarcodeWidget(
+                    barcode: pw.Barcode.qrCode(),
+                    data: trackingCode,
+                    width: 86,
+                    height: 86,
+                    drawText: false,
+                  ),
+                  pw.SizedBox(width: 18),
+                  pw.Expanded(
+                    child: pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+                      children: [
+                        pw.BarcodeWidget(
+                          barcode: pw.Barcode.code128(),
+                          data: trackingCode,
+                          height: 48,
+                          drawText: false,
+                        ),
+                        pw.SizedBox(height: 5),
+                        pw.Text(
+                          trackingCode,
+                          style: pw.TextStyle(font: bold, fontSize: 11),
+                          textAlign: pw.TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            pw.SizedBox(height: 20),
+            _section('THÔNG TIN NGƯỜI GỬI', [
+              ['Họ tên', '${order['nguoi_gui_ten']}'],
+              ['Số điện thoại', '${order['nguoi_gui_sdt']}'],
+              ['Địa chỉ', '${order['nguoi_gui_dia_chi']}'],
+            ], bold),
+            pw.SizedBox(height: 16),
+            _section('THÔNG TIN NGƯỜI NHẬN', [
+              ['Họ tên', '${order['nguoi_nhan_ten']}'],
+              ['Số điện thoại', '${order['nguoi_nhan_sdt']}'],
+              ['Địa chỉ', '${order['nguoi_nhan_dia_chi']}'],
+            ], bold),
+            pw.SizedBox(height: 16),
+            _section('CHI TIẾT VẬN CHUYỂN', [
+              ['Khối lượng', '${order['can_nang']} kg'],
+              ['Giá trị hàng', _money(order['gia_tri_hang'])],
+              ['Tiền thu hộ (COD)', _money(order['cod'])],
+              ['Phí vận chuyển', _money(order['phi_van_chuyen'])],
+              ['Trạng thái', 'Chờ lấy hàng'],
+              ['Ghi chú', _nullableText(order['ghi_chu'])],
+            ], bold),
+          ],
+        ),
       ),
     );
     return document.save();
@@ -164,19 +185,6 @@ class InvoiceService {
         pw.SizedBox(height: 3),
         pw.Text(value, style: pw.TextStyle(font: bold, fontSize: 12)),
       ],
-    );
-  }
-
-  static pw.Widget _signature(String title, String hint, pw.Font bold) {
-    return pw.SizedBox(
-      width: 180,
-      child: pw.Column(
-        children: [
-          pw.Text(title, style: pw.TextStyle(font: bold, fontSize: 10)),
-          pw.Text(hint, style: const pw.TextStyle(fontSize: 8)),
-          pw.SizedBox(height: 62),
-        ],
-      ),
     );
   }
 

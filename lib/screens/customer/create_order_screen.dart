@@ -34,6 +34,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   bool _isLoading = false;
   bool _calculatingFee = false;
   bool _feeCalculated = false;
+  bool _truckDelivery = false;
+  double? _quotedDistanceKm;
   double? _senderLatitude;
   double? _senderLongitude;
   final _orderService = OrderService();
@@ -118,6 +120,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       final quote = await _orderService.calculateShippingQuote(
         senderAddress: _senderAddress.text,
         receiverAddress: _receiverAddress.text,
+        weight: double.tryParse(_weight.text) ?? 0,
         senderLatitude: _senderLatitude,
         senderLongitude: _senderLongitude,
       );
@@ -125,6 +128,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       setState(() {
         _shippingFee = quote.shippingFee.round();
         _feeCalculated = true;
+        _truckDelivery = quote.vehicle == 'XE_TAI';
+        _quotedDistanceKm = quote.distanceKm;
       });
       return true;
     } on OrderServiceException catch (error) {
@@ -143,6 +148,8 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     setState(() {
       _feeCalculated = false;
       _shippingFee = 0;
+      _truckDelivery = false;
+      _quotedDistanceKm = null;
       _calculatingFee = false;
     });
   }
@@ -163,7 +170,6 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
 
   void _showSuccess(Map<String, dynamic> order) {
     final trackingCode = order['ma_van_don'] as String;
-    final vehicle = order['phuong_tien'] == 'XE_MAY' ? 'Xe máy' : 'Xe tải';
     final distance = ((order['khoang_cach_km'] as num?)?.toDouble() ?? 0)
         .toStringAsFixed(2)
         .replaceFirst('.', ',');
@@ -201,7 +207,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Khoảng cách: $distance km • Phương tiện: $vehicle',
+              'Khoảng cách: $distance km',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: AppColors.primary,
@@ -312,6 +318,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     controller: _senderAddress,
                     label: 'Địa chỉ lấy hàng',
                     hint: 'Chọn hoặc nhập địa chỉ lấy hàng',
+                    includeSubArea: false,
                     allowCurrentLocation: true,
                     onCurrentLocationSelected: (latitude, longitude) {
                       _senderLatitude = latitude;
@@ -357,6 +364,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     controller: _receiverAddress,
                     label: 'Địa chỉ giao hàng',
                     hint: 'Số nhà, tên đường, phường/xã...',
+                    includeSubArea: false,
                     onAddressChanged: _scheduleAutomaticFeeCalculation,
                     onAddressSelected: () =>
                         _scheduleAutomaticFeeCalculation(immediately: true),
@@ -383,6 +391,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     inputFormatters: [
                       FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
                     ],
+                    onChanged: (_) => _scheduleAutomaticFeeCalculation(),
                     validator: (value) {
                       final weight = double.tryParse(value ?? '');
                       return weight == null || weight <= 0
@@ -451,6 +460,9 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               money: _money,
               feeCalculated: _feeCalculated,
               calculating: _calculatingFee,
+              truckDelivery: _truckDelivery,
+              distanceKm: _quotedDistanceKm,
+              weight: double.tryParse(_weight.text) ?? 0,
             ),
           ],
         ),
@@ -656,6 +668,7 @@ class _Input extends StatelessWidget {
     this.keyboardType,
     this.validator,
     this.inputFormatters,
+    this.onChanged,
   });
   final TextEditingController controller;
   final String label;
@@ -665,6 +678,7 @@ class _Input extends StatelessWidget {
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
   final List<TextInputFormatter>? inputFormatters;
+  final ValueChanged<String>? onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -674,6 +688,7 @@ class _Input extends StatelessWidget {
       keyboardType: keyboardType,
       inputFormatters: inputFormatters,
       validator: validator,
+      onChanged: onChanged,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
@@ -691,12 +706,18 @@ class _SummaryCard extends StatelessWidget {
     required this.money,
     required this.feeCalculated,
     required this.calculating,
+    required this.truckDelivery,
+    required this.distanceKm,
+    required this.weight,
   });
   final int shippingFee;
   final int codFee;
   final String Function(int) money;
   final bool feeCalculated;
   final bool calculating;
+  final bool truckDelivery;
+  final double? distanceKm;
+  final double weight;
 
   @override
   Widget build(BuildContext context) {
@@ -724,6 +745,20 @@ class _SummaryCard extends StatelessWidget {
             'Phí vận chuyển',
             feeCalculated ? money(shippingFee) : 'Chưa tính',
           ),
+          if (feeCalculated && distanceKm != null) ...[
+            const SizedBox(height: 8),
+            _priceRow(
+              'Khoảng cách',
+              '${distanceKm!.toStringAsFixed(2).replaceFirst('.', ',')} km',
+            ),
+            if (truckDelivery) ...[
+              const SizedBox(height: 8),
+              _priceRow(
+                'Cân nặng tính phí',
+                weight < 1 ? 'Miễn phí' : '${weight.floor()} kg',
+              ),
+            ],
+          ],
           if (codFee > 0) ...[
             const SizedBox(height: 8),
             _priceRow('Phí thu hộ', money(codFee)),
@@ -747,8 +782,10 @@ class _SummaryCard extends StatelessWidget {
             ),
           ],
           const SizedBox(height: 10),
-          const Text(
-            'Đơn xe máy ≤ 50 km được tính theo số km và biểu phí hiện tại do quản trị viên cấu hình.',
+          Text(
+            truckDelivery
+                ? 'Phí xe tải gồm phí cơ bản và phí theo mỗi kg nguyên được cấu hình trong database; dưới 1 kg không tính thêm phí cân nặng.'
+                : 'Đơn xe máy ≤ 50 km được tính theo số km và biểu phí hiện tại do quản trị viên cấu hình.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
           ),

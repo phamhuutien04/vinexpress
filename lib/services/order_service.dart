@@ -27,6 +27,8 @@ class OrderService {
   SupabaseClient get _client => _clientOverride ?? SupabaseConfig.client;
 
   static const double directPricePerKm = 5000;
+  static const double truckDefaultFee = 30000;
+  static const double truckDefaultPricePerKg = 3000;
 
   Future<List<Map<String, dynamic>>> getCustomerOrders() async {
     try {
@@ -65,10 +67,7 @@ class OrderService {
     try {
       await _client.rpc(
         'huy_don_hang_khach_hang',
-        params: {
-          'p_don_hang_id': orderId,
-          'p_ly_do': reason?.trim(),
-        },
+        params: {'p_don_hang_id': orderId, 'p_ly_do': reason?.trim()},
       );
     } on PostgrestException catch (error) {
       throw OrderServiceException(error.message);
@@ -97,6 +96,7 @@ class OrderService {
   Future<OrderQuote> calculateShippingQuote({
     required String senderAddress,
     required String receiverAddress,
+    double weight = 0,
     double? senderLatitude,
     double? senderLongitude,
   }) async {
@@ -108,7 +108,7 @@ class OrderService {
           : null,
     );
     final direct = route.distanceKm <= 50;
-    final fee = await _directShippingFee(route.distanceKm);
+    final fee = await _shippingFee(route.distanceKm, weight: weight);
     return OrderQuote(
       distanceKm: route.distanceKm,
       shippingFee: fee,
@@ -139,7 +139,10 @@ class OrderService {
             ? _Coordinates(latitude: senderLatitude, longitude: senderLongitude)
             : null,
       );
-      final calculatedShippingFee = await _directShippingFee(route.distanceKm);
+      final calculatedShippingFee = await _shippingFee(
+        route.distanceKm,
+        weight: weight,
+      );
       final data = await _client
           .rpc(
             'tao_don_hang_khach_hang',
@@ -203,6 +206,24 @@ class OrderService {
       // Dùng mức mặc định trong lúc database chưa chạy migration cấu hình phí.
     }
     return (distanceKm * pricePerKm).roundToDouble();
+  }
+
+  Future<double> _shippingFee(double distanceKm, {double weight = 0}) async {
+    if (distanceKm > 50) {
+      var baseFee = truckDefaultFee;
+      var pricePerKg = truckDefaultPricePerKg;
+      try {
+        final data = await _client.rpc('lay_cau_hinh_phi_van_chuyen');
+        final config = Map<String, dynamic>.from(data as Map);
+        baseFee = (config['phi_xe_tai'] as num?)?.toDouble() ?? baseFee;
+        pricePerKg = (config['phi_moi_kg'] as num?)?.toDouble() ?? pricePerKg;
+      } on PostgrestException {
+        // Dùng biểu phí mặc định nếu Supabase chưa chạy bản cập nhật mới.
+      }
+      final chargedKilograms = weight < 1 ? 0 : weight.floor();
+      return baseFee + chargedKilograms * pricePerKg;
+    }
+    return _directShippingFee(distanceKm);
   }
 
   Future<_DeliveryRoute> _calculateRoute(

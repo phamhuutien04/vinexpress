@@ -216,7 +216,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       1 => _EmployeeList(employees: _employees, onAction: _updateEmployee),
       2 => _CustomerList(customers: _customers),
       3 => _OrderList(orders: _orders),
-      _ => _WarehouseList(warehouses: _warehouses),
+      _ => _WarehouseList(warehouses: _warehouses, employees: _employees),
     };
   }
 
@@ -694,8 +694,92 @@ class _OrderList extends StatelessWidget {
 }
 
 class _WarehouseList extends StatelessWidget {
-  const _WarehouseList({required this.warehouses});
+  const _WarehouseList({required this.warehouses, required this.employees});
   final List<Map<String, dynamic>> warehouses;
+  final List<Map<String, dynamic>> employees;
+
+  void _showDetails(BuildContext context, Map<String, dynamic> warehouse) {
+    final warehouseId = (warehouse['id'] as num).toInt();
+    final staff = employees
+        .where((item) => (item['kho_hang_id'] as num?)?.toInt() == warehouseId)
+        .toList();
+    final managers = staff
+        .where((item) => item['vai_tro'] == 'QUAN_LY_KHO')
+        .toList();
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('${warehouse['ten_kho']}'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.warehouse_outlined),
+                  ),
+                  title: Text(
+                    '${warehouse['ma_kho']} • Kho cấp ${warehouse['cap_kho']}',
+                  ),
+                  subtitle: Text('${warehouse['dia_chi']}'),
+                ),
+                const Divider(),
+                Text(
+                  'Quản lý kho',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                if (managers.isEmpty)
+                  const Card(
+                    child: ListTile(
+                      leading: Icon(Icons.person_off_outlined),
+                      title: Text('Kho chưa có quản lý'),
+                    ),
+                  )
+                else
+                  ...managers.map(
+                    (manager) => Card(
+                      child: ListTile(
+                        leading: const CircleAvatar(
+                          backgroundColor: AppColors.primary,
+                          child: Icon(
+                            Icons.manage_accounts,
+                            color: Colors.white,
+                          ),
+                        ),
+                        title: Text(
+                          '${manager['ho_ten']}',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                        subtitle: Text(
+                          '${manager['email'] ?? 'Chưa có email'}\n'
+                          '${manager['so_dien_thoai']} • ${manager['trang_thai_duyet']}',
+                        ),
+                        isThreeLine: true,
+                        trailing: Text('${manager['trang_thai']}'),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 8),
+                Text('Tổng nhân sự thuộc kho: ${staff.length}'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -721,75 +805,79 @@ class _WarehouseList extends StatelessWidget {
         return Card(
           color: Theme.of(context).colorScheme.surfaceContainerLow,
           margin: const EdgeInsets.only(bottom: 10),
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: .13),
-                    borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => _showDetails(context, item),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 46,
+                    height: 46,
+                    decoration: BoxDecoration(
+                      color: color.withValues(alpha: .13),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Icon(Icons.warehouse_outlined, color: color),
                   ),
-                  child: Icon(Icons.warehouse_outlined, color: color),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              '${item['ten_kho']}',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w800,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                '${item['ten_kho']}',
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                ),
                               ),
                             ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 9,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: color.withValues(alpha: .12),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              'Cấp $level',
-                              style: TextStyle(
-                                color: color,
-                                fontWeight: FontWeight.bold,
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 4,
                               ),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: .12),
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                'Cấp $level',
+                                style: TextStyle(
+                                  color: color,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 3),
+                        Text('${item['ma_kho']} • ${item['tinh_thanh']}'),
+                        Text(
+                          '${item['dia_chi']}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                        if (level == 2) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            'Trực thuộc: ${item['ten_kho_trung_tam'] ?? 'Chưa xác định'}',
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w600,
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text('${item['ma_kho']} • ${item['tinh_thanh']}'),
-                      Text(
-                        '${item['dia_chi']}',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      if (level == 2) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          'Trực thuộc: ${item['ten_kho_trung_tam'] ?? 'Chưa xác định'}',
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
                       ],
-                    ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

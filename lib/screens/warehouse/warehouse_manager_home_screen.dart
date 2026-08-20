@@ -41,18 +41,23 @@ class _WarehouseManagerHomeScreenState
     });
     try {
       final warehouses = await _service.managedWarehouses();
-      if (warehouses.isEmpty) {
+      final uniqueWarehouses = <int, Map<String, dynamic>>{};
+      for (final warehouse in warehouses) {
+        uniqueWarehouses[(warehouse['id'] as num).toInt()] = warehouse;
+      }
+      final distinctWarehouses = uniqueWarehouses.values.toList();
+      if (distinctWarehouses.isEmpty) {
         throw const WarehouseManagerException(
           'Không có kho trong phạm vi quản lý',
         );
       }
-      final availableIds = warehouses
+      final availableIds = distinctWarehouses
           .map((item) => (item['id'] as num).toInt())
           .toSet();
       final warehouseId =
           _warehouseId != null && availableIds.contains(_warehouseId)
           ? _warehouseId!
-          : (warehouses.first['id'] as num).toInt();
+          : (distinctWarehouses.first['id'] as num).toInt();
       final values = await Future.wait([
         _service.overview(warehouseId),
         _service.orders(warehouseId),
@@ -65,7 +70,7 @@ class _WarehouseManagerHomeScreenState
         _overview = values[0] as Map<String, dynamic>;
         _orders = values[1] as List<Map<String, dynamic>>;
         _employees = values[2] as List<Map<String, dynamic>>;
-        _warehouses = warehouses;
+        _warehouses = distinctWarehouses;
         _regions = values[3] as List<Map<String, dynamic>>;
         _trips = values[4] as List<Map<String, dynamic>>;
         _warehouseId = warehouseId;
@@ -114,9 +119,21 @@ class _WarehouseManagerHomeScreenState
                         .map(
                           (warehouse) => DropdownMenuItem(
                             value: (warehouse['id'] as num).toInt(),
-                            child: Text(
-                              '${warehouse['ten_kho']} • Cấp ${warehouse['cap_kho']}',
-                              overflow: TextOverflow.ellipsis,
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    '${warehouse['ten_kho']} • Cấp ${warehouse['cap_kho']}',
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                                if ((warehouse['id'] as num).toInt() ==
+                                    _warehouseId)
+                                  const Icon(
+                                    Icons.check_rounded,
+                                    color: AppColors.primary,
+                                  ),
+                              ],
                             ),
                           ),
                         )
