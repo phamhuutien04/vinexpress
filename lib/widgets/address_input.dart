@@ -28,6 +28,8 @@ class AddressInput extends StatefulWidget {
     this.onAddressChanged,
     this.onAddressSelected,
     this.onAdministrativeAddressSelected,
+    this.fixedProvince,
+    this.includeSubArea = true,
     this.validator,
   });
 
@@ -41,6 +43,8 @@ class AddressInput extends StatefulWidget {
   final VoidCallback? onAddressSelected;
   final ValueChanged<AdministrativeAddressSelection>?
   onAdministrativeAddressSelected;
+  final String? fixedProvince;
+  final bool includeSubArea;
   final String? Function(String?)? validator;
 
   @override
@@ -159,7 +163,10 @@ class _AddressInputState extends State<AddressInput> {
           context: context,
           isScrollControlled: true,
           showDragHandle: true,
-          builder: (_) => const _AdministrativeAddressPicker(),
+          builder: (_) => _AdministrativeAddressPicker(
+            fixedProvince: widget.fixedProvince,
+            includeSubArea: widget.includeSubArea,
+          ),
         );
     if (selection != null && selection.address.isNotEmpty) {
       widget.controller.text = selection.address;
@@ -216,7 +223,13 @@ class _AddressInputState extends State<AddressInput> {
 }
 
 class _AdministrativeAddressPicker extends StatefulWidget {
-  const _AdministrativeAddressPicker();
+  const _AdministrativeAddressPicker({
+    this.fixedProvince,
+    required this.includeSubArea,
+  });
+
+  final String? fixedProvince;
+  final bool includeSubArea;
 
   @override
   State<_AdministrativeAddressPicker> createState() =>
@@ -277,9 +290,18 @@ class _AdministrativeAddressPickerState
 
   void _setData(List<Map<String, dynamic>> provinces) {
     if (!mounted) return;
+    final fixedName = widget.fixedProvince?.trim().toLowerCase();
+    final fixedProvince = fixedName == null || fixedName.isEmpty
+        ? null
+        : provinces.where((item) {
+            final name = '${item['name']}'.trim().toLowerCase();
+            return name == fixedName ||
+                name.contains(fixedName) ||
+                fixedName.contains(name);
+          }).firstOrNull;
     setState(() {
       _provinces = provinces;
-      _province = provinces.isEmpty ? null : provinces.first;
+      _province = fixedProvince ?? (provinces.isEmpty ? null : provinces.first);
       _ward = _wards.isEmpty ? null : _wards.first;
       _loading = false;
     });
@@ -344,7 +366,9 @@ class _AdministrativeAddressPickerState
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Text(
-              'Chọn địa chỉ toàn quốc',
+              widget.fixedProvince == null
+                  ? 'Chọn địa chỉ toàn quốc'
+                  : 'Chọn phường/xã tại ${widget.fixedProvince}',
               style: Theme.of(context).textTheme.titleLarge,
             ),
             const SizedBox(height: 4),
@@ -377,28 +401,32 @@ class _AdministrativeAddressPickerState
                 ],
               )
             else ...[
-              _SearchSelectionField(
-                label: 'Tỉnh/Thành phố',
-                value: _province?['name'] as String?,
-                onTap: _pickProvince,
-              ),
-              const SizedBox(height: 12),
+              if (widget.fixedProvince == null) ...[
+                _SearchSelectionField(
+                  label: 'Tỉnh/Thành phố',
+                  value: _province?['name'] as String?,
+                  onTap: _pickProvince,
+                ),
+                const SizedBox(height: 12),
+              ],
               _SearchSelectionField(
                 label: 'Phường/Xã/Đặc khu',
                 value: _ward?['name'] as String?,
                 onTap: _pickWard,
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _subArea,
-                decoration: InputDecoration(
-                  labelText: _isCommune ? 'Ấp/thôn' : 'Khu phố',
-                  hintText: _isCommune
-                      ? 'Ví dụ: Ấp 1 hoặc Thôn Đông'
-                      : 'Ví dụ: Khu phố 3',
-                  prefixIcon: const Icon(Icons.map_outlined),
+              if (widget.includeSubArea) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _subArea,
+                  decoration: InputDecoration(
+                    labelText: _isCommune ? 'Ấp/thôn' : 'Khu phố',
+                    hintText: _isCommune
+                        ? 'Ví dụ: Ấp 1 hoặc Thôn Đông'
+                        : 'Ví dụ: Khu phố 3',
+                    prefixIcon: const Icon(Icons.map_outlined),
+                  ),
                 ),
-              ),
+              ],
               const SizedBox(height: 12),
               TextField(
                 controller: _street,
@@ -415,7 +443,7 @@ class _AdministrativeAddressPickerState
                   final street = _street.text.trim();
                   final subArea = _subArea.text.trim();
                   if (street.isEmpty ||
-                      subArea.isEmpty ||
+                      (widget.includeSubArea && subArea.isEmpty) ||
                       _province == null ||
                       _ward == null) {
                     return;
@@ -423,8 +451,9 @@ class _AdministrativeAddressPickerState
                   Navigator.pop(
                     context,
                     AdministrativeAddressSelection(
-                      address:
-                          '$street, $subArea, ${_ward!['name']}, ${_province!['name']}',
+                      address: widget.includeSubArea
+                          ? '$street, $subArea, ${_ward!['name']}, ${_province!['name']}'
+                          : '$street, ${_ward!['name']}, ${_province!['name']}',
                       province: '${_province!['name']}',
                       ward: '${_ward!['name']}',
                     ),

@@ -25,6 +25,7 @@ class _WarehouseManagerHomeScreenState
   List<Map<String, dynamic>> _employees = [];
   List<Map<String, dynamic>> _warehouses = [];
   List<Map<String, dynamic>> _regions = [];
+  List<Map<String, dynamic>> _trips = [];
   int? _warehouseId;
 
   @override
@@ -57,6 +58,7 @@ class _WarehouseManagerHomeScreenState
         _service.orders(warehouseId),
         _service.employees(warehouseId),
         _service.regions(),
+        _service.trips(warehouseId),
       ]);
       if (!mounted) return;
       setState(() {
@@ -65,6 +67,7 @@ class _WarehouseManagerHomeScreenState
         _employees = values[2] as List<Map<String, dynamic>>;
         _warehouses = warehouses;
         _regions = values[3] as List<Map<String, dynamic>>;
+        _trips = values[4] as List<Map<String, dynamic>>;
         _warehouseId = warehouseId;
       });
     } on WarehouseManagerException catch (error) {
@@ -81,6 +84,7 @@ class _WarehouseManagerHomeScreenState
         0 => 'Tổng quan kho',
         1 => 'Đơn hàng tại kho',
         2 => 'Nhân sự kho',
+        3 => 'Gán xe và chuyến xe',
         _ => 'Tài khoản quản lý',
       }),
       actions: [
@@ -131,6 +135,7 @@ class _WarehouseManagerHomeScreenState
                     _Overview(data: _overview),
                     _Orders(items: _orders),
                     _Employees(items: _employees),
+                    _WarehouseTrips(items: _trips),
                     _Account(data: _overview, onLogout: _logout),
                   ],
                 ),
@@ -157,6 +162,11 @@ class _WarehouseManagerHomeScreenState
           label: 'Nhân sự',
         ),
         NavigationDestination(
+          icon: Icon(Icons.local_shipping_outlined),
+          selectedIcon: Icon(Icons.local_shipping),
+          label: 'Chuyến xe',
+        ),
+        NavigationDestination(
           icon: Icon(Icons.person_outline),
           selectedIcon: Icon(Icons.person),
           label: 'Tài khoản',
@@ -175,6 +185,12 @@ class _WarehouseManagerHomeScreenState
             icon: const Icon(Icons.person_add_alt_1),
             label: const Text('Thêm nhân viên'),
           )
+        : _tab == 3
+        ? FloatingActionButton.extended(
+            onPressed: _showCreateTrip,
+            icon: const Icon(Icons.add_road),
+            label: const Text('Gán xe'),
+          )
         : null,
   );
 
@@ -185,6 +201,7 @@ class _WarehouseManagerHomeScreenState
       builder: (_) => _CreateManagedLevel2WarehouseDialog(
         service: _service,
         parentName: '${_overview['ten_kho'] ?? ''}',
+        parentProvince: '${_overview['tinh_thanh'] ?? ''}',
       ),
     );
     if (created == true) await _load();
@@ -202,6 +219,45 @@ class _WarehouseManagerHomeScreenState
       ),
     );
     if (created == true) await _load();
+  }
+
+  Future<void> _showCreateTrip() async {
+    final warehouseId = _warehouseId!;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+    try {
+      final values = await Future.wait([
+        _service.destinationWarehouses(warehouseId),
+        _service.vehicles(warehouseId),
+      ]);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      final destinations = values[0];
+      final vehicles = values[1];
+      final created = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _CreateTripDialog(
+          service: _service,
+          originWarehouseId: warehouseId,
+          warehouses: destinations,
+          vehicles: vehicles,
+        ),
+      );
+      if (created == true) await _load();
+    } on WarehouseManagerException catch (error) {
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
   }
 
   Future<void> _logout() async {
@@ -397,6 +453,207 @@ class _Employees extends StatelessWidget {
             );
           },
         );
+}
+
+class _WarehouseTrips extends StatelessWidget {
+  const _WarehouseTrips({required this.items});
+  final List<Map<String, dynamic>> items;
+  @override
+  Widget build(BuildContext context) => items.isEmpty
+      ? const Center(child: Text('Chưa có chuyến xe của kho'))
+      : ListView.builder(
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 90),
+          itemCount: items.length,
+          itemBuilder: (_, index) {
+            final trip = items[index];
+            return Card(
+              child: ListTile(
+                leading: const CircleAvatar(child: Icon(Icons.local_shipping)),
+                title: Text(
+                  '${trip['ma_chuyen']} • ${trip['bien_so_xe']}',
+                  style: const TextStyle(fontWeight: FontWeight.w700),
+                ),
+                subtitle: Text(
+                  '${trip['ten_kho_di']} → ${trip['ten_kho_den']}\nTài xế: ${trip['ten_tai_xe'] ?? 'Chưa có'} • ${trip['so_kien'] ?? 0} kiện',
+                ),
+                isThreeLine: true,
+                trailing: Text('${trip['trang_thai']}'),
+              ),
+            );
+          },
+        );
+}
+
+class _CreateTripDialog extends StatefulWidget {
+  const _CreateTripDialog({
+    required this.service,
+    required this.originWarehouseId,
+    required this.warehouses,
+    required this.vehicles,
+  });
+  final WarehouseManagerService service;
+  final int originWarehouseId;
+  final List<Map<String, dynamic>> warehouses;
+  final List<Map<String, dynamic>> vehicles;
+  @override
+  State<_CreateTripDialog> createState() => _CreateTripDialogState();
+}
+
+class _CreateTripDialogState extends State<_CreateTripDialog> {
+  int? _vehicleId;
+  int? _destinationId;
+  DateTime? _expectedAt;
+  bool _saving = false;
+  List<Map<String, dynamic>> get _availableVehicles => widget.vehicles
+      .where((item) => item['trang_thai'] == 'SAN_SANG')
+      .toList();
+  List<Map<String, dynamic>> get _destinations => widget.warehouses
+      .where((item) => (item['id'] as num).toInt() != widget.originWarehouseId)
+      .toList();
+
+  Future<void> _pickDate() async {
+    final value = await showDatePicker(
+      context: context,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      initialDate: DateTime.now(),
+    );
+    if (value != null) setState(() => _expectedAt = value);
+  }
+
+  Future<void> _submit() async {
+    if (_vehicleId == null || _destinationId == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Hãy chọn xe và kho đến')));
+      return;
+    }
+    setState(() => _saving = true);
+    try {
+      await widget.service.createTrip(
+        originWarehouseId: widget.originWarehouseId,
+        destinationWarehouseId: _destinationId!,
+        vehicleId: _vehicleId!,
+        expectedAt: _expectedAt,
+      );
+      if (mounted) Navigator.pop(context, true);
+    } on WarehouseManagerException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+        setState(() => _saving = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Gán xe tạo chuyến'),
+    content: SizedBox(
+      width: 480,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          DropdownButtonFormField<int>(
+            initialValue: _vehicleId,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Xe sẵn sàng',
+              prefixIcon: Icon(Icons.local_shipping_outlined),
+            ),
+            items: _availableVehicles
+                .map(
+                  (item) => DropdownMenuItem(
+                    value: (item['id'] as num).toInt(),
+                    child: Text(
+                      '${item['bien_so_xe']} • ${item['ten_tai_xe']} • ${item['tai_trong']} kg',
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: _saving
+                ? null
+                : (value) => setState(() => _vehicleId = value),
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            initialValue: _destinationId,
+            isExpanded: true,
+            decoration: const InputDecoration(
+              labelText: 'Kho đến',
+              prefixIcon: Icon(Icons.warehouse_outlined),
+            ),
+            items: _destinations
+                .map(
+                  (item) => DropdownMenuItem(
+                    value: (item['id'] as num).toInt(),
+                    child: Text(
+                      '${item['ten_kho']} • Cấp ${item['cap_kho']}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                )
+                .toList(),
+            onChanged: _saving
+                ? null
+                : (value) => setState(() => _destinationId = value),
+          ),
+          if (_destinations.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Kho này chưa có tuyến hợp lệ. Nếu là kho cấp 2, hãy kiểm tra kho đã được gán đúng kho cấp 1 trực thuộc và kho cấp 1 đang hoạt động.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 12),
+          ListTile(
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+              side: BorderSide(color: Theme.of(context).colorScheme.outline),
+            ),
+            leading: const Icon(Icons.event_outlined),
+            title: Text(
+              _expectedAt == null
+                  ? 'Chọn ngày dự kiến (không bắt buộc)'
+                  : 'Dự kiến: ${_expectedAt!.day}/${_expectedAt!.month}/${_expectedAt!.year}',
+            ),
+            onTap: _saving ? null : _pickDate,
+          ),
+          if (_availableVehicles.isEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: Text('Kho chưa có xe ở trạng thái sẵn sàng'),
+            ),
+        ],
+      ),
+    ),
+    actions: [
+      TextButton(
+        onPressed: _saving ? null : () => Navigator.pop(context),
+        child: const Text('Hủy'),
+      ),
+      FilledButton(
+        onPressed:
+            _saving || _availableVehicles.isEmpty || _destinations.isEmpty
+            ? null
+            : _submit,
+        child: Text(_saving ? 'Đang tạo...' : 'Tạo chuyến'),
+      ),
+    ],
+  );
 }
 
 class _CreateWarehouseEmployeeDialog extends StatefulWidget {
@@ -694,9 +951,11 @@ class _CreateManagedLevel2WarehouseDialog extends StatefulWidget {
   const _CreateManagedLevel2WarehouseDialog({
     required this.service,
     required this.parentName,
+    required this.parentProvince,
   });
   final WarehouseManagerService service;
   final String parentName;
+  final String parentProvince;
   @override
   State<_CreateManagedLevel2WarehouseDialog> createState() =>
       _CreateManagedLevel2WarehouseDialogState();
@@ -753,6 +1012,10 @@ class _CreateManagedLevel2WarehouseDialogState
                 controller: _address,
                 label: 'Địa chỉ kho',
                 hint: 'Chọn tỉnh/thành, phường/xã và nhập số nhà',
+                fixedProvince: widget.parentProvince.isEmpty
+                    ? null
+                    : widget.parentProvince,
+                includeSubArea: false,
                 validator: (_) => _province == null || _ward == null
                     ? 'Hãy chọn địa chỉ hành chính'
                     : null,

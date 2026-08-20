@@ -55,6 +55,65 @@ class WarehouseManagerService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> vehicles(int warehouseId) async {
+    try {
+      final data = await _client.rpc(
+        'quan_ly_kho_danh_sach_xe',
+        params: {'p_kho_id': warehouseId},
+      );
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw WarehouseManagerException(_message(error));
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> destinationWarehouses(
+    int originWarehouseId,
+  ) async {
+    try {
+      final data = await _client.rpc(
+        'quan_ly_kho_danh_sach_kho_den',
+        params: {'p_kho_di_id': originWarehouseId},
+      );
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw WarehouseManagerException(_message(error));
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> trips(int warehouseId) async {
+    try {
+      final data = await _client.rpc(
+        'quan_ly_kho_danh_sach_chuyen',
+        params: {'p_kho_id': warehouseId},
+      );
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw WarehouseManagerException(_message(error));
+    }
+  }
+
+  Future<void> createTrip({
+    required int originWarehouseId,
+    required int destinationWarehouseId,
+    required int vehicleId,
+    DateTime? expectedAt,
+  }) async {
+    try {
+      await _client.rpc(
+        'quan_ly_kho_gan_xe_tao_chuyen',
+        params: {
+          'p_kho_di_id': originWarehouseId,
+          'p_kho_den_id': destinationWarehouseId,
+          'p_xe_id': vehicleId,
+          'p_ngay_du_kien': expectedAt?.toUtc().toIso8601String(),
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw WarehouseManagerException(_message(error));
+    }
+  }
+
   Future<List<Map<String, dynamic>>> regions() async {
     try {
       final data = await _client.rpc('danh_sach_khu_vuc_phan_cong');

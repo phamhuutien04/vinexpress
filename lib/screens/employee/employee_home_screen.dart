@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
@@ -19,6 +20,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   String? _error;
   Map<String, dynamic> _overview = {};
   List<Map<String, dynamic>> _orders = [];
+  List<Map<String, dynamic>> _trips = [];
 
   @override
   void initState() {
@@ -32,11 +34,16 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       _error = null;
     });
     try {
-      final values = await Future.wait([_service.overview(), _service.assignedOrders()]);
+      final values = await Future.wait([
+        _service.overview(),
+        _service.assignedOrders(),
+        _service.trips(),
+      ]);
       if (!mounted) return;
       setState(() {
         _overview = values[0] as Map<String, dynamic>;
         _orders = values[1] as List<Map<String, dynamic>>;
+        _trips = values[2] as List<Map<String, dynamic>>;
       });
     } on WarehouseEmployeeException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -51,10 +58,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           title: Text(switch (_tab) {
             0 => 'Tổng quan công việc',
             1 => 'Đơn hàng tại kho',
+            2 => 'Quét hàng theo chuyến',
             _ => 'Tài khoản',
           }),
           actions: [
-            if (_tab != 2)
+            if (_tab != 3)
               IconButton(onPressed: _loading ? null : _load, icon: const Icon(Icons.refresh)),
           ],
         ),
@@ -67,6 +75,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
                     children: [
                       _Dashboard(data: _overview, orders: _orders),
                       _OrderList(orders: _orders),
+                      _TripScanner(
+                        trips: _trips,
+                        service: _service,
+                        onChanged: _load,
+                      ),
                       _Account(data: _overview, onLogout: _logout),
                     ],
                   ),
@@ -76,6 +89,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
           destinations: const [
             NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Tổng quan'),
             NavigationDestination(icon: Icon(Icons.inventory_2_outlined), selectedIcon: Icon(Icons.inventory_2), label: 'Đơn hàng'),
+            NavigationDestination(icon: Icon(Icons.qr_code_scanner), selectedIcon: Icon(Icons.qr_code_scanner), label: 'Quét hàng'),
             NavigationDestination(icon: Icon(Icons.person_outline), selectedIcon: Icon(Icons.person), label: 'Tài khoản'),
           ],
         ),
@@ -89,6 +103,122 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       (_) => false,
     );
   }
+}
+
+class _TripScanner extends StatefulWidget {
+  const _TripScanner({required this.trips,required this.service,required this.onChanged});
+  final List<Map<String,dynamic>> trips;
+  final WarehouseEmployeeService service;
+  final Future<void> Function() onChanged;
+  @override State<_TripScanner> createState()=>_TripScannerState();
+}
+
+class _TripScannerState extends State<_TripScanner> {
+  int? _tripId;
+  String _action='XEP_LEN_XE';
+  bool _saving=false;
+
+  Future<void> _receiveAtWarehouse() async {
+    final code = await Navigator.of(context).push<String>(
+      MaterialPageRoute(builder: (_) => const _WarehouseQrScanner()),
+    );
+    if (code == null || !mounted) return;
+    setState(() => _saving = true);
+    try {
+      await widget.service.receiveParcel(code);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Đã nhập kiện hàng vào kho'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      await widget.onChanged();
+    } on WarehouseEmployeeException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error.message), backgroundColor: AppColors.error),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  Future<void> _scan() async {
+    if (_tripId==null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Hãy chọn chuyến xe trước')));
+      return;
+    }
+    final code=await Navigator.of(context).push<String>(MaterialPageRoute(builder: (_)=>const _WarehouseQrScanner()));
+    if (code==null || !mounted) return;
+    setState(()=>_saving=true);
+    try {
+      final result=await widget.service.scanParcel(tripId:_tripId!,code:code,action:_action);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(result=='DA_XEP_HANG'?'Đã xếp kiện lên xe':'Đã nhập kiện vào kho'),backgroundColor:AppColors.success));
+      await widget.onChanged();
+    } on WarehouseEmployeeException catch(error) {
+      if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(error.message),backgroundColor:AppColors.error));
+    } finally { if(mounted)setState(()=>_saving=false); }
+  }
+
+  @override Widget build(BuildContext context)=>ListView(
+    padding:const EdgeInsets.all(16),children:[
+      Card(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Nhập kiện vào kho',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              const Text('Quét QR kiện do nhân viên lấy hàng đưa về kho.'),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _saving ? null : _receiveAtWarehouse,
+                icon: const Icon(Icons.qr_code_scanner),
+                label: const Text('Quét QR nhập kho'),
+              ),
+            ],
+          ),
+        ),
+      ),
+      const SizedBox(height:16),
+      Text('Xử lý theo chuyến xe', style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800)),
+      const SizedBox(height:10),
+      SegmentedButton<String>(
+        segments:const [
+          ButtonSegment(value:'XEP_LEN_XE',icon:Icon(Icons.upload),label:Text('Xếp lên xe')),
+          ButtonSegment(value:'NHAP_KHO',icon:Icon(Icons.download),label:Text('Dỡ xe nhập kho')),
+        ],selected:{_action},onSelectionChanged:_saving?null:(value)=>setState(()=>_action=value.first),
+      ),
+      const SizedBox(height:16),
+      DropdownButtonFormField<int>(
+        initialValue:_tripId,isExpanded:true,
+        decoration:const InputDecoration(labelText:'Chuyến xe đã được gán',prefixIcon:Icon(Icons.local_shipping_outlined)),
+        items:widget.trips.map((trip)=>DropdownMenuItem(value:(trip['id'] as num).toInt(),child:Text('${trip['ma_chuyen']} • ${trip['bien_so_xe']} • ${trip['ten_kho_di']} → ${trip['ten_kho_den']}',overflow:TextOverflow.ellipsis))).toList(),
+        onChanged:_saving?null:(value)=>setState(()=>_tripId=value),
+      ),
+      const SizedBox(height:16),
+      if(widget.trips.isEmpty) const Card(child:Padding(padding:EdgeInsets.all(24),child:Text('Chưa có chuyến xe được quản lý gán cho kho này',textAlign:TextAlign.center)))
+      else FilledButton.icon(onPressed:_saving?null:_scan,icon:const Icon(Icons.qr_code_scanner),label:Text(_saving?'Đang xử lý...':'Quét QR kiện hàng')),
+      const SizedBox(height:16),
+      ...widget.trips.map((trip)=>Card(child:ListTile(leading:const CircleAvatar(child:Icon(Icons.local_shipping)),title:Text('${trip['ma_chuyen']}'),subtitle:Text('${trip['ten_kho_di']} → ${trip['ten_kho_den']}\n${trip['so_kien']} kiện • ${trip['trang_thai']}'),isThreeLine:true))),
+    ]);
+}
+
+class _WarehouseQrScanner extends StatefulWidget { const _WarehouseQrScanner(); @override State<_WarehouseQrScanner> createState()=>_WarehouseQrScannerState(); }
+class _WarehouseQrScannerState extends State<_WarehouseQrScanner> {
+  bool _handled=false;
+  @override Widget build(BuildContext context)=>Scaffold(appBar:AppBar(title:const Text('Quét QR kiện hàng')),body:Stack(fit:StackFit.expand,children:[
+    MobileScanner(onDetect:(capture){if(_handled||capture.barcodes.isEmpty)return;final value=capture.barcodes.first.rawValue;if(value==null||value.trim().isEmpty)return;_handled=true;Navigator.pop(context,value.trim());}),
+    Center(child:Container(width:260,height:260,decoration:BoxDecoration(border:Border.all(color:AppColors.primary,width:4),borderRadius:BorderRadius.circular(22)))),
+    const Positioned(left:24,right:24,bottom:48,child:Text('Đưa mã QR của kiện hàng vào giữa khung',textAlign:TextAlign.center,style:TextStyle(color:Colors.white,fontWeight:FontWeight.w600))),
+  ]));
 }
 
 class _Dashboard extends StatelessWidget {

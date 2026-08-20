@@ -37,6 +37,47 @@ class WarehouseEmployeeService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> trips() async {
+    try {
+      final data = await _client.rpc('nhan_vien_kho_danh_sach_chuyen');
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
+  Future<String> scanParcel({
+    required int tripId,
+    required String code,
+    required String action,
+  }) async {
+    try {
+      final data = await _client.rpc(
+        'nhan_vien_kho_quet_kien_chuyen',
+        params: {
+          'p_chuyen_xe_id': tripId,
+          'p_ma': code.trim(),
+          'p_thao_tac': action,
+        },
+      );
+      return '$data';
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
+  Future<String> receiveParcel(String code) async {
+    try {
+      final data = await _client.rpc(
+        'nhan_vien_kho_nhap_kien',
+        params: {'p_ma': code.trim()},
+      );
+      return '$data';
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
   Future<void> createLevel2Warehouse({
     required String name,
     required String address,
