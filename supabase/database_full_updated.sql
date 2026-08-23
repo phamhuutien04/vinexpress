@@ -6852,3 +6852,394 @@ REVOKE ALL ON FUNCTION public.lay_cau_hinh_phi_van_chuyen() FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.lay_cau_hinh_phi_van_chuyen() TO authenticated;
 
 NOTIFY pgrst,'reload schema';
+
+-- ============================================================
+-- BẢN VÁ KIỂU TRẢ VỀ CÔNG VIỆC NHÂN VIÊN CHẶNG CUỐI
+-- ============================================================
+-- VINEXPRESS - Sửa kiểu dữ liệu hàm công việc nhân viên lấy/giao hàng.
+-- Chạy an toàn: chỉ thay nội dung hàm, không xóa bảng và không xóa dữ liệu.
+
+CREATE OR REPLACE FUNCTION public.nhan_vien_chang_cuoi_cong_viec_v2()
+RETURNS TABLE(
+  id BIGINT,
+  ma_van_don VARCHAR,
+  ma_qr UUID,
+  loai_cong_viec TEXT,
+  ten_khach TEXT,
+  so_dien_thoai TEXT,
+  dia_chi TEXT,
+  ten_kho TEXT,
+  trang_thai VARCHAR,
+  da_nhan BOOLEAN,
+  ngay_cap_nhat TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path=public
+AS $$
+DECLARE
+  v_nv public.nhan_vien%ROWTYPE;
+BEGIN
+  SELECT nv.* INTO v_nv
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id=auth.uid()
+    AND nv.vai_tro IN ('NHAN_VIEN_LAY_HANG','NHAN_VIEN_GIAO_HANG')
+    AND nv.trang_thai_duyet='DA_DUYET'
+    AND nv.trang_thai='HOAT_DONG';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tài khoản chưa được duyệt hoặc không đúng vai trò';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    dh.id,
+    dh.ma_van_don::VARCHAR,
+    dh.ma_qr,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN 'LAY_HANG' ELSE 'GIAO_HANG' END)::TEXT,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nguoi_gui_ten ELSE dh.nguoi_nhan_ten END)::TEXT,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nguoi_gui_sdt ELSE dh.nguoi_nhan_sdt END)::TEXT,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nguoi_gui_dia_chi ELSE dh.nguoi_nhan_dia_chi END)::TEXT,
+    kh.ten_kho::TEXT,
+    dh.trang_thai::VARCHAR,
+    CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nhan_vien_lay_hang_id=v_nv.id
+      ELSE dh.nhan_vien_giao_hang_id=v_nv.id END,
+    dh.ngay_cap_nhat
+  FROM public.don_hang dh
+  JOIN public.kho_hang kh ON kh.id=CASE
+    WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG' THEN dh.kho_gui_id
+    ELSE dh.kho_dich_id END
+  WHERE (
+    v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+    AND dh.kho_gui_id=v_nv.kho_hang_id
+    AND dh.khu_vuc_lay_hang_id=v_nv.khu_vuc_id
+    AND dh.trang_thai='CHO_LAY_HANG'
+    AND (dh.nhan_vien_lay_hang_id IS NULL OR dh.nhan_vien_lay_hang_id=v_nv.id)
+  ) OR (
+    v_nv.vai_tro='NHAN_VIEN_GIAO_HANG'
+    AND dh.nhan_vien_giao_hang_id=v_nv.id
+    AND dh.trang_thai IN ('DEN_KHO_DICH','GIAO_CHO_SHIPPER','DANG_GIAO_HANG')
+  )
+  ORDER BY dh.ngay_cap_nhat;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.nhan_vien_chang_cuoi_cong_viec_v2() FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_chang_cuoi_cong_viec_v2() TO authenticated;
+
+NOTIFY pgrst,'reload schema';
+
+-- ============================================================
+-- BẢN VÁ NHẬN DIỆN PHƯỜNG/XÃ VÀ ƯU TIÊN KHO CẤP 2
+-- ============================================================
+-- VINEXPRESS - Sửa đơn không hiện dù nhân viên và đơn cùng phường/xã.
+-- Nguyên nhân: dữ liệu khu_vuc có thể trùng tên nhưng khác id.
+-- Bản vá chỉ thay hàm, không xóa dữ liệu.
+
+-- Khi một phường/xã có cả kho cấp 1 và cấp 2, đơn phải vào kho cấp 2 trước.
+CREATE OR REPLACE FUNCTION public.tim_kho_theo_dia_chi(
+  p_dia_chi TEXT,
+  p_kho_bo_qua BIGINT DEFAULT NULL
+)
+RETURNS BIGINT
+LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path=public AS $$
+DECLARE
+  v_kho_id BIGINT;
+BEGIN
+  SELECT kh.id INTO v_kho_id
+  FROM public.kho_hang kh
+  JOIN public.khu_vuc kv ON kv.id=kh.khu_vuc_id
+  WHERE kh.trang_thai='HOAT_DONG'
+    AND public.bo_dau_lower(p_dia_chi)
+      LIKE '%' || public.bo_dau_lower(kv.tinh_thanh) || '%'
+    AND public.bo_dau_lower(p_dia_chi)
+      LIKE '%' || public.bo_dau_lower(kv.phuong_xa) || '%'
+    AND (p_kho_bo_qua IS NULL OR kh.id<>p_kho_bo_qua)
+  ORDER BY kh.cap_kho DESC, kh.id
+  LIMIT 1;
+
+  IF v_kho_id IS NULL THEN
+    RAISE EXCEPTION 'Phường/xã trong địa chỉ chưa có kho hoạt động: %',p_dia_chi;
+  END IF;
+  RETURN v_kho_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.nhan_vien_chang_cuoi_cong_viec_v2()
+RETURNS TABLE(
+  id BIGINT, ma_van_don VARCHAR, ma_qr UUID, loai_cong_viec TEXT,
+  ten_khach TEXT, so_dien_thoai TEXT, dia_chi TEXT, ten_kho TEXT,
+  trang_thai VARCHAR, da_nhan BOOLEAN, ngay_cap_nhat TIMESTAMPTZ
+)
+LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path=public AS $$
+DECLARE
+  v_nv public.nhan_vien%ROWTYPE;
+BEGIN
+  SELECT nv.* INTO v_nv
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id=auth.uid()
+    AND nv.vai_tro IN ('NHAN_VIEN_LAY_HANG','NHAN_VIEN_GIAO_HANG')
+    AND nv.trang_thai_duyet='DA_DUYET'
+    AND nv.trang_thai='HOAT_DONG';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tài khoản chưa được duyệt hoặc không đúng vai trò';
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    dh.id,
+    dh.ma_van_don::VARCHAR,
+    dh.ma_qr,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN 'LAY_HANG' ELSE 'GIAO_HANG' END)::TEXT,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nguoi_gui_ten ELSE dh.nguoi_nhan_ten END)::TEXT,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nguoi_gui_sdt ELSE dh.nguoi_nhan_sdt END)::TEXT,
+    (CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nguoi_gui_dia_chi ELSE dh.nguoi_nhan_dia_chi END)::TEXT,
+    kh.ten_kho::TEXT,
+    dh.trang_thai::VARCHAR,
+    CASE WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+      THEN dh.nhan_vien_lay_hang_id=v_nv.id
+      ELSE dh.nhan_vien_giao_hang_id=v_nv.id END,
+    dh.ngay_cap_nhat
+  FROM public.don_hang dh
+  JOIN public.kho_hang kh ON kh.id=CASE
+    WHEN v_nv.vai_tro='NHAN_VIEN_LAY_HANG' THEN v_nv.kho_hang_id
+    ELSE dh.kho_dich_id END
+  WHERE (
+    v_nv.vai_tro='NHAN_VIEN_LAY_HANG'
+    AND dh.trang_thai='CHO_LAY_HANG'
+    AND (dh.nhan_vien_lay_hang_id IS NULL OR dh.nhan_vien_lay_hang_id=v_nv.id)
+    AND EXISTS (
+      SELECT 1
+      FROM public.khu_vuc kv_don
+      JOIN public.khu_vuc kv_nv ON kv_nv.id=v_nv.khu_vuc_id
+      WHERE kv_don.id=dh.khu_vuc_lay_hang_id
+        AND public.bo_dau_lower(kv_don.phuong_xa)=public.bo_dau_lower(kv_nv.phuong_xa)
+        AND public.bo_dau_lower(kv_don.tinh_thanh)=public.bo_dau_lower(kv_nv.tinh_thanh)
+    )
+  ) OR (
+    v_nv.vai_tro='NHAN_VIEN_GIAO_HANG'
+    AND dh.nhan_vien_giao_hang_id=v_nv.id
+    AND dh.trang_thai IN ('DEN_KHO_DICH','GIAO_CHO_SHIPPER','DANG_GIAO_HANG')
+  )
+  ORDER BY dh.ngay_cap_nhat;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.nhan_vien_lay_hang_nhan_don(
+  p_don_hang_id BIGINT
+)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE
+  v_nv public.nhan_vien%ROWTYPE;
+  v_id BIGINT;
+BEGIN
+  SELECT nv.* INTO v_nv
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id=auth.uid()
+    AND nv.vai_tro='NHAN_VIEN_LAY_HANG'
+    AND nv.trang_thai_duyet='DA_DUYET'
+    AND nv.trang_thai='HOAT_DONG';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tài khoản không phải nhân viên lấy hàng đang hoạt động';
+  END IF;
+
+  UPDATE public.don_hang dh
+  SET nhan_vien_lay_hang_id=v_nv.id,
+      nhan_vien_hien_tai_id=v_nv.id,
+      kho_gui_id=v_nv.kho_hang_id,
+      kho_trung_tam_gui_id=(
+        SELECT CASE
+          WHEN kh.cap_kho=1 THEN kh.id
+          ELSE kh.kho_trung_tam_id
+        END
+        FROM public.kho_hang kh
+        WHERE kh.id=v_nv.kho_hang_id
+      ),
+      ngay_cap_nhat=NOW()
+  WHERE dh.id=p_don_hang_id
+    AND dh.trang_thai='CHO_LAY_HANG'
+    AND dh.nhan_vien_lay_hang_id IS NULL
+    AND EXISTS (
+      SELECT 1
+      FROM public.khu_vuc kv_don
+      JOIN public.khu_vuc kv_nv ON kv_nv.id=v_nv.khu_vuc_id
+      WHERE kv_don.id=dh.khu_vuc_lay_hang_id
+        AND public.bo_dau_lower(kv_don.phuong_xa)=public.bo_dau_lower(kv_nv.phuong_xa)
+        AND public.bo_dau_lower(kv_don.tinh_thanh)=public.bo_dau_lower(kv_nv.tinh_thanh)
+    )
+  RETURNING dh.id INTO v_id;
+
+  IF v_id IS NULL THEN
+    IF EXISTS (
+      SELECT 1 FROM public.don_hang dh
+      WHERE dh.id=p_don_hang_id AND dh.nhan_vien_lay_hang_id=v_nv.id
+    ) THEN
+      RETURN;
+    END IF;
+    RAISE EXCEPTION 'Đơn đã được nhân viên khác nhận hoặc không thuộc phường/xã và kho của bạn';
+  END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.nhan_vien_chang_cuoi_cong_viec_v2() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.nhan_vien_lay_hang_nhan_don(BIGINT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_chang_cuoi_cong_viec_v2() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_lay_hang_nhan_don(BIGINT) TO authenticated;
+
+NOTIFY pgrst,'reload schema';
+
+-- ============================================================
+-- CHỈ ĐƯỜNG NHÂN VIÊN LẤY HÀNG
+-- ============================================================
+CREATE OR REPLACE FUNCTION public.toa_do_diem_lay_nhan_vien(
+  p_don_hang_id BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_nhan_vien public.nhan_vien%ROWTYPE;
+  v_don_hang public.don_hang%ROWTYPE;
+  v_kho_dia_chi TEXT;
+BEGIN
+  SELECT nv.* INTO v_nhan_vien
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id = auth.uid()
+    AND nv.vai_tro = 'NHAN_VIEN_LAY_HANG'
+    AND nv.trang_thai_duyet = 'DA_DUYET'
+    AND nv.trang_thai = 'HOAT_DONG';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tài khoản không phải nhân viên lấy hàng đang hoạt động';
+  END IF;
+  SELECT dh.* INTO v_don_hang
+  FROM public.don_hang dh
+  WHERE dh.id = p_don_hang_id
+    AND dh.nhan_vien_lay_hang_id = v_nhan_vien.id;
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Đơn hàng chưa được nhân viên này nhận';
+  END IF;
+  SELECT kh.dia_chi INTO v_kho_dia_chi
+  FROM public.kho_hang kh
+  WHERE kh.id = v_nhan_vien.kho_hang_id
+    AND kh.cap_kho = 2;
+  RETURN jsonb_build_object(
+    'nguoi_gui_vi_do', v_don_hang.nguoi_gui_vi_do,
+    'nguoi_gui_kinh_do', v_don_hang.nguoi_gui_kinh_do,
+    'kho_dia_chi', v_kho_dia_chi
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.toa_do_diem_lay_nhan_vien(BIGINT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.toa_do_diem_lay_nhan_vien(BIGINT) TO authenticated;
+NOTIFY pgrst, 'reload schema';
+-- VINEXPRESS - Nhân viên lấy hàng chụp minh chứng trong bán kính 500 m.
+-- Bản vá an toàn: không xóa bảng, không xóa dữ liệu.
+
+CREATE OR REPLACE FUNCTION public.nhan_vien_lay_hang_xac_nhan_minh_chung(
+  p_don_hang_id BIGINT,
+  p_minh_chung TEXT,
+  p_vi_do DOUBLE PRECISION,
+  p_kinh_do DOUBLE PRECISION,
+  p_diem_lay_vi_do DOUBLE PRECISION,
+  p_diem_lay_kinh_do DOUBLE PRECISION
+)
+RETURNS VARCHAR
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_nv public.nhan_vien%ROWTYPE;
+  v_don public.don_hang%ROWTYPE;
+  v_diem_lay_vi_do DOUBLE PRECISION;
+  v_diem_lay_kinh_do DOUBLE PRECISION;
+  v_khoang_cach_met DOUBLE PRECISION;
+BEGIN
+  SELECT nv.* INTO v_nv
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id = auth.uid()
+    AND nv.vai_tro = 'NHAN_VIEN_LAY_HANG'
+    AND nv.trang_thai_duyet = 'DA_DUYET'
+    AND nv.trang_thai = 'HOAT_DONG';
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Tài khoản không phải nhân viên lấy hàng đang hoạt động';
+  END IF;
+
+  SELECT dh.* INTO v_don
+  FROM public.don_hang dh
+  WHERE dh.id = p_don_hang_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_don.nhan_vien_lay_hang_id IS DISTINCT FROM v_nv.id
+     OR v_don.trang_thai <> 'CHO_LAY_HANG' THEN
+    RAISE EXCEPTION 'Đơn hàng không thuộc nhân viên hoặc không còn chờ lấy';
+  END IF;
+
+  IF p_minh_chung IS NULL OR BTRIM(p_minh_chung) = '' THEN
+    RAISE EXCEPTION 'Bắt buộc có ảnh minh chứng lấy hàng';
+  END IF;
+
+  v_diem_lay_vi_do := COALESCE(v_don.nguoi_gui_vi_do, p_diem_lay_vi_do);
+  v_diem_lay_kinh_do := COALESCE(v_don.nguoi_gui_kinh_do, p_diem_lay_kinh_do);
+  IF p_vi_do IS NULL OR p_kinh_do IS NULL
+     OR v_diem_lay_vi_do IS NULL OR v_diem_lay_kinh_do IS NULL THEN
+    RAISE EXCEPTION 'Thiếu tọa độ để xác minh khoảng cách';
+  END IF;
+
+  v_khoang_cach_met := 6371000 * 2 * ASIN(SQRT(
+    POWER(SIN(RADIANS(v_diem_lay_vi_do - p_vi_do) / 2), 2)
+    + COS(RADIANS(p_vi_do)) * COS(RADIANS(v_diem_lay_vi_do))
+    * POWER(SIN(RADIANS(v_diem_lay_kinh_do - p_kinh_do) / 2), 2)
+  ));
+  IF v_khoang_cach_met > 500 THEN
+    RAISE EXCEPTION 'Chỉ được xác nhận trong phạm vi 500 m. Hiện cách % m',
+      ROUND(v_khoang_cach_met);
+  END IF;
+
+  UPDATE public.don_hang
+  SET trang_thai = 'DA_LAY_HANG',
+      kho_hien_tai_id = kho_gui_id,
+      nhan_vien_hien_tai_id = v_nv.id,
+      ngay_lay_hang = NOW(),
+      ngay_cap_nhat = NOW()
+  WHERE id = p_don_hang_id;
+
+  INSERT INTO public.nhat_ky_don_hang(
+    nhan_vien_id, don_hang_id, khach_hang_id, hanh_dong,
+    trang_thai_cu, trang_thai_moi, minh_chung, ghi_chu,
+    vi_do, kinh_do, thoi_gian
+  ) VALUES (
+    v_nv.id, v_don.id, v_don.khach_hang_id,
+    'Nhân viên lấy hàng đã nhận kiện và chụp minh chứng',
+    v_don.trang_thai, 'DA_LAY_HANG', BTRIM(p_minh_chung),
+    'Khoảng cách xác nhận: ' || ROUND(v_khoang_cach_met) || ' m',
+    p_vi_do, p_kinh_do, NOW()
+  );
+
+  RETURN 'DA_LAY_HANG';
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.nhan_vien_lay_hang_xac_nhan_minh_chung(
+  BIGINT,TEXT,DOUBLE PRECISION,DOUBLE PRECISION,DOUBLE PRECISION,DOUBLE PRECISION
+) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_lay_hang_xac_nhan_minh_chung(
+  BIGINT,TEXT,DOUBLE PRECISION,DOUBLE PRECISION,DOUBLE PRECISION,DOUBLE PRECISION
+) TO authenticated;
+NOTIFY pgrst, 'reload schema';
