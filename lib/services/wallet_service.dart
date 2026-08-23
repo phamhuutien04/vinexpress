@@ -32,6 +32,18 @@ class WalletService {
     }
   }
 
+  Future<int> requestTopUp(double amount) async {
+    try {
+      final data = await _client.rpc(
+        'tao_yeu_cau_nap_vi',
+        params: {'p_so_tien': amount, 'p_phuong_thuc': 'CHUYEN_KHOAN'},
+      );
+      return (data as num).toInt();
+    } on PostgrestException catch (error) {
+      throw WalletServiceException(error.message);
+    }
+  }
+
   Future<int> requestWithdrawal({required double amount}) async {
     try {
       final data = await _client.rpc(

@@ -6,6 +6,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
 import '../../services/last_mile_staff_service.dart';
 import '../auth/login_screen.dart';
+import 'employee_wallet_screen.dart';
 import 'pickup_navigation_screen.dart';
 
 class LastMileStaffScreen extends StatefulWidget {
@@ -80,11 +81,13 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
           ),
         ],
       ),
-      body: _pickup && _tabIndex == 2
+      body: _pickup && _tabIndex == 3
           ? _PickupAccount(
               employee: employee ?? const <String, dynamic>{},
               onLogout: _logout,
             )
+          : _pickup && _tabIndex == 2
+          ? const EmployeeWalletScreen()
           : RefreshIndicator(
               onRefresh: _load,
               child: CustomScrollView(
@@ -157,6 +160,11 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
                   icon: const Icon(Icons.delivery_dining_outlined),
                   selectedIcon: const Icon(Icons.delivery_dining),
                   label: 'Đơn của tôi ($mineCount)',
+                ),
+                const NavigationDestination(
+                  icon: Icon(Icons.account_balance_wallet_outlined),
+                  selectedIcon: Icon(Icons.account_balance_wallet),
+                  label: 'Ví',
                 ),
                 const NavigationDestination(
                   icon: Icon(Icons.person_outline),

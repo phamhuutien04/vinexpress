@@ -6,6 +6,8 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
 
+import '../../widgets/vietnam_island_markers.dart';
+
 import '../../core/constants/app_colors.dart';
 import '../../services/order_service.dart';
 
@@ -163,8 +165,9 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                           children: [
                             TileLayer(
                               urlTemplate:
-                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                                  'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
                               userAgentPackageName: 'com.vinexpress.app',
+                              maxZoom: 19,
                             ),
                             if (_route.isNotEmpty)
                               PolylineLayer(
@@ -180,6 +183,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
                               ),
                             MarkerLayer(
                               markers: [
+                                ...vietnamIslandMarkers,
                                 Marker(
                                   point: shipper,
                                   width: 52,

@@ -22,6 +22,14 @@ class LastMileStaffService {
   }) async =>
       '${await _client.rpc('nhan_vien_lay_hang_xac_nhan_minh_chung', params: {'p_don_hang_id': orderId, 'p_minh_chung': evidenceUrl, 'p_vi_do': latitude, 'p_kinh_do': longitude, 'p_diem_lay_vi_do': pickupLatitude, 'p_diem_lay_kinh_do': pickupLongitude})}';
 
+  Future<Map<String, dynamic>> pickupWalletCheck(int orderId) async {
+    final data = await _client.rpc(
+      'kiem_tra_vi_nhan_vien_lay_hang',
+      params: {'p_don_hang_id': orderId},
+    );
+    return Map<String, dynamic>.from(data as Map);
+  }
+
   Future<void> claimPickup(int orderId) => _client.rpc(
     'nhan_vien_lay_hang_nhan_don',
     params: {'p_don_hang_id': orderId},

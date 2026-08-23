@@ -1,6 +1,66 @@
 -- VINEXPRESS - Nhân viên lấy hàng chụp minh chứng trong bán kính 500 m.
 -- Bản vá an toàn: không xóa bảng, không xóa dữ liệu.
 
+ALTER TABLE public.giao_dich_vi
+  DROP CONSTRAINT IF EXISTS chk_giao_dich_vi_loai;
+ALTER TABLE public.giao_dich_vi
+  ADD CONSTRAINT chk_giao_dich_vi_loai CHECK (loai IN (
+    'NAP_TIEN','RUT_TIEN','YEU_CAU_RUT','HOAN_RUT',
+    'TRU_COD','NHAN_COD','HOAN_COD','THU_NHAP_GIAO_HANG',
+    'TRU_PHI_LAY_HANG','DIEU_CHINH'
+  ));
+
+CREATE OR REPLACE FUNCTION public.kiem_tra_vi_nhan_vien_lay_hang(
+  p_don_hang_id BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_nv_id BIGINT;
+  v_cod NUMERIC;
+  v_phi NUMERIC;
+  v_so_du NUMERIC;
+  v_can_doi_soat NUMERIC;
+BEGIN
+  SELECT nv.id INTO v_nv_id
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id = auth.uid()
+    AND nv.vai_tro = 'NHAN_VIEN_LAY_HANG'
+    AND nv.trang_thai_duyet = 'DA_DUYET'
+    AND nv.trang_thai = 'HOAT_DONG';
+  IF v_nv_id IS NULL THEN
+    RAISE EXCEPTION 'Tài khoản không phải nhân viên lấy hàng đang hoạt động';
+  END IF;
+
+  SELECT dh.cod, dh.phi_van_chuyen INTO v_cod, v_phi
+  FROM public.don_hang dh
+  WHERE dh.id = p_don_hang_id
+    AND dh.nhan_vien_lay_hang_id = v_nv_id
+    AND dh.trang_thai = 'CHO_LAY_HANG';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Đơn hàng không thuộc nhân viên hoặc không còn chờ lấy';
+  END IF;
+
+  v_can_doi_soat := CASE WHEN COALESCE(v_cod,0) <= 0
+    THEN COALESCE(v_phi,0) ELSE 0 END;
+  SELECT COALESCE(v.so_du,0) INTO v_so_du
+  FROM public.vi v WHERE v.nhan_vien_id = v_nv_id;
+  v_so_du := COALESCE(v_so_du,0);
+
+  RETURN jsonb_build_object(
+    'so_tien_can_doi_soat', v_can_doi_soat,
+    'so_du', v_so_du,
+    'du_tien', v_so_du >= v_can_doi_soat
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.kiem_tra_vi_nhan_vien_lay_hang(BIGINT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.kiem_tra_vi_nhan_vien_lay_hang(BIGINT) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.nhan_vien_lay_hang_xac_nhan_minh_chung(
   p_don_hang_id BIGINT,
   p_minh_chung TEXT,
@@ -20,6 +80,9 @@ DECLARE
   v_diem_lay_vi_do DOUBLE PRECISION;
   v_diem_lay_kinh_do DOUBLE PRECISION;
   v_khoang_cach_met DOUBLE PRECISION;
+  v_vi_id BIGINT;
+  v_so_du NUMERIC;
+  v_phi_thu_tien_mat NUMERIC;
 BEGIN
   SELECT nv.* INTO v_nv
   FROM public.nhan_vien nv
@@ -63,6 +126,44 @@ BEGIN
       ROUND(v_khoang_cach_met);
   END IF;
 
+  -- Đơn không COD: người gửi trả phí vận chuyển tiền mặt cho nhân viên lấy hàng.
+  -- Khấu trừ ví nhân viên để đối soát khoản tiền mặt đã thu.
+  v_phi_thu_tien_mat := CASE
+    WHEN COALESCE(v_don.cod, 0) <= 0 THEN COALESCE(v_don.phi_van_chuyen, 0)
+    ELSE 0
+  END;
+  IF v_phi_thu_tien_mat > 0 THEN
+    INSERT INTO public.vi(nhan_vien_id)
+    VALUES (v_nv.id)
+    ON CONFLICT (nhan_vien_id) DO UPDATE
+      SET nhan_vien_id = EXCLUDED.nhan_vien_id
+    RETURNING id, so_du INTO v_vi_id, v_so_du;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM public.giao_dich_vi gd
+      WHERE gd.vi_id = v_vi_id
+        AND gd.don_hang_id = v_don.id
+        AND gd.loai = 'TRU_PHI_LAY_HANG'
+    ) THEN
+      IF v_so_du < v_phi_thu_tien_mat THEN
+        RAISE EXCEPTION
+          'Ví không đủ để đối soát phí lấy hàng. Cần %đ, số dư %đ. Vui lòng nạp ví',
+          ROUND(v_phi_thu_tien_mat), ROUND(v_so_du);
+      END IF;
+      UPDATE public.vi
+      SET so_du = so_du - v_phi_thu_tien_mat, ngay_cap_nhat = NOW()
+      WHERE id = v_vi_id
+      RETURNING so_du INTO v_so_du;
+      INSERT INTO public.giao_dich_vi(
+        vi_id, don_hang_id, loai, so_tien, so_du_sau, noi_dung
+      ) VALUES (
+        v_vi_id, v_don.id, 'TRU_PHI_LAY_HANG',
+        v_phi_thu_tien_mat, v_so_du,
+        'Đối soát phí vận chuyển tiền mặt đã thu từ người gửi'
+      );
+    END IF;
+  END IF;
+
   UPDATE public.don_hang
   SET trang_thai = 'DA_LAY_HANG',
       kho_hien_tai_id = kho_gui_id,
@@ -94,4 +195,3 @@ GRANT EXECUTE ON FUNCTION public.nhan_vien_lay_hang_xac_nhan_minh_chung(
   BIGINT,TEXT,DOUBLE PRECISION,DOUBLE PRECISION,DOUBLE PRECISION,DOUBLE PRECISION
 ) TO authenticated;
 NOTIFY pgrst, 'reload schema';
-

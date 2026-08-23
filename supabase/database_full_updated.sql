@@ -2881,28 +2881,70 @@ BEGIN
 END;
 $$;
 
-CREATE OR REPLACE FUNCTION public.duyet_yeu_cau_nap_vi(p_yeu_cau_id BIGINT)
-RETURNS VOID
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-DECLARE
-    v_yeu_cau public.yeu_cau_nap_rut_vi%ROWTYPE;
-    v_so_du_moi NUMERIC;
+CREATE OR REPLACE FUNCTION public.xu_ly_nap_vi_khi_duyet()
+RETURNS TRIGGER LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_so_du_moi NUMERIC;
 BEGIN
-    SELECT * INTO v_yeu_cau FROM public.yeu_cau_nap_rut_vi
-    WHERE id = p_yeu_cau_id AND loai = 'NAP_TIEN' FOR UPDATE;
-    IF NOT FOUND OR v_yeu_cau.trang_thai <> 'CHO_DUYET' THEN
-        RAISE EXCEPTION 'Yêu cầu nạp không còn chờ duyệt';
-    END IF;
+    IF NEW.loai <> 'NAP_TIEN' OR NEW.trang_thai <> 'DA_DUYET'
+       OR OLD.trang_thai = 'DA_DUYET' THEN RETURN NEW; END IF;
+    UPDATE public.vi SET so_du = so_du + NEW.so_tien, ngay_cap_nhat = NOW()
+    WHERE id = NEW.vi_id RETURNING so_du INTO v_so_du_moi;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy ví của yêu cầu nạp %', NEW.id; END IF;
+    INSERT INTO public.giao_dich_vi(
+        vi_id, yeu_cau_nap_rut_id, loai, so_tien, so_du_sau, noi_dung
+    ) VALUES (
+        NEW.vi_id, NEW.id, 'NAP_TIEN', NEW.so_tien, v_so_du_moi,
+        'Nạp tiền vào ví - yêu cầu #' || NEW.id
+    );
+    NEW.ngay_xu_ly := COALESCE(NEW.ngay_xu_ly, NOW());
+    RETURN NEW;
+END;
+$$;
 
-    UPDATE public.vi SET so_du = so_du + v_yeu_cau.so_tien, ngay_cap_nhat = NOW()
-    WHERE id = v_yeu_cau.vi_id RETURNING so_du INTO v_so_du_moi;
-    UPDATE public.yeu_cau_nap_rut_vi SET trang_thai = 'DA_DUYET', ngay_xu_ly = NOW()
+DROP TRIGGER IF EXISTS trg_cong_tien_khi_duyet_nap_vi ON public.yeu_cau_nap_rut_vi;
+CREATE TRIGGER trg_cong_tien_khi_duyet_nap_vi
+BEFORE UPDATE OF trang_thai ON public.yeu_cau_nap_rut_vi
+FOR EACH ROW EXECUTE FUNCTION public.xu_ly_nap_vi_khi_duyet();
+
+CREATE OR REPLACE FUNCTION public.duyet_yeu_cau_nap_vi(p_yeu_cau_id BIGINT)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_trang_thai TEXT;
+BEGIN
+    SELECT yc.trang_thai INTO v_trang_thai
+    FROM public.yeu_cau_nap_rut_vi yc
+    WHERE yc.id = p_yeu_cau_id AND yc.loai = 'NAP_TIEN' FOR UPDATE;
+    IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy yêu cầu nạp ví'; END IF;
+    IF v_trang_thai = 'DA_DUYET' THEN RETURN; END IF;
+    IF v_trang_thai <> 'CHO_DUYET' THEN RAISE EXCEPTION 'Yêu cầu nạp không còn chờ duyệt'; END IF;
+    UPDATE public.yeu_cau_nap_rut_vi
+    SET trang_thai = 'DA_DUYET', ngay_xu_ly = NOW()
     WHERE id = p_yeu_cau_id;
-    INSERT INTO public.giao_dich_vi(vi_id, loai, so_tien, so_du_sau, noi_dung)
-    VALUES (v_yeu_cau.vi_id, 'NAP_TIEN', v_yeu_cau.so_tien, v_so_du_moi, 'Nạp tiền vào ví');
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.sua_yeu_cau_nap_da_duyet(p_yeu_cau_id BIGINT)
+RETURNS NUMERIC LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_yc public.yeu_cau_nap_rut_vi%ROWTYPE; v_so_du NUMERIC;
+BEGIN
+    SELECT * INTO v_yc FROM public.yeu_cau_nap_rut_vi
+    WHERE id = p_yeu_cau_id AND loai = 'NAP_TIEN' FOR UPDATE;
+    IF NOT FOUND OR v_yc.trang_thai <> 'DA_DUYET' THEN
+        RAISE EXCEPTION 'Yêu cầu nạp chưa ở trạng thái DA_DUYET';
+    END IF;
+    IF EXISTS (SELECT 1 FROM public.giao_dich_vi gd
+               WHERE gd.yeu_cau_nap_rut_id = v_yc.id AND gd.loai = 'NAP_TIEN') THEN
+        SELECT so_du INTO v_so_du FROM public.vi WHERE id = v_yc.vi_id;
+        RETURN v_so_du;
+    END IF;
+    UPDATE public.vi SET so_du = so_du + v_yc.so_tien, ngay_cap_nhat = NOW()
+    WHERE id = v_yc.vi_id RETURNING so_du INTO v_so_du;
+    INSERT INTO public.giao_dich_vi(
+        vi_id, yeu_cau_nap_rut_id, loai, so_tien, so_du_sau, noi_dung
+    ) VALUES (
+        v_yc.vi_id, v_yc.id, 'NAP_TIEN', v_yc.so_tien, v_so_du,
+        'Cộng bù yêu cầu nạp đã duyệt #' || v_yc.id
+    );
+    RETURN v_so_du;
 END;
 $$;
 
@@ -3222,6 +3264,7 @@ REVOKE ALL ON FUNCTION public.thong_tin_vi() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.lich_su_giao_dich_vi() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.tao_yeu_cau_nap_vi(NUMERIC, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.duyet_yeu_cau_nap_vi(BIGINT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.sua_yeu_cau_nap_da_duyet(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.lien_ket_tai_khoan_ngan_hang_vi(TEXT, TEXT, TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.thong_tin_tai_khoan_ngan_hang_vi() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.tao_yeu_cau_rut_vi(NUMERIC) FROM PUBLIC;
@@ -3233,6 +3276,7 @@ GRANT EXECUTE ON FUNCTION public.thong_tin_vi() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.lich_su_giao_dich_vi() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.tao_yeu_cau_nap_vi(NUMERIC, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.duyet_yeu_cau_nap_vi(BIGINT) TO service_role;
+GRANT EXECUTE ON FUNCTION public.sua_yeu_cau_nap_da_duyet(BIGINT) TO service_role;
 GRANT EXECUTE ON FUNCTION public.lien_ket_tai_khoan_ngan_hang_vi(TEXT, TEXT, TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.thong_tin_tai_khoan_ngan_hang_vi() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.tao_yeu_cau_rut_vi(NUMERIC) TO authenticated;
@@ -7150,6 +7194,66 @@ NOTIFY pgrst, 'reload schema';
 -- VINEXPRESS - Nhân viên lấy hàng chụp minh chứng trong bán kính 500 m.
 -- Bản vá an toàn: không xóa bảng, không xóa dữ liệu.
 
+ALTER TABLE public.giao_dich_vi
+  DROP CONSTRAINT IF EXISTS chk_giao_dich_vi_loai;
+ALTER TABLE public.giao_dich_vi
+  ADD CONSTRAINT chk_giao_dich_vi_loai CHECK (loai IN (
+    'NAP_TIEN','RUT_TIEN','YEU_CAU_RUT','HOAN_RUT',
+    'TRU_COD','NHAN_COD','HOAN_COD','THU_NHAP_GIAO_HANG',
+    'TRU_PHI_LAY_HANG','DIEU_CHINH'
+  ));
+
+CREATE OR REPLACE FUNCTION public.kiem_tra_vi_nhan_vien_lay_hang(
+  p_don_hang_id BIGINT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+STABLE
+SET search_path = public
+AS $$
+DECLARE
+  v_nv_id BIGINT;
+  v_cod NUMERIC;
+  v_phi NUMERIC;
+  v_so_du NUMERIC;
+  v_can_doi_soat NUMERIC;
+BEGIN
+  SELECT nv.id INTO v_nv_id
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id = auth.uid()
+    AND nv.vai_tro = 'NHAN_VIEN_LAY_HANG'
+    AND nv.trang_thai_duyet = 'DA_DUYET'
+    AND nv.trang_thai = 'HOAT_DONG';
+  IF v_nv_id IS NULL THEN
+    RAISE EXCEPTION 'Tài khoản không phải nhân viên lấy hàng đang hoạt động';
+  END IF;
+
+  SELECT dh.cod, dh.phi_van_chuyen INTO v_cod, v_phi
+  FROM public.don_hang dh
+  WHERE dh.id = p_don_hang_id
+    AND dh.nhan_vien_lay_hang_id = v_nv_id
+    AND dh.trang_thai = 'CHO_LAY_HANG';
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Đơn hàng không thuộc nhân viên hoặc không còn chờ lấy';
+  END IF;
+
+  v_can_doi_soat := CASE WHEN COALESCE(v_cod,0) <= 0
+    THEN COALESCE(v_phi,0) ELSE 0 END;
+  SELECT COALESCE(v.so_du,0) INTO v_so_du
+  FROM public.vi v WHERE v.nhan_vien_id = v_nv_id;
+  v_so_du := COALESCE(v_so_du,0);
+
+  RETURN jsonb_build_object(
+    'so_tien_can_doi_soat', v_can_doi_soat,
+    'so_du', v_so_du,
+    'du_tien', v_so_du >= v_can_doi_soat
+  );
+END;
+$$;
+REVOKE ALL ON FUNCTION public.kiem_tra_vi_nhan_vien_lay_hang(BIGINT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.kiem_tra_vi_nhan_vien_lay_hang(BIGINT) TO authenticated;
+
 CREATE OR REPLACE FUNCTION public.nhan_vien_lay_hang_xac_nhan_minh_chung(
   p_don_hang_id BIGINT,
   p_minh_chung TEXT,
@@ -7169,6 +7273,9 @@ DECLARE
   v_diem_lay_vi_do DOUBLE PRECISION;
   v_diem_lay_kinh_do DOUBLE PRECISION;
   v_khoang_cach_met DOUBLE PRECISION;
+  v_vi_id BIGINT;
+  v_so_du NUMERIC;
+  v_phi_thu_tien_mat NUMERIC;
 BEGIN
   SELECT nv.* INTO v_nv
   FROM public.nhan_vien nv
@@ -7210,6 +7317,44 @@ BEGIN
   IF v_khoang_cach_met > 500 THEN
     RAISE EXCEPTION 'Chỉ được xác nhận trong phạm vi 500 m. Hiện cách % m',
       ROUND(v_khoang_cach_met);
+  END IF;
+
+  -- Đơn không COD: người gửi trả phí vận chuyển tiền mặt cho nhân viên lấy hàng.
+  -- Khấu trừ ví nhân viên để đối soát khoản tiền mặt đã thu.
+  v_phi_thu_tien_mat := CASE
+    WHEN COALESCE(v_don.cod, 0) <= 0 THEN COALESCE(v_don.phi_van_chuyen, 0)
+    ELSE 0
+  END;
+  IF v_phi_thu_tien_mat > 0 THEN
+    INSERT INTO public.vi(nhan_vien_id)
+    VALUES (v_nv.id)
+    ON CONFLICT (nhan_vien_id) DO UPDATE
+      SET nhan_vien_id = EXCLUDED.nhan_vien_id
+    RETURNING id, so_du INTO v_vi_id, v_so_du;
+
+    IF NOT EXISTS (
+      SELECT 1 FROM public.giao_dich_vi gd
+      WHERE gd.vi_id = v_vi_id
+        AND gd.don_hang_id = v_don.id
+        AND gd.loai = 'TRU_PHI_LAY_HANG'
+    ) THEN
+      IF v_so_du < v_phi_thu_tien_mat THEN
+        RAISE EXCEPTION
+          'Ví không đủ để đối soát phí lấy hàng. Cần %đ, số dư %đ. Vui lòng nạp ví',
+          ROUND(v_phi_thu_tien_mat), ROUND(v_so_du);
+      END IF;
+      UPDATE public.vi
+      SET so_du = so_du - v_phi_thu_tien_mat, ngay_cap_nhat = NOW()
+      WHERE id = v_vi_id
+      RETURNING so_du INTO v_so_du;
+      INSERT INTO public.giao_dich_vi(
+        vi_id, don_hang_id, loai, so_tien, so_du_sau, noi_dung
+      ) VALUES (
+        v_vi_id, v_don.id, 'TRU_PHI_LAY_HANG',
+        v_phi_thu_tien_mat, v_so_du,
+        'Đối soát phí vận chuyển tiền mặt đã thu từ người gửi'
+      );
+    END IF;
   END IF;
 
   UPDATE public.don_hang

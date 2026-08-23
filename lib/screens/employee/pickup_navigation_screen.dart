@@ -7,6 +7,8 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:latlong2/latlong.dart';
+
+import '../../widgets/vietnam_island_markers.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -358,6 +360,17 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
       _showMessage('Chưa có tọa độ điểm lấy hàng');
       return;
     }
+    final displayedDistance = _metersToPickup;
+    if (displayedDistance == null) {
+      _showMessage('Chưa xác định được vị trí hiện tại của nhân viên');
+      return;
+    }
+    if (displayedDistance > 500) {
+      _showMessage(
+        'Bạn còn cách điểm lấy ${displayedDistance.round()} m. Chỉ được chụp minh chứng trong phạm vi 500 m.',
+      );
+      return;
+    }
     setState(() => _confirming = true);
     try {
       final evidencePosition = await _evidencePosition();
@@ -372,13 +385,21 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
           'Bạn còn cách điểm lấy ${distanceMeters.round()} m. Chỉ được chụp minh chứng trong phạm vi 500 m.',
         );
       }
+      final orderId = (widget.order['id'] as num).toInt();
+      final wallet = await _service.pickupWalletCheck(orderId);
+      final requiredAmount = (wallet['so_tien_can_doi_soat'] as num?) ?? 0;
+      final balance = (wallet['so_du'] as num?) ?? 0;
+      if (requiredAmount > balance) {
+        throw Exception(
+          'Ví không đủ để nhận tiền mặt phí vận chuyển. Cần ${requiredAmount.round()}đ, số dư ${balance.round()}đ. Vui lòng nạp ví.',
+        );
+      }
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
         imageQuality: 82,
         maxWidth: 1600,
       );
       if (image == null) return;
-      final orderId = (widget.order['id'] as num).toInt();
       final trackingCode = '${widget.order['ma_van_don']}';
       final stampedImage = await _evidenceImageService.stamp(
         sourceBytes: await image.readAsBytes(),
@@ -469,8 +490,9 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
                 children: [
                   TileLayer(
                     urlTemplate:
-                        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                        'https://a.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
                     userAgentPackageName: 'com.vinexpress.app',
+                    maxZoom: 19,
                   ),
                   if (_route.isNotEmpty)
                     PolylineLayer(
@@ -484,6 +506,7 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
                     ),
                   MarkerLayer(
                     markers: [
+                      ...vietnamIslandMarkers,
                       Marker(
                         point: _destination!,
                         width: 54,
