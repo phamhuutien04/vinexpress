@@ -76,6 +76,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
   Future<void> _prepareNavigation() async {
     try {
+      await _refreshStageFromServer();
       _pickup = _coordinatesFromOrder('nguoi_gui_vi_do', 'nguoi_gui_kinh_do');
       _delivery = _coordinatesFromOrder(
         'nguoi_nhan_vi_do',
@@ -100,6 +101,26 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         _error =
             'Đơn hàng chưa có tọa độ hợp lệ. Hãy kiểm tra lại địa chỉ lấy và giao hàng.';
       });
+    }
+  }
+
+  Future<void> _refreshStageFromServer() async {
+    final orderId = (widget.order['id'] as num).toInt();
+    try {
+      final activeOrders = await _shipperService.getActiveOrders();
+      final latest = activeOrders.cast<Map<String, dynamic>?>().firstWhere(
+        (order) => (order?['id'] as num?)?.toInt() == orderId,
+        orElse: () => null,
+      );
+      if (latest == null) return;
+      widget.order.addAll(latest);
+      _toReceiver = const {
+        'DA_LAY_HANG',
+        'GIAO_CHO_SHIPPER',
+        'DANG_GIAO_HANG',
+      }.contains(latest['trang_thai']);
+    } catch (_) {
+      // Vẫn cho phép mở bản đồ khi mạng tạm thời gián đoạn.
     }
   }
 
@@ -325,10 +346,13 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     _stopSimulation();
     setState(() => _updatingStatus = true);
     try {
+      if (!await _hasEnoughWalletForNoCodPickup()) return;
+
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 82,
-        maxWidth: 1600,
+        imageQuality: 72,
+        maxWidth: 1280,
+        maxHeight: 1280,
       );
       if (image == null) return;
       final capturedPosition = await _evidencePosition();
@@ -360,6 +384,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         evidenceUrl: evidenceUrl,
       );
       if (!mounted) return;
+      widget.order['trang_thai'] = 'DA_LAY_HANG';
       setState(() {
         _toReceiver = true;
         _simulatedThisStage = false;
@@ -368,7 +393,20 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     } on CloudinaryUploadException catch (error) {
       if (mounted) _showError(error.message);
     } on ShipperServiceException catch (error) {
-      if (mounted) _showError(error.message);
+      // Database đã cập nhật nhưng dữ liệu màn hình cũ có thể chưa
+      // kịp đổi. Trường hợp này coi như xác nhận đã thành công.
+      if (error.message.contains('DA_LAY_HANG sang DA_LAY_HANG')) {
+        widget.order['trang_thai'] = 'DA_LAY_HANG';
+        if (mounted) {
+          setState(() {
+            _toReceiver = true;
+            _simulatedThisStage = false;
+          });
+          await _loadRoute();
+        }
+      } else if (mounted) {
+        _showError(error.message);
+      }
     } finally {
       if (mounted) setState(() => _updatingStatus = false);
     }
@@ -516,8 +554,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 82,
-        maxWidth: 1600,
+        imageQuality: 72,
+        maxWidth: 1280,
+        maxHeight: 1280,
       );
       if (image == null) return;
       final capturedPosition = await _evidencePosition();
@@ -576,6 +615,26 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       'Đơn hàng cần thu hộ ${_money(cod)}, nhưng ví chỉ còn '
       '${_money(balance)}. Bạn cần nạp thêm ${_money(cod - balance)} '
       'trước khi xác nhận đã giao.',
+    );
+    return false;
+  }
+
+  Future<bool> _hasEnoughWalletForNoCodPickup() async {
+    final cod = (widget.order['cod'] as num?)?.toDouble() ?? 0;
+    if (cod > 0) return true;
+
+    final shippingFee =
+        (widget.order['phi_van_chuyen'] as num?)?.toDouble() ?? 0;
+    if (shippingFee <= 0) return true;
+
+    final wallet = await _shipperService.getWalletInfo();
+    final balance = (wallet['so_du'] as num?)?.toDouble() ?? 0;
+    if (balance >= shippingFee) return true;
+
+    await _showWalletRequired(
+      'Đơn không COD: người gửi trả phí vận chuyển ${_money(shippingFee)} '
+      'khi lấy hàng. Ví của bạn chỉ còn ${_money(balance)}, cần nạp thêm '
+      '${_money(shippingFee - balance)} để đối soát trước khi xác nhận lấy hàng.',
     );
     return false;
   }

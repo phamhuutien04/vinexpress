@@ -4,6 +4,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 class EvidenceImageService {
+  static const int _maximumImageDimension = 1280;
+
   Future<Uint8List> stamp({
     required Uint8List sourceBytes,
     required int orderId,
@@ -84,7 +86,18 @@ class EvidenceImageService {
   Future<ui.Image> _decode(Uint8List bytes) async {
     final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
     final descriptor = await ui.ImageDescriptor.encoded(buffer);
-    final codec = await descriptor.instantiateCodec();
+    final sourceWidth = descriptor.width;
+    final sourceHeight = descriptor.height;
+    final largestSide = sourceWidth > sourceHeight ? sourceWidth : sourceHeight;
+    final scale = largestSide > _maximumImageDimension
+        ? _maximumImageDimension / largestSide
+        : 1.0;
+    final targetWidth = (sourceWidth * scale).round();
+    final targetHeight = (sourceHeight * scale).round();
+    final codec = await descriptor.instantiateCodec(
+      targetWidth: targetWidth,
+      targetHeight: targetHeight,
+    );
     final frame = await codec.getNextFrame();
     return frame.image;
   }

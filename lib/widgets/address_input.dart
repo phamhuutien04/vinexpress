@@ -53,6 +53,7 @@ class AddressInput extends StatefulWidget {
 
 class _AddressInputState extends State<AddressInput> {
   bool _locating = false;
+  bool _hasAdministrativeSelection = false;
 
   Future<void> _showLocationPermissionHelp({
     required bool permanentlyDenied,
@@ -114,33 +115,29 @@ class _AddressInputState extends State<AddressInput> {
 
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
+          accuracy: LocationAccuracy.bestForNavigation,
           timeLimit: Duration(seconds: 20),
         ),
       );
-      final uri = Uri.https('nominatim.openstreetmap.org', '/reverse', {
-        'format': 'jsonv2',
-        'lat': position.latitude.toString(),
-        'lon': position.longitude.toString(),
-        'accept-language': 'vi',
-      });
-      final response = await http.get(
-        uri,
-        headers: const {'User-Agent': 'VinExpress Flutter App'},
-      );
-      if (response.statusCode != 200) {
-        throw Exception('Không thể chuyển vị trí thành địa chỉ.');
-      }
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final address = data['display_name'] as String?;
-      if (address == null || address.isEmpty) {
-        throw Exception('Không tìm thấy địa chỉ tại vị trí hiện tại.');
-      }
-      widget.controller.text = address;
+
+      // Lưu tọa độ GPS ngay, không phụ thuộc API đổi tọa độ thành tên đường.
       widget.onCurrentLocationSelected?.call(
         position.latitude,
         position.longitude,
       );
+
+      final selectedAddress = _hasAdministrativeSelection
+          ? widget.controller.text.trim()
+          : '';
+      final address = selectedAddress.isNotEmpty
+          ? selectedAddress
+          : await _reverseAddressFromPhoton(
+                  position.latitude,
+                  position.longitude,
+                ) ??
+                'Vị trí hiện tại (${position.latitude.toStringAsFixed(6)}, '
+                    '${position.longitude.toStringAsFixed(6)})';
+      widget.controller.text = address;
       widget.onAddressSelected?.call();
     } on PermissionDeniedException {
       await _showLocationPermissionHelp(permanentlyDenied: false);
@@ -157,6 +154,89 @@ class _AddressInputState extends State<AddressInput> {
     }
   }
 
+  Future<String?> _reverseAddressFromPhoton(
+    double latitude,
+    double longitude,
+  ) async {
+    try {
+      final uri = Uri.https('photon.komoot.io', '/reverse', {
+        'lat': latitude.toString(),
+        'lon': longitude.toString(),
+        'limit': '1',
+      });
+      final response = await http.get(uri).timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! Map || decoded['features'] is! List) return null;
+      final features = decoded['features'] as List;
+      if (features.isEmpty) return null;
+      final feature = Map<String, dynamic>.from(features.first as Map);
+      final properties = Map<String, dynamic>.from(
+        feature['properties'] as Map? ?? const {},
+      );
+      final oldWard = _firstAddressValue(properties, const [
+        'district',
+        'locality',
+        'city',
+      ]);
+      final oldProvince = _firstAddressValue(properties, const [
+        'state',
+        'city',
+      ]);
+      if (oldWard.isEmpty || oldProvince.isEmpty) return null;
+      return await _mapLegacyWard(oldWard) ?? '$oldWard, $oldProvince';
+    } catch (_) {
+      return null;
+    }
+  }
+
+  String _firstAddressValue(Map<String, dynamic> values, List<String> keys) {
+    for (final key in keys) {
+      final value = '${values[key] ?? ''}'.trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  Future<String?> _mapLegacyWard(String legacyName) async {
+    try {
+      final mappingUri = Uri.https(
+        'provinces.open-api.vn',
+        '/api/v2/w/from-legacy/',
+        {'legacy_name': legacyName},
+      );
+      final mappingResponse = await http
+          .get(mappingUri)
+          .timeout(const Duration(seconds: 10));
+      if (mappingResponse.statusCode != 200) return null;
+      final mappings = jsonDecode(utf8.decode(mappingResponse.bodyBytes));
+      if (mappings is! List || mappings.isEmpty) return null;
+      final mapping = Map<String, dynamic>.from(mappings.first as Map);
+      final wardValue = mapping['ward'];
+      if (wardValue is! Map) return null;
+      final ward = Map<String, dynamic>.from(wardValue);
+      final wardName = '${ward['name'] ?? ''}'.trim();
+      final provinceCode = ward['province_code'];
+      if (wardName.isEmpty || provinceCode == null) return null;
+
+      final provinceResponse = await http
+          .get(Uri.parse('https://provinces.open-api.vn/api/v2/?depth=1'))
+          .timeout(const Duration(seconds: 10));
+      if (provinceResponse.statusCode != 200) return wardName;
+      final provinces = jsonDecode(utf8.decode(provinceResponse.bodyBytes));
+      if (provinces is! List) return wardName;
+      for (final value in provinces) {
+        final province = Map<String, dynamic>.from(value as Map);
+        if ('${province['code']}' == '$provinceCode') {
+          return '$wardName, ${province['name']}';
+        }
+      }
+      return wardName;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _selectAddress() async {
     final selection =
         await showModalBottomSheet<AdministrativeAddressSelection>(
@@ -169,6 +249,7 @@ class _AddressInputState extends State<AddressInput> {
           ),
         );
     if (selection != null && selection.address.isNotEmpty) {
+      _hasAdministrativeSelection = true;
       widget.controller.text = selection.address;
       widget.onAddressChanged?.call();
       widget.onAddressSelected?.call();
@@ -183,7 +264,10 @@ class _AddressInputState extends State<AddressInput> {
       children: [
         TextFormField(
           controller: widget.controller,
-          onChanged: (_) => widget.onAddressChanged?.call(),
+          onChanged: (_) {
+            _hasAdministrativeSelection = false;
+            widget.onAddressChanged?.call();
+          },
           maxLines: 2,
           validator: widget.validator,
           decoration: InputDecoration(

@@ -271,31 +271,58 @@ class OrderService {
   }
 
   Future<_Coordinates> _coordinatesForAddress(String address) async {
-    final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
-      'format': 'jsonv2',
-      'q': '$address, Việt Nam',
-      'countrycodes': 'vn',
-      'limit': '1',
-    });
-    final response = await http
-        .get(uri, headers: const {'User-Agent': 'VinExpress Flutter App'})
-        .timeout(const Duration(seconds: 20));
-    if (response.statusCode != 200) {
-      throw const OrderServiceException(
-        'Không thể tính khoảng cách giao hàng.',
-      );
+    // Photon dùng dữ liệu OpenStreetMap và cho phép Flutter Web truy cập.
+    // Không gọi Nominatim trực tiếp vì endpoint đó thường bị CORS
+    // chặn trên trình duyệt, làm toàn bộ quá trình tính phí bị dừng.
+    final queries = <String>[
+      address.trim(),
+      _administrativeAddress(address),
+    ].where((value) => value.isNotEmpty).toSet();
+
+    for (final query in queries) {
+      try {
+        final uri = Uri.https('photon.komoot.io', '/api/', {
+          'q': '$query, Việt Nam',
+          'limit': '1',
+        });
+        final response = await http
+            .get(uri)
+            .timeout(const Duration(seconds: 15));
+        if (response.statusCode != 200) continue;
+        final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+        if (decoded is! Map || decoded['features'] is! List) continue;
+        final features = decoded['features'] as List;
+        if (features.isEmpty) continue;
+        final feature = Map<String, dynamic>.from(features.first as Map);
+        final geometry = Map<String, dynamic>.from(
+          feature['geometry'] as Map? ?? const {},
+        );
+        final coordinates = geometry['coordinates'];
+        if (coordinates is! List || coordinates.length < 2) continue;
+        final longitude = (coordinates[0] as num?)?.toDouble();
+        final latitude = (coordinates[1] as num?)?.toDouble();
+        if (latitude != null && longitude != null) {
+          return _Coordinates(latitude: latitude, longitude: longitude);
+        }
+      } catch (_) {
+        // Thử truy vấn địa chỉ rút gọn tiếp theo.
+      }
     }
-    final results = jsonDecode(utf8.decode(response.bodyBytes)) as List;
-    if (results.isEmpty) {
-      throw OrderServiceException(
-        'Không tìm thấy tọa độ của địa chỉ: $address',
-      );
-    }
-    final first = Map<String, dynamic>.from(results.first as Map);
-    return _Coordinates(
-      latitude: double.parse(first['lat'] as String),
-      longitude: double.parse(first['lon'] as String),
+
+    throw OrderServiceException(
+      'Không tìm thấy tọa độ của địa chỉ: $address. '
+      'Vui lòng chọn lại Tỉnh/Thành và Phường/Xã.',
     );
+  }
+
+  String _administrativeAddress(String address) {
+    final parts = address
+        .split(',')
+        .map((part) => part.trim())
+        .where((part) => part.isNotEmpty)
+        .toList();
+    if (parts.length <= 2) return address.trim();
+    return parts.sublist(parts.length - 2).join(', ');
   }
 }
 
