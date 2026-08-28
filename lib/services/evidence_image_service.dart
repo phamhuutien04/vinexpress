@@ -4,7 +4,9 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 class EvidenceImageService {
-  static const int _maximumImageDimension = 1280;
+  // Flutter Web mã hóa PNG trên luồng giao diện. Giới hạn này vẫn đủ rõ để
+  // đọc thông tin minh chứng nhưng tránh treo trình duyệt với ảnh camera lớn.
+  static const int _maximumImageDimension = 800;
 
   Future<Uint8List> stamp({
     required Uint8List sourceBytes,

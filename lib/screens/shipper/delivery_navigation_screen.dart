@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
@@ -350,14 +352,14 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 72,
-        maxWidth: 1280,
-        maxHeight: 1280,
+        imageQuality: 60,
+        maxWidth: 800,
+        maxHeight: 800,
       );
       if (image == null) return;
       final capturedPosition = await _evidencePosition();
-      final stampedImage = await _evidenceImageService.stamp(
-        sourceBytes: await image.readAsBytes(),
+      final stampedImage = await _prepareEvidenceBytes(
+        image: image,
         orderId: widget.order['id'] as int,
         trackingCode: '${widget.order['ma_van_don']}',
         evidenceLabel: 'XÁC NHẬN ĐÃ LẤY HÀNG',
@@ -392,6 +394,12 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       await _loadRoute();
     } on CloudinaryUploadException catch (error) {
       if (mounted) _showError(error.message);
+    } on TimeoutException {
+      if (mounted) {
+        _showError(
+          'Xử lý hoặc tải ảnh quá thời gian. Vui lòng chụp lại ảnh và thử lại.',
+        );
+      }
     } on ShipperServiceException catch (error) {
       // Database đã cập nhật nhưng dữ liệu màn hình cũ có thể chưa
       // kịp đổi. Trường hợp này coi như xác nhận đã thành công.
@@ -407,6 +415,8 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       } else if (mounted) {
         _showError(error.message);
       }
+    } catch (error) {
+      if (mounted) _showError('Không thể lưu ảnh minh chứng: $error');
     } finally {
       if (mounted) setState(() => _updatingStatus = false);
     }
@@ -554,14 +564,14 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 72,
-        maxWidth: 1280,
-        maxHeight: 1280,
+        imageQuality: 60,
+        maxWidth: 800,
+        maxHeight: 800,
       );
       if (image == null) return;
       final capturedPosition = await _evidencePosition();
-      final stampedImage = await _evidenceImageService.stamp(
-        sourceBytes: await image.readAsBytes(),
+      final stampedImage = await _prepareEvidenceBytes(
+        image: image,
         orderId: widget.order['id'] as int,
         trackingCode: '${widget.order['ma_van_don']}',
         evidenceLabel: 'XÁC NHẬN ĐÃ GIAO HÀNG',
@@ -591,6 +601,12 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       Navigator.pop(context, true);
     } on CloudinaryUploadException catch (error) {
       if (mounted) _showError(error.message);
+    } on TimeoutException {
+      if (mounted) {
+        _showError(
+          'Xử lý hoặc tải ảnh quá thời gian. Vui lòng chụp lại ảnh và thử lại.',
+        );
+      }
     } on ShipperServiceException catch (error) {
       if (!mounted) return;
       if (error.message.contains('Số dư ví không đủ')) {
@@ -598,6 +614,8 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       } else {
         _showError(error.message);
       }
+    } catch (error) {
+      if (mounted) _showError('Không thể lưu ảnh minh chứng: $error');
     } finally {
       if (mounted) setState(() => _updatingStatus = false);
     }
@@ -617,6 +635,40 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       'trước khi xác nhận đã giao.',
     );
     return false;
+  }
+
+  Future<Uint8List> _prepareEvidenceBytes({
+    required XFile image,
+    required int orderId,
+    required String trackingCode,
+    required String evidenceLabel,
+    required String employeeName,
+    required String address,
+    required double latitude,
+    required double longitude,
+    required DateTime capturedAt,
+  }) async {
+    final sourceBytes = await image.readAsBytes().timeout(
+      const Duration(seconds: 15),
+    );
+
+    // Canvas mã hóa PNG trên Flutter Web có thể treo trước khi request upload
+    // được tạo. Cloudinary vẫn nhận đủ mã đơn, địa chỉ và GPS qua context.
+    if (kIsWeb) return sourceBytes;
+
+    return _evidenceImageService
+        .stamp(
+          sourceBytes: sourceBytes,
+          orderId: orderId,
+          trackingCode: trackingCode,
+          evidenceLabel: evidenceLabel,
+          employeeName: employeeName,
+          address: address,
+          latitude: latitude,
+          longitude: longitude,
+          capturedAt: capturedAt,
+        )
+        .timeout(const Duration(seconds: 30));
   }
 
   Future<bool> _hasEnoughWalletForNoCodPickup() async {
@@ -1023,7 +1075,13 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
                   icon: Icon(
                     _toReceiver ? Icons.check_circle : Icons.inventory,
                   ),
-                  label: Text(_toReceiver ? 'Đã giao hàng' : 'Đã lấy hàng'),
+                  label: Text(
+                    _updatingStatus
+                        ? 'Đang xử lý ảnh...'
+                        : _toReceiver
+                        ? 'Đã giao hàng'
+                        : 'Đã lấy hàng',
+                  ),
                 ),
               ),
             ],
