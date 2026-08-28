@@ -7448,3 +7448,25 @@ CREATE TRIGGER trg_tru_phi_lay_hang_shipper_khong_cod
 BEFORE UPDATE OF trang_thai ON public.don_hang FOR EACH ROW
 EXECUTE FUNCTION public.tru_phi_lay_hang_shipper_khong_cod();
 NOTIFY pgrst, 'reload schema';
+
+-- Realtime số dư và sao kê ví.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public'
+      AND tablename = 'vi'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.vi;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime' AND schemaname = 'public'
+      AND tablename = 'giao_dich_vi'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.giao_dich_vi;
+  END IF;
+END;
+$$;
+ALTER TABLE public.vi REPLICA IDENTITY FULL;
+ALTER TABLE public.giao_dich_vi REPLICA IDENTITY FULL;

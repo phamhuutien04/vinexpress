@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
@@ -17,7 +20,11 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   List<Map<String, dynamic>> _transactions = [];
   Map<String, dynamic> _wallet = {};
   bool _loading = true;
+  bool _refreshing = false;
   String? _error;
+  RealtimeChannel? _walletChannel;
+  Timer? _realtimeDebounce;
+  Timer? _walletPollingTimer;
 
   double get _balance => (_wallet['so_du'] as num?)?.toDouble() ?? 0;
   double get _pendingTopUp =>
@@ -32,6 +39,71 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   void initState() {
     super.initState();
     _load();
+    _subscribeWalletRealtime();
+    _walletPollingTimer = Timer.periodic(
+      const Duration(seconds: 3),
+      (_) => _refreshSilently(),
+    );
+  }
+
+  void _subscribeWalletRealtime() {
+    _walletChannel = Supabase.instance.client
+        .channel('shipper-wallet-${Supabase.instance.client.auth.currentUser?.id}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'vi',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'giao_dich_vi',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleRealtimeRefresh() {
+    _realtimeDebounce?.cancel();
+    _walletPollingTimer?.cancel();
+    _realtimeDebounce = Timer(
+      const Duration(milliseconds: 250),
+      _refreshSilently,
+    );
+  }
+
+  Future<void> _refreshSilently() async {
+    if (!mounted || _refreshing) return;
+    _refreshing = true;
+    try {
+      final results = await Future.wait([
+        _service.getDeliveredOrderHistory(),
+        _service.getWalletInfo(),
+        _service.getWalletTransactions(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _incomeEntries = results[0] as List<Map<String, dynamic>>;
+        _wallet = results[1] as Map<String, dynamic>;
+        _transactions = results[2] as List<Map<String, dynamic>>;
+        _error = null;
+      });
+    } on ShipperServiceException catch (error) {
+      if (mounted) setState(() => _error = error.message);
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _realtimeDebounce?.cancel();
+    final channel = _walletChannel;
+    if (channel != null) {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
