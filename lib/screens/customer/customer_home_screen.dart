@@ -725,6 +725,9 @@ class _RecentOrderCard extends StatelessWidget {
     if (value == 'CHO_LAY_HANG') {
       return const _HomeStatus('Chờ lấy hàng', Colors.orange);
     }
+    if (value == 'DA_LAY_HANG') {
+      return const _HomeStatus('Đang chuyển về kho', Colors.blue);
+    }
     if (value == 'DA_GIAO_HANG') {
       return const _HomeStatus('Đã giao', AppColors.success);
     }

@@ -294,7 +294,7 @@ BEGIN
       RAISE EXCEPTION 'Đơn không thuộc địa bàn lấy hàng của bạn';
     END IF;
     v_moi := 'DA_LAY_HANG';
-    UPDATE public.don_hang SET trang_thai=v_moi,kho_hien_tai_id=kho_gui_id,
+    UPDATE public.don_hang SET trang_thai=v_moi,kho_hien_tai_id=NULL,
       nhan_vien_hien_tai_id=v_nv.id,ngay_lay_hang=NOW(),ngay_cap_nhat=NOW() WHERE id=p_don_hang_id;
   ELSE
     IF v_don.nhan_vien_giao_hang_id<>v_nv.id OR v_don.trang_thai NOT IN ('DEN_KHO_DICH','GIAO_CHO_SHIPPER','DANG_GIAO_HANG') THEN
@@ -800,5 +800,4 @@ GRANT EXECUTE ON FUNCTION public.nhan_vien_chang_cuoi_cong_viec_v2() TO authenti
 GRANT EXECUTE ON FUNCTION public.nhan_vien_lay_hang_nhan_don(BIGINT) TO authenticated;
 
 NOTIFY pgrst,'reload schema';
-
 

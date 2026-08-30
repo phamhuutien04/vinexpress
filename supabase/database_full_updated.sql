@@ -5412,7 +5412,7 @@ BEGIN
       'dia_chi',v_kho.dia_chi,'cap_kho',v_kho.cap_kho,
       'don_tai_kho',(SELECT COUNT(*) FROM public.don_hang dh WHERE dh.kho_hien_tai_id=v_kho.id),
       'cho_xu_ly',(SELECT COUNT(*) FROM public.don_hang dh WHERE dh.kho_hien_tai_id=v_kho.id
-        AND dh.trang_thai IN ('DA_LAY_HANG','DEN_KHO_TRUNG_CHUYEN','DEN_KHO_DICH')),
+        AND dh.trang_thai IN ('DEN_KHO_TRUNG_CHUYEN','DEN_KHO_DICH')),
       'da_xu_ly_hom_nay',(SELECT COUNT(*) FROM public.nhat_ky_don_hang nk
         WHERE nk.nhan_vien_id=v_nv.id AND nk.thoi_gian::DATE=CURRENT_DATE)
     );
@@ -5434,9 +5434,7 @@ BEGIN
     RETURN QUERY SELECT dh.id,dh.ma_van_don::VARCHAR,dh.nguoi_gui_ten::VARCHAR,
       dh.nguoi_nhan_ten::VARCHAR,dh.nguoi_nhan_dia_chi,dh.can_nang,
       dh.trang_thai::VARCHAR,dh.ngay_cap_nhat FROM public.don_hang dh
-    WHERE dh.kho_hien_tai_id=v_kho_id OR
-      ((dh.kho_gui_id=v_kho_id OR dh.kho_dich_id=v_kho_id) AND dh.trang_thai IN
-       ('DA_LAY_HANG','DANG_VAN_CHUYEN','DEN_KHO_TRUNG_CHUYEN','DEN_KHO_DICH'))
+    WHERE dh.kho_hien_tai_id=v_kho_id
     ORDER BY dh.ngay_cap_nhat DESC LIMIT 200;
 END;
 $$;
@@ -5752,7 +5750,7 @@ BEGIN
       RAISE EXCEPTION 'Đơn không thuộc địa bàn lấy hàng của bạn';
     END IF;
     v_moi := 'DA_LAY_HANG';
-    UPDATE public.don_hang SET trang_thai=v_moi,kho_hien_tai_id=kho_gui_id,
+    UPDATE public.don_hang SET trang_thai=v_moi,kho_hien_tai_id=NULL,
       nhan_vien_hien_tai_id=v_nv.id,ngay_lay_hang=NOW(),ngay_cap_nhat=NOW() WHERE id=p_don_hang_id;
   ELSE
     IF v_don.nhan_vien_giao_hang_id<>v_nv.id OR v_don.trang_thai NOT IN ('DEN_KHO_DICH','GIAO_CHO_SHIPPER','DANG_GIAO_HANG') THEN
@@ -7359,7 +7357,7 @@ BEGIN
 
   UPDATE public.don_hang
   SET trang_thai = 'DA_LAY_HANG',
-      kho_hien_tai_id = kho_gui_id,
+      kho_hien_tai_id = NULL,
       nhan_vien_hien_tai_id = v_nv.id,
       ngay_lay_hang = NOW(),
       ngay_cap_nhat = NOW()
@@ -7470,3 +7468,50 @@ END;
 $$;
 ALTER TABLE public.vi REPLICA IDENTITY FULL;
 ALTER TABLE public.giao_dich_vi REPLICA IDENTITY FULL;
+
+-- ============================================================
+-- PICKUP IN TRANSIT: DA_LAY_HANG CHUA PHAI DA NHAP KHO
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.khong_tu_dong_nhap_kho_khi_lay_hang()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_vai_tro TEXT;
+BEGIN
+  IF OLD.trang_thai = 'CHO_LAY_HANG'
+     AND NEW.trang_thai = 'DA_LAY_HANG'
+     AND NEW.nhan_vien_hien_tai_id IS NOT NULL THEN
+    SELECT nv.vai_tro INTO v_vai_tro
+    FROM public.nhan_vien nv
+    WHERE nv.id = NEW.nhan_vien_hien_tai_id;
+
+    IF v_vai_tro = 'NHAN_VIEN_LAY_HANG' THEN
+      NEW.kho_hien_tai_id := NULL;
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_khong_tu_dong_nhap_kho_khi_lay_hang
+  ON public.don_hang;
+CREATE TRIGGER trg_khong_tu_dong_nhap_kho_khi_lay_hang
+BEFORE UPDATE OF trang_thai, kho_hien_tai_id ON public.don_hang
+FOR EACH ROW
+EXECUTE FUNCTION public.khong_tu_dong_nhap_kho_khi_lay_hang();
+
+-- Sua cac don da bi gan vao kho qua som; khong dong den don da duoc kho quet.
+UPDATE public.don_hang dh
+SET kho_hien_tai_id = NULL,
+    ngay_cap_nhat = NOW()
+FROM public.nhan_vien nv
+WHERE dh.trang_thai = 'DA_LAY_HANG'
+  AND dh.nhan_vien_hien_tai_id = nv.id
+  AND nv.vai_tro = 'NHAN_VIEN_LAY_HANG'
+  AND dh.kho_hien_tai_id = dh.kho_gui_id;
+
+NOTIFY pgrst, 'reload schema';

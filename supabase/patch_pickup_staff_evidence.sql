@@ -166,7 +166,8 @@ BEGIN
 
   UPDATE public.don_hang
   SET trang_thai = 'DA_LAY_HANG',
-      kho_hien_tai_id = kho_gui_id,
+      -- Chỉ nhân viên kho quét QR mới được xác nhận kiện đã vào kho.
+      kho_hien_tai_id = NULL,
       nhan_vien_hien_tai_id = v_nv.id,
       ngay_lay_hang = NOW(),
       ngay_cap_nhat = NOW()

@@ -664,6 +664,7 @@ class _OrderHistoryCard extends StatelessWidget {
       case 'CHO_LAY_HANG':
         return const _StatusInfo('Chờ lấy hàng', Colors.orange);
       case 'DA_LAY_HANG':
+        return const _StatusInfo('Đang chuyển về kho', Colors.blue);
       case 'DANG_VAN_CHUYEN':
       case 'GIAO_CHO_SHIPPER':
       case 'DANG_GIAO_HANG':

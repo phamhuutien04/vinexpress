@@ -756,6 +756,16 @@ class _ParcelScannerPage extends StatefulWidget {
 
 class _ParcelScannerPageState extends State<_ParcelScannerPage> {
   bool _handled = false;
+  final MobileScannerController _controller = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode, BarcodeFormat.code128],
+  );
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('Quét mã kiện hàng')),
@@ -763,6 +773,7 @@ class _ParcelScannerPageState extends State<_ParcelScannerPage> {
       fit: StackFit.expand,
       children: [
         MobileScanner(
+          controller: _controller,
           onDetect: (capture) {
             if (_handled || capture.barcodes.isEmpty) return;
             final value = capture.barcodes.first.rawValue;
@@ -778,20 +789,6 @@ class _ParcelScannerPageState extends State<_ParcelScannerPage> {
             decoration: BoxDecoration(
               border: Border.all(color: AppColors.primary, width: 4),
               borderRadius: BorderRadius.circular(22),
-            ),
-          ),
-        ),
-        const Positioned(
-          left: 24,
-          right: 24,
-          bottom: 48,
-          child: Text(
-            'Đưa mã QR trên kiện hàng vào giữa khung',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 16,
-              fontWeight: FontWeight.w600,
             ),
           ),
         ),
