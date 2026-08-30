@@ -21,7 +21,7 @@ class TransportDriverService {
 
   Future<List<Map<String, dynamic>>> getTrips() async {
     try {
-      final data = await _client.rpc('chuyen_xe_cua_tai_xe');
+      final data = await _client.rpc('chuyen_xe_cua_tai_xe_co_chang');
       return List<Map<String, dynamic>>.from(data as List);
     } on PostgrestException catch (error) {
       throw TransportDriverException(_message(error));
@@ -41,7 +41,7 @@ class TransportDriverService {
 
   String _message(PostgrestException error) {
     if (error.code == 'PGRST202') {
-      return 'Chức năng tài xế chưa được cài trên Supabase. Hãy chạy transport_driver_setup.sql.';
+      return 'Chức năng lộ trình tài xế chưa được cài trên Supabase. Hãy chạy patch_transport_driver_route_stages.sql.';
     }
     return error.message;
   }
