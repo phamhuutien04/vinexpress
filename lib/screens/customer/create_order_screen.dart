@@ -6,6 +6,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
 import '../../services/order_service.dart';
 import '../../widgets/address_input.dart';
+import 'widgets/customer_design.dart';
 import 'invoice_preview_screen.dart';
 
 class CreateOrderScreen extends StatefulWidget {
@@ -286,185 +287,208 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
           const SizedBox(width: 8),
         ],
       ),
-      body: Form(
-        key: _formKey,
-        child: ListView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 160),
-          children: [
-            _ProgressHeader(),
-            const SizedBox(height: 20),
-            _SectionCard(
-              icon: Icons.person_pin_circle_outlined,
-              title: 'Thông tin người gửi',
-              subtitle: 'Địa chỉ lấy hàng',
-              child: Column(
-                children: [
-                  _Input(
-                    controller: _senderName,
-                    label: 'Họ và tên',
-                    icon: Icons.person_outline,
-                    validator: _required,
-                  ),
-                  const SizedBox(height: 12),
-                  _Input(
-                    controller: _senderPhone,
-                    label: 'Số điện thoại',
-                    icon: Icons.phone_outlined,
-                    keyboardType: TextInputType.phone,
-                    validator: _required,
-                  ),
-                  const SizedBox(height: 12),
-                  AddressInput(
-                    controller: _senderAddress,
-                    label: 'Địa chỉ lấy hàng',
-                    hint: 'Chọn hoặc nhập địa chỉ lấy hàng',
-                    includeSubArea: false,
-                    allowCurrentLocation: true,
-                    onCurrentLocationSelected: (latitude, longitude) {
-                      _senderLatitude = latitude;
-                      _senderLongitude = longitude;
-                    },
-                    onAddressChanged: () {
-                      _senderLatitude = null;
-                      _senderLongitude = null;
-                      _scheduleAutomaticFeeCalculation();
-                    },
-                    onAddressSelected: () =>
-                        _scheduleAutomaticFeeCalculation(immediately: true),
-                    validator: _required,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _SectionCard(
-              icon: Icons.location_on_outlined,
-              title: 'Thông tin người nhận',
-              subtitle: 'Địa chỉ giao hàng',
-              child: Column(
-                children: [
-                  _Input(
-                    controller: _receiverName,
-                    label: 'Họ và tên người nhận',
-                    hint: 'Nhập tên người nhận',
-                    icon: Icons.person_outline,
-                    validator: _required,
-                  ),
-                  const SizedBox(height: 12),
-                  _Input(
-                    controller: _receiverPhone,
-                    label: 'Số điện thoại',
-                    hint: 'Nhập số điện thoại',
-                    icon: Icons.phone_outlined,
-                    keyboardType: TextInputType.phone,
-                    validator: _required,
-                  ),
-                  const SizedBox(height: 12),
-                  AddressInput(
-                    controller: _receiverAddress,
-                    label: 'Địa chỉ giao hàng',
-                    hint: 'Số nhà, tên đường, phường/xã...',
-                    includeSubArea: false,
-                    onAddressChanged: _scheduleAutomaticFeeCalculation,
-                    onAddressSelected: () =>
-                        _scheduleAutomaticFeeCalculation(immediately: true),
-                    validator: _required,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            _SectionCard(
-              icon: Icons.inventory_2_outlined,
-              title: 'Thông tin kiện hàng',
-              subtitle: 'Mô tả hàng cần giao',
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _Input(
-                    controller: _weight,
-                    label: 'Khối lượng (kg)',
-                    icon: Icons.scale_outlined,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-                    ],
-                    onChanged: (_) => _scheduleAutomaticFeeCalculation(),
-                    validator: (value) {
-                      final weight = double.tryParse(value ?? '');
-                      return weight == null || weight <= 0
-                          ? 'Khối lượng phải lớn hơn 0'
-                          : null;
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                  _Input(
-                    controller: _itemValue,
-                    label: 'Giá trị hàng hóa (đ)',
-                    icon: Icons.sell_outlined,
-                    keyboardType: const TextInputType.numberWithOptions(
-                      decimal: true,
-                    ),
-                    inputFormatters: [
-                      FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-                    ],
-                    validator: _nonNegative,
-                  ),
-                  const SizedBox(height: 12),
-                  _Input(
-                    controller: _note,
-                    label: 'Ghi chú cho tài xế',
-                    hint: 'Ví dụ: Hàng dễ vỡ, gọi trước khi giao...',
-                    icon: Icons.notes_outlined,
-                    maxLines: 2,
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text('Thu hộ tiền (COD)'),
-                    subtitle: const Text('Tài xế thu tiền khi giao hàng'),
-                    value: _cod,
-                    activeThumbColor: AppColors.primary,
-                    onChanged: (value) => setState(() => _cod = value),
-                  ),
-                  if (_cod) ...[
-                    const SizedBox(height: 4),
-                    _Input(
-                      controller: _codAmount,
-                      label: 'Số tiền cần thu hộ (đ)',
-                      icon: Icons.payments_outlined,
-                      keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true,
+      body: LayoutBuilder(
+        builder: (context, constraints) => Form(
+          key: _formKey,
+          child: ListView(
+            padding: CustomerUi.pagePadding(constraints.maxWidth, bottom: 160),
+            children: [
+              CustomerConstrained(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _ProgressHeader(),
+                    const SizedBox(height: 20),
+                    _SectionCard(
+                      icon: Icons.person_pin_circle_outlined,
+                      title: 'Thông tin người gửi',
+                      subtitle: 'Địa chỉ lấy hàng',
+                      child: Column(
+                        children: [
+                          _Input(
+                            controller: _senderName,
+                            label: 'Họ và tên',
+                            icon: Icons.person_outline,
+                            validator: _required,
+                          ),
+                          const SizedBox(height: 12),
+                          _Input(
+                            controller: _senderPhone,
+                            label: 'Số điện thoại',
+                            icon: Icons.phone_outlined,
+                            keyboardType: TextInputType.phone,
+                            validator: _required,
+                          ),
+                          const SizedBox(height: 12),
+                          AddressInput(
+                            controller: _senderAddress,
+                            label: 'Địa chỉ lấy hàng',
+                            hint: 'Chọn hoặc nhập địa chỉ lấy hàng',
+                            includeSubArea: false,
+                            allowCurrentLocation: true,
+                            onCurrentLocationSelected: (latitude, longitude) {
+                              _senderLatitude = latitude;
+                              _senderLongitude = longitude;
+                            },
+                            onAddressChanged: () {
+                              _senderLatitude = null;
+                              _senderLongitude = null;
+                              _scheduleAutomaticFeeCalculation();
+                            },
+                            onAddressSelected: () =>
+                                _scheduleAutomaticFeeCalculation(
+                                  immediately: true,
+                                ),
+                            validator: _required,
+                          ),
+                        ],
                       ),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'[\d.]')),
-                      ],
-                      validator: (value) {
-                        if (!_cod) return null;
-                        final amount = double.tryParse(value ?? '');
-                        return amount == null || amount <= 0
-                            ? 'Số tiền COD phải lớn hơn 0'
-                            : null;
-                      },
+                    ),
+                    const SizedBox(height: 16),
+                    _SectionCard(
+                      icon: Icons.location_on_outlined,
+                      title: 'Thông tin người nhận',
+                      subtitle: 'Địa chỉ giao hàng',
+                      child: Column(
+                        children: [
+                          _Input(
+                            controller: _receiverName,
+                            label: 'Họ và tên người nhận',
+                            hint: 'Nhập tên người nhận',
+                            icon: Icons.person_outline,
+                            validator: _required,
+                          ),
+                          const SizedBox(height: 12),
+                          _Input(
+                            controller: _receiverPhone,
+                            label: 'Số điện thoại',
+                            hint: 'Nhập số điện thoại',
+                            icon: Icons.phone_outlined,
+                            keyboardType: TextInputType.phone,
+                            validator: _required,
+                          ),
+                          const SizedBox(height: 12),
+                          AddressInput(
+                            controller: _receiverAddress,
+                            label: 'Địa chỉ giao hàng',
+                            hint: 'Số nhà, tên đường, phường/xã...',
+                            includeSubArea: false,
+                            onAddressChanged: _scheduleAutomaticFeeCalculation,
+                            onAddressSelected: () =>
+                                _scheduleAutomaticFeeCalculation(
+                                  immediately: true,
+                                ),
+                            validator: _required,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _SectionCard(
+                      icon: Icons.inventory_2_outlined,
+                      title: 'Thông tin kiện hàng',
+                      subtitle: 'Mô tả hàng cần giao',
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _Input(
+                            controller: _weight,
+                            label: 'Khối lượng (kg)',
+                            icon: Icons.scale_outlined,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[\d.]'),
+                              ),
+                            ],
+                            onChanged: (_) =>
+                                _scheduleAutomaticFeeCalculation(),
+                            validator: (value) {
+                              final weight = double.tryParse(value ?? '');
+                              return weight == null || weight <= 0
+                                  ? 'Khối lượng phải lớn hơn 0'
+                                  : null;
+                            },
+                          ),
+                          const SizedBox(height: 12),
+                          _Input(
+                            controller: _itemValue,
+                            label: 'Giá trị hàng hóa (đ)',
+                            icon: Icons.sell_outlined,
+                            keyboardType: const TextInputType.numberWithOptions(
+                              decimal: true,
+                            ),
+                            inputFormatters: [
+                              FilteringTextInputFormatter.allow(
+                                RegExp(r'[\d.]'),
+                              ),
+                            ],
+                            validator: _nonNegative,
+                          ),
+                          const SizedBox(height: 12),
+                          _Input(
+                            controller: _note,
+                            label: 'Ghi chú cho tài xế',
+                            hint: 'Ví dụ: Hàng dễ vỡ, gọi trước khi giao...',
+                            icon: Icons.notes_outlined,
+                            maxLines: 2,
+                          ),
+                          const SizedBox(height: 8),
+                          SwitchListTile(
+                            contentPadding: EdgeInsets.zero,
+                            title: const Text('Thu hộ tiền (COD)'),
+                            subtitle: const Text(
+                              'Tài xế thu tiền khi giao hàng',
+                            ),
+                            value: _cod,
+                            activeThumbColor: AppColors.primary,
+                            onChanged: (value) => setState(() => _cod = value),
+                          ),
+                          if (_cod) ...[
+                            const SizedBox(height: 4),
+                            _Input(
+                              controller: _codAmount,
+                              label: 'Số tiền cần thu hộ (đ)',
+                              icon: Icons.payments_outlined,
+                              keyboardType:
+                                  const TextInputType.numberWithOptions(
+                                    decimal: true,
+                                  ),
+                              inputFormatters: [
+                                FilteringTextInputFormatter.allow(
+                                  RegExp(r'[\d.]'),
+                                ),
+                              ],
+                              validator: (value) {
+                                if (!_cod) return null;
+                                final amount = double.tryParse(value ?? '');
+                                return amount == null || amount <= 0
+                                    ? 'Số tiền COD phải lớn hơn 0'
+                                    : null;
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    _SummaryCard(
+                      shippingFee: _shippingFee,
+                      codFee: 0,
+                      money: _money,
+                      feeCalculated: _feeCalculated,
+                      calculating: _calculatingFee,
+                      truckDelivery: _truckDelivery,
+                      distanceKm: _quotedDistanceKm,
+                      weight: double.tryParse(_weight.text) ?? 0,
                     ),
                   ],
-                ],
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            _SummaryCard(
-              shippingFee: _shippingFee,
-              codFee: 0,
-              money: _money,
-              feeCalculated: _feeCalculated,
-              calculating: _calculatingFee,
-              truckDelivery: _truckDelivery,
-              distanceKm: _quotedDistanceKm,
-              weight: double.tryParse(_weight.text) ?? 0,
-            ),
-          ],
+            ],
+          ),
         ),
       ),
       bottomNavigationBar: SafeArea(
@@ -480,50 +504,52 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
               ),
             ],
           ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Tổng thanh toán',
-                      style: TextStyle(fontSize: 12),
-                    ),
-                    Text(
-                      _feeCalculated ? _money(_shippingFee) : 'Chưa tính phí',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800,
-                        color: AppColors.primary,
+          child: CustomerConstrained(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Tổng thanh toán',
+                        style: TextStyle(fontSize: 12),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-              FilledButton.icon(
-                onPressed: _isLoading || _calculatingFee ? null : _submit,
-                icon: const Icon(Icons.arrow_forward_rounded),
-                iconAlignment: IconAlignment.end,
-                label: _isLoading
-                    ? const SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
+                      Text(
+                        _feeCalculated ? _money(_shippingFee) : 'Chưa tính phí',
+                        style: const TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.primary,
                         ),
-                      )
-                    : const Text('Tạo đơn'),
-                style: FilledButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                    vertical: 16,
+                      ),
+                    ],
                   ),
                 ),
-              ),
-            ],
+                FilledButton.icon(
+                  onPressed: _isLoading || _calculatingFee ? null : _submit,
+                  icon: const Icon(Icons.arrow_forward_rounded),
+                  iconAlignment: IconAlignment.end,
+                  label: _isLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Tạo đơn'),
+                  style: FilledButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 16,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

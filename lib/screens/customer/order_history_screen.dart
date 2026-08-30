@@ -5,6 +5,7 @@ import '../../services/order_service.dart';
 import 'create_order_screen.dart';
 import 'invoice_preview_screen.dart';
 import 'order_tracking_screen.dart';
+import 'widgets/customer_design.dart';
 
 class OrderHistoryScreen extends StatefulWidget {
   const OrderHistoryScreen({
@@ -90,33 +91,18 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
     final filteredOrders = _filteredOrders;
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
-      body: RefreshIndicator(
-        onRefresh: _load,
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _error != null
-            ? ListView(
-                children: [
-                  const SizedBox(height: 160),
-                  const Icon(Icons.cloud_off_outlined, size: 52),
-                  const SizedBox(height: 12),
-                  Text(_error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  Center(
-                    child: OutlinedButton.icon(
-                      onPressed: _load,
-                      icon: const Icon(Icons.refresh),
-                      label: const Text('Thử lại'),
-                    ),
-                  ),
-                ],
-              )
-            : ListView.builder(
-                padding: const EdgeInsets.all(16),
-                itemCount: filteredOrders.length + 1,
-                itemBuilder: (_, index) {
-                  if (index == 0) {
-                    return _OrderFilters(
+      body: LayoutBuilder(
+        builder: (context, constraints) => RefreshIndicator(
+          onRefresh: _load,
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: CustomerUi.pagePadding(constraints.maxWidth),
+            children: [
+              CustomerConstrained(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _OrderFilters(
                       searchController: _searchController,
                       selectedStatuses: _statusFilter,
                       dateRange: _dateRange,
@@ -126,15 +112,50 @@ class _OrderHistoryScreenState extends State<OrderHistoryScreen> {
                       onPickDate: _pickDateRange,
                       onClearDate: () => setState(() => _dateRange = null),
                       resultCount: filteredOrders.length,
-                    );
-                  }
-                  return _OrderHistoryCard(
-                    order: filteredOrders[index - 1],
-                    onRated: _load,
-                    onCancelled: _load,
-                  );
-                },
+                    ),
+                    if (_loading)
+                      const Column(
+                        children: [
+                          CustomerSkeleton(height: 188),
+                          SizedBox(height: 10),
+                          CustomerSkeleton(height: 188),
+                          SizedBox(height: 10),
+                          CustomerSkeleton(height: 188),
+                        ],
+                      )
+                    else if (_error != null)
+                      CustomerPanel(
+                        child: CustomerEmptyState(
+                          icon: Icons.cloud_off_outlined,
+                          title: 'Chưa tải được đơn hàng',
+                          message: _error!,
+                          actionLabel: 'Thử lại',
+                          onAction: _load,
+                        ),
+                      )
+                    else if (filteredOrders.isEmpty)
+                      const CustomerPanel(
+                        child: CustomerEmptyState(
+                          icon: Icons.search_off_rounded,
+                          title: 'Không có đơn phù hợp',
+                          message:
+                              'Hãy đổi từ khóa, trạng thái hoặc khoảng ngày.',
+                        ),
+                      )
+                    else
+                      ...filteredOrders.map(
+                        (order) => _OrderHistoryCard(
+                          order: order,
+                          onRated: _load,
+                          onCancelled: _load,
+                        ),
+                      ),
+                  ],
+                ),
               ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -182,69 +203,71 @@ class _OrderFilters extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          TextField(
-            controller: searchController,
-            decoration: InputDecoration(
-              hintText: 'Tìm mã vận đơn, người nhận, địa chỉ...',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: searchController.text.isEmpty
-                  ? null
-                  : IconButton(
-                      onPressed: searchController.clear,
-                      icon: const Icon(Icons.close),
-                    ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(14),
+      padding: const EdgeInsets.only(bottom: 18),
+      child: CustomerPanel(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: searchController,
+              decoration: InputDecoration(
+                hintText: 'Tìm mã vận đơn, người nhận, địa chỉ...',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: searchController.clear,
+                        icon: const Icon(Icons.close),
+                      ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 10),
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Row(
-              children: [
-                _chip('Tất cả', null),
-                _chip('Chờ lấy', const {'CHO_LAY_HANG'}),
-                _chip('Đang giao', _delivering),
-                _chip('Đã giao', const {'DA_GIAO_HANG'}),
-                _chip('Đã hủy', const {'DA_HUY'}),
-              ],
+            const SizedBox(height: 10),
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  _chip('Tất cả', null),
+                  _chip('Chờ lấy', const {'CHO_LAY_HANG'}),
+                  _chip('Đang giao', _delivering),
+                  _chip('Đã giao', const {'DA_GIAO_HANG'}),
+                  _chip('Đã hủy', const {'DA_HUY'}),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: onPickDate,
-                  icon: const Icon(Icons.date_range_outlined),
-                  label: Text(
-                    dateRange == null
-                        ? 'Chọn khoảng ngày'
-                        : '${_date(dateRange!.start)} – ${_date(dateRange!.end)}',
-                    overflow: TextOverflow.ellipsis,
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: onPickDate,
+                    icon: const Icon(Icons.date_range_outlined),
+                    label: Text(
+                      dateRange == null
+                          ? 'Chọn khoảng ngày'
+                          : '${_date(dateRange!.start)} - ${_date(dateRange!.end)}',
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                 ),
-              ),
-              if (dateRange != null)
-                IconButton(
-                  tooltip: 'Bỏ lọc ngày',
-                  onPressed: onClearDate,
-                  icon: const Icon(Icons.close),
-                ),
-            ],
-          ),
-          Text(
-            resultCount == 0
-                ? 'Không tìm thấy đơn phù hợp'
-                : '$resultCount đơn hàng',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-        ],
+                if (dateRange != null)
+                  IconButton(
+                    tooltip: 'Bỏ lọc ngày',
+                    onPressed: onClearDate,
+                    icon: const Icon(Icons.close),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              resultCount == 0 ? 'Không có kết quả' : '$resultCount đơn hàng',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -293,14 +316,14 @@ class _OrderHistoryCard extends StatelessWidget {
       'DANG_GIAO_HANG',
     }.contains(status);
     final rating = (order['diem_danh_gia'] as num?)?.toInt();
-    final canCancel = status == 'CHO_LAY_HANG' &&
-        order['nhan_vien_giao_id'] == null;
+    final canCancel =
+        status == 'CHO_LAY_HANG' && order['nhan_vien_giao_id'] == null;
     final canPrintInvoice =
         ((order['khoang_cach_km'] as num?)?.toDouble() ?? 0) > 50 &&
         status != 'DA_HUY';
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Padding(
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: CustomerPanel(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -526,9 +549,9 @@ class _OrderHistoryCard extends StatelessWidget {
         reason: 'Khách hàng chủ động hủy trước khi shipper nhận',
       );
       if (!context.mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã hủy đơn hàng')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã hủy đơn hàng')));
       await onCancelled();
     } on OrderServiceException catch (error) {
       if (!context.mounted) return;

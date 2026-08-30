@@ -4,6 +4,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
 import '../auth/login_screen.dart';
 import '../wallet/bank_account_screen.dart';
+import 'widgets/customer_design.dart';
 
 class CustomerAccountScreen extends StatelessWidget {
   const CustomerAccountScreen({super.key});
@@ -17,133 +18,144 @@ class CustomerAccountScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Tài khoản')),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(18),
-              child: Row(
+      body: LayoutBuilder(
+        builder: (context, constraints) => ListView(
+          padding: CustomerUi.pagePadding(constraints.maxWidth),
+          children: [
+            CustomerConstrained(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const CircleAvatar(
-                    radius: 32,
-                    backgroundColor: AppColors.primary,
-                    child: Icon(Icons.person, color: Colors.white, size: 34),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
+                  _ProfileHeader(name: name, phone: phone, email: email),
+                  const SizedBox(height: 28),
+                  const CustomerSectionHeader(title: 'Thông tin tài khoản'),
+                  const SizedBox(height: 12),
+                  CustomerPanel(
+                    padding: EdgeInsets.zero,
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          name,
-                          style: Theme.of(context).textTheme.titleMedium
-                              ?.copyWith(fontWeight: FontWeight.bold),
+                        _AccountTile(
+                          icon: Icons.person_outline_rounded,
+                          title: 'Thông tin cá nhân',
+                          subtitle: 'Tên, số điện thoại và địa chỉ',
+                          onTap: () => _showProfile(context, customer),
                         ),
-                        if (phone.isNotEmpty) Text(phone),
-                        if (email.isNotEmpty) Text(email),
+                        _divider(context),
+                        _AccountTile(
+                          icon: Icons.account_balance_outlined,
+                          title: 'Tài khoản ngân hàng',
+                          subtitle: 'Nhận tiền khi rút ví',
+                          onTap: () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => const BankAccountScreen(),
+                            ),
+                          ),
+                        ),
+                        _divider(context),
+                        _AccountTile(
+                          icon: Icons.lock_outline_rounded,
+                          title: 'Bảo mật tài khoản',
+                          subtitle: 'Mật khẩu và phiên đăng nhập',
+                          onTap: () => _notAvailable(context),
+                        ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 28),
+                  const CustomerSectionHeader(title: 'Trợ giúp và pháp lý'),
+                  const SizedBox(height: 12),
+                  CustomerPanel(
+                    padding: EdgeInsets.zero,
+                    child: Column(
+                      children: [
+                        _AccountTile(
+                          icon: Icons.headset_mic_outlined,
+                          title: 'Trung tâm trợ giúp',
+                          onTap: () => _notAvailable(context),
+                        ),
+                        _divider(context),
+                        _AccountTile(
+                          icon: Icons.description_outlined,
+                          title: 'Điều khoản sử dụng',
+                          onTap: () => _notAvailable(context),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    height: 50,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _logout(context),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.error,
+                        side: BorderSide(
+                          color: AppColors.error.withValues(alpha: 0.45),
+                        ),
+                      ),
+                      icon: const Icon(Icons.logout_rounded),
+                      label: const Text('Đăng xuất'),
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 18),
-          _Section(
-            title: 'Thông tin tài khoản',
-            children: [
-              _AccountTile(
-                icon: Icons.person_outline_rounded,
-                title: 'Thông tin cá nhân',
-                subtitle: 'Tên, số điện thoại và địa chỉ',
-                onTap: () => _showProfile(context, customer),
-              ),
-              _AccountTile(
-                icon: Icons.account_balance_outlined,
-                title: 'Liên kết tài khoản ngân hàng',
-                subtitle: 'Dùng để nhận tiền khi rút ví',
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BankAccountScreen()),
-                ),
-              ),
-              _AccountTile(
-                icon: Icons.lock_outline_rounded,
-                title: 'Bảo mật tài khoản',
-                subtitle: 'Mật khẩu và phiên đăng nhập',
-                onTap: () => _notAvailable(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          _Section(
-            title: 'Hỗ trợ',
-            children: [
-              _AccountTile(
-                icon: Icons.help_outline_rounded,
-                title: 'Trung tâm trợ giúp',
-                onTap: () => _notAvailable(context),
-              ),
-              _AccountTile(
-                icon: Icons.description_outlined,
-                title: 'Điều khoản sử dụng',
-                onTap: () => _notAvailable(context),
-              ),
-            ],
-          ),
-          const SizedBox(height: 22),
-          OutlinedButton.icon(
-            onPressed: () => _logout(context),
-            style: OutlinedButton.styleFrom(foregroundColor: AppColors.error),
-            icon: const Icon(Icons.logout_rounded),
-            label: const Text('Đăng xuất'),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
+
+  Widget _divider(BuildContext context) => Divider(
+    height: 1,
+    indent: 68,
+    color: Theme.of(context).colorScheme.outlineVariant,
+  );
 
   void _showProfile(BuildContext context, Map<String, dynamic> customer) {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (_) => SafeArea(
+      isScrollControlled: true,
+      builder: (sheetContext) => SafeArea(
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            4,
+            20,
+            24 + MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
                 'Thông tin cá nhân',
-                style: Theme.of(context).textTheme.titleLarge,
+                style: Theme.of(
+                  sheetContext,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
-              const SizedBox(height: 16),
-              _info('Họ và tên', customer['ho_ten']),
-              _info('Số điện thoại', customer['so_dien_thoai']),
-              _info('Email', customer['email']),
-              _info('Địa chỉ', customer['dia_chi']),
+              const SizedBox(height: 18),
+              CustomerPanel(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 6,
+                ),
+                child: Column(
+                  children: [
+                    _ProfileInfo(label: 'Họ và tên', value: customer['ho_ten']),
+                    _ProfileInfo(
+                      label: 'Số điện thoại',
+                      value: customer['so_dien_thoai'],
+                    ),
+                    _ProfileInfo(label: 'Email', value: customer['email']),
+                    _ProfileInfo(label: 'Địa chỉ', value: customer['dia_chi']),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
-      ),
-    );
-  }
-
-  Widget _info(String label, dynamic value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 105, child: Text(label)),
-          Expanded(
-            child: Text(
-              '${value ?? 'Chưa cập nhật'}',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -164,30 +176,79 @@ class CustomerAccountScreen extends StatelessWidget {
   }
 }
 
-class _Section extends StatelessWidget {
-  const _Section({required this.title, required this.children});
-  final String title;
-  final List<Widget> children;
+class _ProfileHeader extends StatelessWidget {
+  const _ProfileHeader({
+    required this.name,
+    required this.phone,
+    required this.email,
+  });
+
+  final String name;
+  final String phone;
+  final String email;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.only(left: 4, bottom: 8),
-          child: Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+    final secondary = phone.isNotEmpty ? phone : email;
+    return Container(
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: const Color(0xFF143B38),
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 66,
+            height: 66,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.person_rounded,
+              color: Colors.white,
+              size: 34,
+            ),
           ),
-        ),
-        Card(
-          margin: EdgeInsets.zero,
-          child: Column(children: children),
-        ),
-      ],
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFF4FAF9),
+                    fontSize: 21,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                if (secondary.isNotEmpty) ...[
+                  const SizedBox(height: 5),
+                  Text(
+                    secondary,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFFD3E5E2)),
+                  ),
+                ],
+                if (email.isNotEmpty && email != secondary) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    email,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFF9EDBD3)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -206,13 +267,52 @@ class _AccountTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      leading: Icon(icon, color: AppColors.primary),
-      title: Text(title),
-      subtitle: subtitle == null ? null : Text(subtitle!),
-      trailing: const Icon(Icons.chevron_right_rounded),
-      onTap: onTap,
-    );
-  }
+  Widget build(BuildContext context) => ListTile(
+    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+    leading: Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: AppColors.primary10,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Icon(icon, color: AppColors.primary, size: 22),
+    ),
+    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+    subtitle: subtitle == null ? null : Text(subtitle!),
+    trailing: const Icon(Icons.chevron_right_rounded),
+    onTap: onTap,
+  );
+}
+
+class _ProfileInfo extends StatelessWidget {
+  const _ProfileInfo({required this.label, required this.value});
+
+  final String label;
+  final dynamic value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 11),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 108,
+          child: Text(
+            label,
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Text(
+            '${value ?? 'Chưa cập nhật'}',
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    ),
+  );
 }

@@ -10,6 +10,7 @@ import '../../widgets/vietnam_island_markers.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/order_service.dart';
+import 'widgets/customer_design.dart';
 
 class OrderTrackingScreen extends StatefulWidget {
   const OrderTrackingScreen({super.key, required this.orderId});
@@ -148,7 +149,7 @@ class _OrderTrackingScreenState extends State<OrderTrackingScreen> {
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          ? const _TrackingSkeleton()
           : _error != null && data == null
           ? _ErrorView(message: _error!, retry: _refresh)
           : Column(
@@ -241,10 +242,16 @@ class _TrackingSummary extends StatelessWidget {
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 18),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          boxShadow: [BoxShadow(color: Colors.black12, blurRadius: 14)],
+        decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.10),
+              blurRadius: 18,
+              offset: const Offset(0, -5),
+            ),
+          ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -308,6 +315,26 @@ class _MapPin extends StatelessWidget {
       boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
     ),
     child: Icon(icon, color: Colors.white),
+  );
+}
+
+class _TrackingSkeleton extends StatelessWidget {
+  const _TrackingSkeleton();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(16),
+    child: Column(
+      children: [
+        const Expanded(
+          child: CustomerSkeleton(height: double.infinity, radius: 20),
+        ),
+        const SizedBox(height: 12),
+        CustomerConstrained(
+          child: const CustomerSkeleton(height: 190, radius: 20),
+        ),
+      ],
+    ),
   );
 }
 

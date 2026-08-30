@@ -7,12 +7,13 @@ class AppTheme {
   AppTheme._();
 
   // ==================== LIGHT THEME ====================
-  
+
   static ThemeData get lightTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.light,
-      
+      fontFamily: 'NotoSans',
+
       // Color Scheme
       colorScheme: ColorScheme.light(
         primary: AppColors.primary,
@@ -25,10 +26,10 @@ class AppTheme {
         onSurface: const Color(0xFF212121),
         onError: Colors.white,
       ),
-      
+
       // Scaffold
       scaffoldBackgroundColor: const Color(0xFFFFFFFF),
-      
+
       // AppBar
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFFFFFFFF),
@@ -42,7 +43,7 @@ class AppTheme {
           fontWeight: FontWeight.w600,
         ),
       ),
-      
+
       // Card
       cardTheme: const CardThemeData(
         color: Color(0xFFFAFAFA),
@@ -51,7 +52,7 @@ class AppTheme {
           borderRadius: BorderRadius.all(Radius.circular(12)),
         ),
       ),
-      
+
       // Text Theme
       textTheme: const TextTheme(
         // Display
@@ -70,7 +71,7 @@ class AppTheme {
           fontWeight: FontWeight.bold,
           color: Color(0xFF212121),
         ),
-        
+
         // Headline
         headlineLarge: TextStyle(
           fontSize: 22,
@@ -87,7 +88,7 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: Color(0xFF212121),
         ),
-        
+
         // Title
         titleLarge: TextStyle(
           fontSize: 20,
@@ -104,7 +105,7 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: Color(0xFF212121),
         ),
-        
+
         // Body
         bodyLarge: TextStyle(
           fontSize: 16,
@@ -121,7 +122,7 @@ class AppTheme {
           fontWeight: FontWeight.normal,
           color: Color(0xFF757575),
         ),
-        
+
         // Label
         labelLarge: TextStyle(
           fontSize: 14,
@@ -139,7 +140,7 @@ class AppTheme {
           color: Color(0xFF757575),
         ),
       ),
-      
+
       // Input Decoration
       inputDecorationTheme: InputDecorationTheme(
         filled: false,
@@ -163,7 +164,7 @@ class AppTheme {
         labelStyle: const TextStyle(color: Color(0xFF757575)),
         hintStyle: const TextStyle(color: Color(0xFFBDBDBD)),
       ),
-      
+
       // Button Theme
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -176,7 +177,7 @@ class AppTheme {
           elevation: 2,
         ),
       ),
-      
+
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.primary,
@@ -187,39 +188,37 @@ class AppTheme {
           side: const BorderSide(color: AppColors.primary),
         ),
       ),
-      
+
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
       ),
-      
+
       // Icon Theme
-      iconTheme: const IconThemeData(
-        color: Color(0xFF212121),
-        size: 24,
-      ),
-      
+      iconTheme: const IconThemeData(color: Color(0xFF212121), size: 24),
+
       // Divider
       dividerTheme: const DividerThemeData(
         color: Color(0xFFE0E0E0),
         thickness: 1,
         space: 1,
       ),
-      
+
       // Other
       shadowColor: Colors.black.withValues(alpha: 0.1),
     );
   }
 
   // ==================== DARK THEME ====================
-  
+
   static ThemeData get darkTheme {
     return ThemeData(
       useMaterial3: true,
       brightness: Brightness.dark,
-      
+      fontFamily: 'NotoSans',
+
       // Color Scheme
       colorScheme: ColorScheme.dark(
         primary: AppColors.primary,
@@ -232,10 +231,10 @@ class AppTheme {
         onSurface: const Color(0xFFFFFFFF),
         onError: Colors.white,
       ),
-      
+
       // Scaffold
       scaffoldBackgroundColor: const Color(0xFF121212),
-      
+
       // AppBar
       appBarTheme: const AppBarTheme(
         backgroundColor: Color(0xFF1E1E1E),
@@ -249,7 +248,7 @@ class AppTheme {
           fontWeight: FontWeight.w600,
         ),
       ),
-      
+
       // Card
       cardTheme: const CardThemeData(
         color: Color(0xFF1E1E1E),
@@ -258,7 +257,7 @@ class AppTheme {
           borderRadius: BorderRadius.all(Radius.circular(12)),
         ),
       ),
-      
+
       // Text Theme
       textTheme: const TextTheme(
         // Display
@@ -277,7 +276,7 @@ class AppTheme {
           fontWeight: FontWeight.bold,
           color: Color(0xFFFFFFFF),
         ),
-        
+
         // Headline
         headlineLarge: TextStyle(
           fontSize: 22,
@@ -294,7 +293,7 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: Color(0xFFFFFFFF),
         ),
-        
+
         // Title
         titleLarge: TextStyle(
           fontSize: 20,
@@ -311,7 +310,7 @@ class AppTheme {
           fontWeight: FontWeight.w600,
           color: Color(0xFFFFFFFF),
         ),
-        
+
         // Body
         bodyLarge: TextStyle(
           fontSize: 16,
@@ -328,7 +327,7 @@ class AppTheme {
           fontWeight: FontWeight.normal,
           color: Color(0xFFB0B0B0),
         ),
-        
+
         // Label
         labelLarge: TextStyle(
           fontSize: 14,
@@ -346,7 +345,7 @@ class AppTheme {
           color: Color(0xFFB0B0B0),
         ),
       ),
-      
+
       // Input Decoration
       inputDecorationTheme: InputDecorationTheme(
         filled: false,
@@ -370,7 +369,7 @@ class AppTheme {
         labelStyle: const TextStyle(color: Color(0xFFB0B0B0)),
         hintStyle: const TextStyle(color: Color(0xFF757575)),
       ),
-      
+
       // Button Theme
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -383,7 +382,7 @@ class AppTheme {
           elevation: 4,
         ),
       ),
-      
+
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.primary,
@@ -394,27 +393,24 @@ class AppTheme {
           side: const BorderSide(color: AppColors.primary),
         ),
       ),
-      
+
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           foregroundColor: AppColors.primary,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         ),
       ),
-      
+
       // Icon Theme
-      iconTheme: const IconThemeData(
-        color: Color(0xFFFFFFFF),
-        size: 24,
-      ),
-      
+      iconTheme: const IconThemeData(color: Color(0xFFFFFFFF), size: 24),
+
       // Divider
       dividerTheme: const DividerThemeData(
         color: Color(0xFF2C2C2C),
         thickness: 1,
         space: 1,
       ),
-      
+
       // Other
       shadowColor: Colors.black.withValues(alpha: 0.3),
     );
