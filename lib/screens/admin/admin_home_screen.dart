@@ -24,6 +24,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> _orders = [];
   List<Map<String, dynamic>> _warehouses = [];
   List<Map<String, dynamic>> _regions = [];
+  List<Map<String, dynamic>> _walletRequests = [];
 
   static const _titles = [
     'Tổng quan',
@@ -31,6 +32,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     'Khách hàng',
     'Đơn hàng',
     'Kho hàng',
+    'Duyệt ví',
   ];
   static const _destinations = [
     NavigationDestination(
@@ -58,6 +60,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       selectedIcon: Icon(Icons.warehouse),
       label: 'Kho hàng',
     ),
+    NavigationDestination(
+      icon: Icon(Icons.account_balance_wallet_outlined),
+      selectedIcon: Icon(Icons.account_balance_wallet),
+      label: 'Duyệt ví',
+    ),
   ];
 
   @override
@@ -79,6 +86,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _service.getOrders(),
         _service.getWarehouses(),
         _service.getRegions(),
+        _service.getWalletRequests(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -88,6 +96,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _orders = result[3] as List<Map<String, dynamic>>;
         _warehouses = result[4] as List<Map<String, dynamic>>;
         _regions = result[5] as List<Map<String, dynamic>>;
+        _walletRequests = result[6] as List<Map<String, dynamic>>;
       });
     } on AdminServiceException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -141,6 +150,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           bottomNavigationBar: desktop
               ? null
               : NavigationBar(
+                  labelBehavior:
+                      NavigationDestinationLabelBehavior.onlyShowSelected,
                   selectedIndex: _selected,
                   onDestinationSelected: (value) {
                     setState(() => _selected = value);
@@ -216,8 +227,101 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       1 => _EmployeeList(employees: _employees, onAction: _updateEmployee),
       2 => _CustomerList(customers: _customers),
       3 => _OrderList(orders: _orders),
-      _ => _WarehouseList(warehouses: _warehouses, employees: _employees),
+      4 => _WarehouseList(warehouses: _warehouses, employees: _employees),
+      _ => _WalletRequestList(
+        requests: _walletRequests,
+        onProcess: _processWalletRequest,
+        onRefresh: _loadAll,
+      ),
     };
+  }
+
+  Future<void> _processWalletRequest(
+    Map<String, dynamic> request,
+    String action,
+  ) async {
+    final requestId = (request['id'] as num).toInt();
+    String? reason;
+    if (action == 'TU_CHOI') {
+      final controller = TextEditingController();
+      reason = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Từ chối yêu cầu'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            minLines: 2,
+            maxLines: 4,
+            decoration: const InputDecoration(
+              labelText: 'Lý do từ chối',
+              hintText: 'Nhập lý do để người dùng biết',
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Đóng'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final value = controller.text.trim();
+                if (value.isNotEmpty) Navigator.pop(dialogContext, value);
+              },
+              style: FilledButton.styleFrom(backgroundColor: AppColors.error),
+              child: const Text('Xác nhận từ chối'),
+            ),
+          ],
+        ),
+      );
+      controller.dispose();
+      if (reason == null) return;
+    } else {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Text(
+            request['loai'] == 'NAP_TIEN' ? 'Duyệt nạp tiền' : 'Duyệt rút tiền',
+          ),
+          content: Text(
+            'Xác nhận duyệt ${_money(request['so_tien'])} cho '
+            '${request['chu_vi']}?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Duyệt yêu cầu'),
+            ),
+          ],
+        ),
+      );
+      if (accepted != true) return;
+    }
+
+    try {
+      await _service.processWalletRequest(
+        requestId: requestId,
+        action: action,
+        rejectionReason: reason,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            action == 'DUYET'
+                ? 'Đã duyệt yêu cầu #$requestId'
+                : 'Đã từ chối yêu cầu #$requestId',
+          ),
+        ),
+      );
+      await _loadAll();
+    } on AdminServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    }
   }
 
   Future<void> _updateEmployee(
@@ -690,6 +794,352 @@ class _OrderList extends StatelessWidget {
         ),
       );
     },
+  );
+}
+
+class _WalletRequestList extends StatefulWidget {
+  const _WalletRequestList({
+    required this.requests,
+    required this.onProcess,
+    required this.onRefresh,
+  });
+
+  final List<Map<String, dynamic>> requests;
+  final Future<void> Function(Map<String, dynamic>, String) onProcess;
+  final Future<void> Function() onRefresh;
+
+  @override
+  State<_WalletRequestList> createState() => _WalletRequestListState();
+}
+
+class _WalletRequestListState extends State<_WalletRequestList> {
+  String? _status = 'CHO_DUYET';
+  String? _type;
+
+  @override
+  Widget build(BuildContext context) {
+    final requests = widget.requests.where((item) {
+      final statusMatches = _status == null || item['trang_thai'] == _status;
+      final typeMatches = _type == null || item['loai'] == _type;
+      return statusMatches && typeMatches;
+    }).toList();
+    final pending = widget.requests
+        .where((item) => item['trang_thai'] == 'CHO_DUYET')
+        .length;
+
+    return RefreshIndicator(
+      onRefresh: widget.onRefresh,
+      child: CustomScrollView(
+        slivers: [
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(18),
+                    decoration: BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 48,
+                          height: 48,
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: .18),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Icon(
+                            Icons.price_check_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(width: 13),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Kiểm soát giao dịch ví',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 18,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                '$pending yêu cầu đang chờ xử lý',
+                                style: const TextStyle(color: Colors.white70),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Trạng thái',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _filterChip('Chờ duyệt', 'CHO_DUYET', true),
+                      _filterChip('Đã duyệt', 'DA_DUYET', true),
+                      _filterChip('Từ chối', 'TU_CHOI', true),
+                      _filterChip('Tất cả', null, true),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      _filterChip('Nạp tiền', 'NAP_TIEN', false),
+                      _filterChip('Rút tiền', 'RUT_TIEN', false),
+                      _filterChip('Cả hai', null, false),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          ),
+          if (requests.isEmpty)
+            const SliverFillRemaining(
+              hasScrollBody: false,
+              child: _WalletEmptyState(),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
+              sliver: SliverList.builder(
+                itemCount: requests.length,
+                itemBuilder: (_, index) => _WalletRequestCard(
+                  request: requests[index],
+                  onProcess: widget.onProcess,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _filterChip(String label, String? value, bool statusFilter) {
+    final selected = statusFilter ? _status == value : _type == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: (_) => setState(() {
+        if (statusFilter) {
+          _status = value;
+        } else {
+          _type = value;
+        }
+      }),
+    );
+  }
+}
+
+class _WalletRequestCard extends StatelessWidget {
+  const _WalletRequestCard({required this.request, required this.onProcess});
+
+  final Map<String, dynamic> request;
+  final Future<void> Function(Map<String, dynamic>, String) onProcess;
+
+  @override
+  Widget build(BuildContext context) {
+    final isTopUp = request['loai'] == 'NAP_TIEN';
+    final isPending = request['trang_thai'] == 'CHO_DUYET';
+    final statusColor = switch (request['trang_thai']) {
+      'DA_DUYET' => Colors.green,
+      'TU_CHOI' => AppColors.error,
+      _ => Colors.orange,
+    };
+
+    return Card(
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: (isTopUp ? Colors.green : Colors.blue)
+                      .withValues(alpha: .12),
+                  child: Icon(
+                    isTopUp
+                        ? Icons.south_west_rounded
+                        : Icons.north_east_rounded,
+                    color: isTopUp ? Colors.green : Colors.blue,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isTopUp ? 'Nạp tiền vào ví' : 'Rút tiền khỏi ví',
+                        style: const TextStyle(fontWeight: FontWeight.w800),
+                      ),
+                      Text(
+                        '#${request['id']} • ${_dateTime(request['ngay_tao'])}',
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  _money(request['so_tien']),
+                  style: TextStyle(
+                    color: isTopUp ? Colors.green.shade700 : Colors.blue,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 17,
+                  ),
+                ),
+              ],
+            ),
+            const Divider(height: 24),
+            _WalletInfoLine(
+              icon: Icons.person_outline,
+              label:
+                  '${request['chu_vi']} • ${_ownerType(request['loai_chu_vi'])}',
+            ),
+            if ('${request['so_dien_thoai'] ?? ''}'.isNotEmpty)
+              _WalletInfoLine(
+                icon: Icons.phone_outlined,
+                label: '${request['so_dien_thoai']}',
+              ),
+            if (isTopUp)
+              _WalletInfoLine(
+                icon: Icons.payments_outlined,
+                label: 'Phương thức: ${_paymentMethod(request['phuong_thuc'])}',
+              )
+            else ...[
+              _WalletInfoLine(
+                icon: Icons.account_balance_outlined,
+                label: '${request['ngan_hang']} • ${request['so_tai_khoan']}',
+              ),
+              _WalletInfoLine(
+                icon: Icons.badge_outlined,
+                label: 'Chủ tài khoản: ${request['chu_tai_khoan']}',
+              ),
+            ],
+            _WalletInfoLine(
+              icon: Icons.account_balance_wallet_outlined,
+              label: 'Số dư hiện tại: ${_money(request['so_du_hien_tai'])}',
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                  child: Text(
+                    _walletStatus(request['trang_thai']),
+                    style: TextStyle(
+                      color: statusColor,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (isPending) ...[
+                  OutlinedButton(
+                    onPressed: () => onProcess(request, 'TU_CHOI'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.error,
+                    ),
+                    child: const Text('Từ chối'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton.icon(
+                    onPressed: () => onProcess(request, 'DUYET'),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Duyệt'),
+                  ),
+                ],
+              ],
+            ),
+            if ('${request['ly_do_tu_choi'] ?? ''}'.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Lý do: ${request['ly_do_tu_choi']}',
+                style: const TextStyle(color: AppColors.error),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _WalletInfoLine extends StatelessWidget {
+  const _WalletInfoLine({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 7),
+    child: Row(
+      children: [
+        Icon(icon, size: 18, color: Theme.of(context).colorScheme.outline),
+        const SizedBox(width: 9),
+        Expanded(child: Text(label)),
+      ],
+    ),
+  );
+}
+
+class _WalletEmptyState extends StatelessWidget {
+  const _WalletEmptyState();
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(32),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.task_alt_rounded,
+            size: 58,
+            color: Theme.of(context).colorScheme.outlineVariant,
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Không có yêu cầu phù hợp',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Các yêu cầu nạp và rút tiền sẽ xuất hiện tại đây.',
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ],
+      ),
+    ),
   );
 }
 
@@ -1381,4 +1831,34 @@ String _role(dynamic value) => switch ('$value') {
 String _money(dynamic value) {
   final amount = (value as num?)?.round() ?? 0;
   return '${amount.toString().replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (match) => '${match[1]}.')}đ';
+}
+
+String _walletStatus(dynamic value) => switch ('$value') {
+  'DA_DUYET' => 'Đã duyệt',
+  'TU_CHOI' => 'Đã từ chối',
+  _ => 'Chờ duyệt',
+};
+
+String _ownerType(dynamic value) => switch ('$value') {
+  'KHACH_HANG' => 'Khách hàng',
+  'NHAN_VIEN_LAY_HANG' => 'Nhân viên lấy hàng',
+  'NHAN_VIEN_GIAO_HANG' => 'Nhân viên giao hàng',
+  'VAN_CHUYEN' => 'Nhân viên vận chuyển',
+  'QUAN_LY_KHO' => 'Quản lý kho',
+  'NHAN_VIEN_KHO' => 'Nhân viên kho',
+  _ => 'Nhân viên',
+};
+
+String _paymentMethod(dynamic value) => switch ('$value') {
+  'CHUYEN_KHOAN' => 'Chuyển khoản',
+  'TIEN_MAT' => 'Tiền mặt',
+  _ => '$value',
+};
+
+String _dateTime(dynamic value) {
+  final parsed = DateTime.tryParse('$value')?.toLocal();
+  if (parsed == null) return 'Không rõ thời gian';
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(parsed.hour)}:${two(parsed.minute)} '
+      '${two(parsed.day)}/${two(parsed.month)}/${parsed.year}';
 }

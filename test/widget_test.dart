@@ -19,6 +19,7 @@ void main() {
         child: const MyApp(),
       ),
     );
+    await tester.pumpAndSettle();
 
     expect(find.text('Chào mừng trở lại'), findsOneWidget);
     expect(find.text('Đăng nhập'), findsOneWidget);

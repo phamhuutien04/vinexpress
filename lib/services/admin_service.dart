@@ -37,6 +37,40 @@ class AdminService {
   Future<List<Map<String, dynamic>>> getRegions() =>
       _list('admin_danh_sach_khu_vuc');
 
+  Future<List<Map<String, dynamic>>> getWalletRequests({
+    String? status,
+    String? type,
+  }) async {
+    try {
+      final data = await _client.rpc(
+        'admin_danh_sach_yeu_cau_vi',
+        params: {'p_trang_thai': status, 'p_loai': type},
+      );
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw AdminServiceException(_message(error));
+    }
+  }
+
+  Future<void> processWalletRequest({
+    required int requestId,
+    required String action,
+    String? rejectionReason,
+  }) async {
+    try {
+      await _client.rpc(
+        'admin_xu_ly_yeu_cau_vi',
+        params: {
+          'p_yeu_cau_id': requestId,
+          'p_hanh_dong': action,
+          'p_ly_do': rejectionReason?.trim(),
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw AdminServiceException(_message(error));
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _list(String function) async {
     try {
       final data = await _client.rpc(function);
@@ -135,7 +169,7 @@ class AdminService {
   String _message(PostgrestException error) {
     if (error.code == 'PGRST202' || error.message.contains('admin_')) {
       return 'Chức năng Admin chưa được cài trên Supabase. '
-          'Hãy chạy file admin_setup.sql.';
+          'Hãy chạy admin_setup.sql và patch_admin_wallet_approval.sql.';
     }
     return error.message;
   }

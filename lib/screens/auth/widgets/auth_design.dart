@@ -24,26 +24,53 @@ class AuthPageShell extends StatelessWidget {
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 900;
+            final isWide = constraints.maxWidth >= 1000;
             if (isWide) {
               return Row(
                 children: [
-                  const Expanded(flex: 5, child: _AuthBrandPanel()),
+                  const Expanded(flex: 6, child: _AuthBrandPanel()),
                   Expanded(
-                    flex: 6,
-                    child: ColoredBox(
-                      color: colors.surface,
-                      child: _ScrollableForm(
-                        maxWidth: 520,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 52,
-                          vertical: 40,
-                        ),
-                        child: _FormContent(
-                          title: title,
-                          subtitle: subtitle,
-                          showBackButton: showBackButton,
-                          form: form,
+                    flex: 5,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(24, 36, 48, 36),
+                      child: Align(
+                        alignment: Alignment.center,
+                        child: Container(
+                          width: double.infinity,
+                          constraints: BoxConstraints(
+                            maxWidth: 590,
+                            maxHeight: constraints.maxHeight - 72,
+                          ),
+                          decoration: BoxDecoration(
+                            color: colors.surface,
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.10),
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFF082F2B,
+                                ).withValues(alpha: 0.34),
+                                blurRadius: 40,
+                                offset: const Offset(0, 18),
+                              ),
+                            ],
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: _ScrollableForm(
+                            maxWidth: 470,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 42,
+                              vertical: 44,
+                            ),
+                            child: _FormContent(
+                              title: title,
+                              subtitle: subtitle,
+                              showBackButton: showBackButton,
+                              form: form,
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -175,7 +202,8 @@ class _MobileAuthLayout extends StatelessWidget {
                   top: Radius.circular(28),
                 ),
               ),
-              child: Center(
+              child: Align(
+                alignment: Alignment.topCenter,
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 560),
                   child: form,
@@ -468,6 +496,9 @@ class AuthField extends StatelessWidget {
           autofillHints: autofillHints,
           decoration: InputDecoration(
             hintText: hint,
+            hintStyle: TextStyle(
+              color: dark ? colors.onSurfaceVariant : const Color(0xFF5F706C),
+            ),
             prefixIcon: Icon(icon),
             suffixIcon: suffixIcon,
             filled: true,
