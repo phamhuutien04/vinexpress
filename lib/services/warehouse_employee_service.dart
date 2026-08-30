@@ -37,10 +37,13 @@ class WarehouseEmployeeService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> trips() async {
+  Future<Map<String, dynamic>> findTripsByVehicle(String keyword) async {
     try {
-      final data = await _client.rpc('nhan_vien_kho_danh_sach_chuyen');
-      return List<Map<String, dynamic>>.from(data as List);
+      final data = await _client.rpc(
+        'nhan_vien_kho_tim_chuyen_theo_xe',
+        params: {'p_tu_khoa': keyword.trim()},
+      );
+      return Map<String, dynamic>.from(data as Map);
     } on PostgrestException catch (error) {
       throw WarehouseEmployeeException(error.message);
     }
@@ -86,13 +89,16 @@ class WarehouseEmployeeService {
     String? phone,
   }) async {
     try {
-      await _client.rpc('nhan_vien_tao_kho_cap_2', params: {
-        'p_ten_kho': name.trim(),
-        'p_dia_chi': address.trim(),
-        'p_tinh_thanh': province.trim(),
-        'p_phuong_xa': ward.trim(),
-        'p_so_dien_thoai': phone?.trim(),
-      });
+      await _client.rpc(
+        'nhan_vien_tao_kho_cap_2',
+        params: {
+          'p_ten_kho': name.trim(),
+          'p_dia_chi': address.trim(),
+          'p_tinh_thanh': province.trim(),
+          'p_phuong_xa': ward.trim(),
+          'p_so_dien_thoai': phone?.trim(),
+        },
+      );
     } on PostgrestException catch (error) {
       throw WarehouseEmployeeException(error.message);
     }

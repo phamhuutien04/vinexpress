@@ -20,7 +20,6 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
   String? _error;
   Map<String, dynamic> _overview = {};
   List<Map<String, dynamic>> _orders = [];
-  List<Map<String, dynamic>> _trips = [];
 
   @override
   void initState() {
@@ -37,13 +36,11 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
       final values = await Future.wait([
         _service.overview(),
         _service.assignedOrders(),
-        _service.trips(),
       ]);
       if (!mounted) return;
       setState(() {
         _overview = values[0] as Map<String, dynamic>;
         _orders = values[1] as List<Map<String, dynamic>>;
-        _trips = values[2] as List<Map<String, dynamic>>;
       });
     } on WarehouseEmployeeException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -78,7 +75,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
             children: [
               _Dashboard(data: _overview, orders: _orders),
               _OrderList(orders: _orders),
-              _TripScanner(trips: _trips, service: _service, onChanged: _load),
+              _TripScanner(service: _service, onChanged: _load),
               _Account(data: _overview, onLogout: _logout),
             ],
           ),
@@ -121,12 +118,7 @@ class _EmployeeHomeScreenState extends State<EmployeeHomeScreen> {
 }
 
 class _TripScanner extends StatefulWidget {
-  const _TripScanner({
-    required this.trips,
-    required this.service,
-    required this.onChanged,
-  });
-  final List<Map<String, dynamic>> trips;
+  const _TripScanner({required this.service, required this.onChanged});
   final WarehouseEmployeeService service;
   final Future<void> Function() onChanged;
   @override
@@ -134,9 +126,85 @@ class _TripScanner extends StatefulWidget {
 }
 
 class _TripScannerState extends State<_TripScanner> {
+  final _vehicleController = TextEditingController();
   int? _tripId;
   String _action = 'XEP_LEN_XE';
   bool _saving = false;
+  bool _searching = false;
+  bool _searched = false;
+  Map<String, dynamic>? _vehicle;
+  List<Map<String, dynamic>> _trips = [];
+
+  @override
+  void dispose() {
+    _vehicleController.dispose();
+    super.dispose();
+  }
+
+  void _clearVehicleResult() {
+    if (!_searched && _vehicle == null && _trips.isEmpty) return;
+    setState(() {
+      _searched = false;
+      _vehicle = null;
+      _trips = [];
+      _tripId = null;
+    });
+  }
+
+  Future<void> _findVehicle({bool notifyWhenEmpty = true}) async {
+    final keyword = _vehicleController.text.trim();
+    if (keyword.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nhập ID xe hoặc biển số xe')),
+      );
+      return;
+    }
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _searching = true;
+      _searched = false;
+      _vehicle = null;
+      _trips = [];
+      _tripId = null;
+    });
+    try {
+      final result = await widget.service.findTripsByVehicle(keyword);
+      if (!mounted) return;
+      final trips = List<Map<String, dynamic>>.from(
+        (result['chuyen_xe'] as List?) ?? const [],
+      );
+      setState(() {
+        _searched = true;
+        _vehicle = result['xe'] == null
+            ? null
+            : Map<String, dynamic>.from(result['xe'] as Map);
+        _trips = trips;
+        if (trips.length == 1) {
+          _tripId = (trips.first['id'] as num).toInt();
+        }
+      });
+      if (notifyWhenEmpty && trips.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Xe tồn tại nhưng chưa có chuyến phù hợp tại kho này',
+            ),
+          ),
+        );
+      }
+    } on WarehouseEmployeeException catch (error) {
+      if (!mounted) return;
+      setState(() => _searched = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _searching = false);
+    }
+  }
 
   Future<void> _receiveAtWarehouse() async {
     final code = await Navigator.of(context).push<String>(
@@ -197,7 +265,7 @@ class _TripScannerState extends State<_TripScanner> {
           backgroundColor: AppColors.success,
         ),
       );
-      await widget.onChanged();
+      await _findVehicle(notifyWhenEmpty: false);
     } on WarehouseEmployeeException catch (error) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -216,7 +284,7 @@ class _TripScannerState extends State<_TripScanner> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
-    final hasTrips = widget.trips.isNotEmpty;
+    final hasTrips = _trips.isNotEmpty;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -272,7 +340,9 @@ class _TripScannerState extends State<_TripScanner> {
                             borderRadius: BorderRadius.circular(999),
                           ),
                           child: Text(
-                            '${widget.trips.length} chuyến',
+                            _searched
+                                ? '${_trips.length} chuyến'
+                                : 'Chưa chọn xe',
                             style: const TextStyle(
                               color: AppColors.primary,
                               fontWeight: FontWeight.w700,
@@ -338,29 +408,101 @@ class _TripScannerState extends State<_TripScanner> {
                             },
                           ),
                           const SizedBox(height: 16),
-                          DropdownButtonFormField<int>(
-                            initialValue: _tripId,
-                            isExpanded: true,
-                            decoration: const InputDecoration(
-                              labelText: 'Chuyến xe được gán',
-                              hintText: 'Chọn chuyến xe để xử lý',
-                              prefixIcon: Icon(Icons.local_shipping_outlined),
-                            ),
-                            items: widget.trips
-                                .map(
-                                  (trip) => DropdownMenuItem(
-                                    value: (trip['id'] as num).toInt(),
-                                    child: Text(
-                                      '${trip['ma_chuyen']} • ${trip['bien_so_xe']} • ${trip['ten_kho_di']} → ${trip['ten_kho_den']}',
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
+                          LayoutBuilder(
+                            builder: (context, searchConstraints) {
+                              final compact = searchConstraints.maxWidth < 560;
+                              final input = TextField(
+                                controller: _vehicleController,
+                                enabled: !_searching && !_saving,
+                                textInputAction: TextInputAction.search,
+                                autocorrect: false,
+                                textCapitalization:
+                                    TextCapitalization.characters,
+                                onChanged: (_) => _clearVehicleResult(),
+                                onSubmitted: (_) => _findVehicle(),
+                                decoration: const InputDecoration(
+                                  labelText: 'ID xe hoặc biển số xe',
+                                  hintText: 'Ví dụ: 29C346028 hoặc 12',
+                                  prefixIcon: Icon(
+                                    Icons.directions_car_outlined,
                                   ),
-                                )
-                                .toList(),
-                            onChanged: _saving
-                                ? null
-                                : (value) => setState(() => _tripId = value),
+                                ),
+                              );
+                              final button = SizedBox(
+                                height: 56,
+                                child: FilledButton.icon(
+                                  onPressed: _searching || _saving
+                                      ? null
+                                      : () => _findVehicle(),
+                                  icon: _searching
+                                      ? const SizedBox.square(
+                                          dimension: 18,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                          ),
+                                        )
+                                      : const Icon(Icons.search_rounded),
+                                  label: Text(
+                                    _searching
+                                        ? 'Đang kiểm tra'
+                                        : 'Kiểm tra xe',
+                                  ),
+                                ),
+                              );
+                              if (compact) {
+                                return Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    input,
+                                    const SizedBox(height: 10),
+                                    button,
+                                  ],
+                                );
+                              }
+                              return Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(child: input),
+                                  const SizedBox(width: 10),
+                                  SizedBox(width: 180, child: button),
+                                ],
+                              );
+                            },
                           ),
+                          if (_vehicle != null) ...[
+                            const SizedBox(height: 12),
+                            _VehicleLookupResult(vehicle: _vehicle!),
+                          ],
+                          if (hasTrips) ...[
+                            const SizedBox(height: 14),
+                            DropdownButtonFormField<int>(
+                              key: ValueKey(
+                                '${_vehicle?['id']}-$_tripId-${_trips.length}',
+                              ),
+                              initialValue: _tripId,
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Chuyến của xe tại kho',
+                                hintText: 'Chọn chuyến xe để xử lý',
+                                prefixIcon: Icon(Icons.local_shipping_outlined),
+                              ),
+                              items: _trips
+                                  .map(
+                                    (trip) => DropdownMenuItem(
+                                      value: (trip['id'] as num).toInt(),
+                                      child: Text(
+                                        '${trip['ma_chuyen']} • ${trip['bien_so_xe']} • ${trip['ten_kho_di']} → ${trip['ten_kho_den']}',
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: _saving
+                                  ? null
+                                  : (value) => setState(() => _tripId = value),
+                            ),
+                          ],
                           const SizedBox(height: 14),
                           if (hasTrips)
                             SizedBox(
@@ -383,7 +525,11 @@ class _TripScannerState extends State<_TripScanner> {
                               ),
                             )
                           else
-                            _WarehouseEmptyTrips(onRefresh: widget.onChanged),
+                            _WarehouseVehiclePrompt(
+                              searched: _searched,
+                              vehicleFound: _vehicle != null,
+                              onRetry: () => _findVehicle(),
+                            ),
                         ],
                       ),
                     ),
@@ -396,9 +542,7 @@ class _TripScannerState extends State<_TripScanner> {
                         ),
                       ),
                       const SizedBox(height: 10),
-                      ...widget.trips.map(
-                        (trip) => _AssignedTripCard(trip: trip),
-                      ),
+                      ..._trips.map((trip) => _AssignedTripCard(trip: trip)),
                     ],
                   ],
                 ),
@@ -592,10 +736,65 @@ class _WarehouseActionTile extends StatelessWidget {
   }
 }
 
-class _WarehouseEmptyTrips extends StatelessWidget {
-  const _WarehouseEmptyTrips({required this.onRefresh});
+class _VehicleLookupResult extends StatelessWidget {
+  const _VehicleLookupResult({required this.vehicle});
 
-  final Future<void> Function() onRefresh;
+  final Map<String, dynamic> vehicle;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.primary10,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.primary.withValues(alpha: 0.35)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.verified_rounded, color: AppColors.primary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${vehicle['bien_so_xe']}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'ID xe: ${vehicle['id']}'
+                  '${vehicle['ten_tai_xe'] == null ? '' : ' • Tài xế: ${vehicle['ten_tai_xe']}'}',
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const Text(
+            'Đã xác minh',
+            style: TextStyle(
+              color: AppColors.primary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WarehouseVehiclePrompt extends StatelessWidget {
+  const _WarehouseVehiclePrompt({
+    required this.searched,
+    required this.vehicleFound,
+    required this.onRetry,
+  });
+
+  final bool searched;
+  final bool vehicleFound;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -617,28 +816,38 @@ class _WarehouseEmptyTrips extends StatelessWidget {
               shape: BoxShape.circle,
             ),
             child: Icon(
-              Icons.local_shipping_outlined,
+              searched ? Icons.route_outlined : Icons.search_rounded,
               size: 30,
               color: colors.onSurfaceVariant,
             ),
           ),
           const SizedBox(height: 12),
-          const Text(
-            'Chưa có chuyến xe được gán',
+          Text(
+            searched && vehicleFound
+                ? 'Xe chưa có chuyến phù hợp'
+                : searched
+                ? 'Không tìm thấy xe'
+                : 'Nhập xe để tìm chuyến',
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 4),
           Text(
-            'Khi quản lý kho gán chuyến, thông tin sẽ xuất hiện tại đây.',
+            searched && vehicleFound
+                ? 'Xe đã được xác minh nhưng không có chuyến đi hoặc đến kho này.'
+                : searched
+                ? 'Kiểm tra lại ID xe hoặc biển số rồi thử lại.'
+                : 'Nhập đúng ID xe hoặc biển số xe. Hệ thống sẽ kiểm tra rồi mới hiển thị chuyến được gán.',
             textAlign: TextAlign.center,
             style: TextStyle(color: colors.onSurfaceVariant),
           ),
-          const SizedBox(height: 14),
-          TextButton.icon(
-            onPressed: onRefresh,
-            icon: const Icon(Icons.refresh_rounded),
-            label: const Text('Kiểm tra lại'),
-          ),
+          if (searched) ...[
+            const SizedBox(height: 14),
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Kiểm tra lại'),
+            ),
+          ],
         ],
       ),
     );
