@@ -213,110 +213,506 @@ class _TripScannerState extends State<_TripScanner> {
   }
 
   @override
-  Widget build(BuildContext context) => ListView(
-    padding: const EdgeInsets.all(16),
-    children: [
-      Card(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final hasTrips = widget.trips.isNotEmpty;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final horizontalPadding = constraints.maxWidth >= 900 ? 32.0 : 16.0;
+        return ListView(
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            20,
+            horizontalPadding,
+            32,
+          ),
+          children: [
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1080),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _WarehouseReceivePanel(
+                      saving: _saving,
+                      onScan: _receiveAtWarehouse,
+                    ),
+                    const SizedBox(height: 28),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Xử lý theo chuyến xe',
+                                style: theme.textTheme.titleLarge?.copyWith(
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Chọn thao tác và chuyến xe trước khi quét kiện',
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary10,
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            '${widget.trips.length} chuyến',
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: colors.surfaceContainerLow,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(color: colors.outlineVariant),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          LayoutBuilder(
+                            builder: (context, actionConstraints) {
+                              final narrow = actionConstraints.maxWidth < 560;
+                              final tiles = [
+                                _WarehouseActionTile(
+                                  icon: Icons.move_to_inbox_rounded,
+                                  title: 'Xếp lên xe',
+                                  subtitle: 'Quét kiện rời khỏi kho',
+                                  selected: _action == 'XEP_LEN_XE',
+                                  onTap: _saving
+                                      ? null
+                                      : () => setState(
+                                          () => _action = 'XEP_LEN_XE',
+                                        ),
+                                ),
+                                _WarehouseActionTile(
+                                  icon: Icons.inventory_2_rounded,
+                                  title: 'Dỡ xe nhập kho',
+                                  subtitle: 'Quét kiện vừa đến kho',
+                                  selected: _action == 'NHAP_KHO',
+                                  onTap: _saving
+                                      ? null
+                                      : () => setState(
+                                          () => _action = 'NHAP_KHO',
+                                        ),
+                                ),
+                              ];
+                              if (narrow) {
+                                return Column(
+                                  children: [
+                                    tiles.first,
+                                    const SizedBox(height: 10),
+                                    tiles.last,
+                                  ],
+                                );
+                              }
+                              return Row(
+                                children: [
+                                  Expanded(child: tiles.first),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: tiles.last),
+                                ],
+                              );
+                            },
+                          ),
+                          const SizedBox(height: 16),
+                          DropdownButtonFormField<int>(
+                            initialValue: _tripId,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Chuyến xe được gán',
+                              hintText: 'Chọn chuyến xe để xử lý',
+                              prefixIcon: Icon(Icons.local_shipping_outlined),
+                            ),
+                            items: widget.trips
+                                .map(
+                                  (trip) => DropdownMenuItem(
+                                    value: (trip['id'] as num).toInt(),
+                                    child: Text(
+                                      '${trip['ma_chuyen']} • ${trip['bien_so_xe']} • ${trip['ten_kho_di']} → ${trip['ten_kho_den']}',
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: _saving
+                                ? null
+                                : (value) => setState(() => _tripId = value),
+                          ),
+                          const SizedBox(height: 14),
+                          if (hasTrips)
+                            SizedBox(
+                              height: 50,
+                              child: FilledButton.icon(
+                                onPressed: _saving ? null : _scan,
+                                icon: _saving
+                                    ? const SizedBox.square(
+                                        dimension: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.qr_code_scanner_rounded),
+                                label: Text(
+                                  _saving
+                                      ? 'Đang xử lý...'
+                                      : 'Quét mã kiện hàng',
+                                ),
+                              ),
+                            )
+                          else
+                            _WarehouseEmptyTrips(onRefresh: widget.onChanged),
+                        ],
+                      ),
+                    ),
+                    if (hasTrips) ...[
+                      const SizedBox(height: 24),
+                      Text(
+                        'Chuyến xe được gán',
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      ...widget.trips.map(
+                        (trip) => _AssignedTripCard(trip: trip),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _WarehouseReceivePanel extends StatelessWidget {
+  const _WarehouseReceivePanel({required this.saving, required this.onScan});
+
+  final bool saving;
+  final VoidCallback onScan;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      gradient: AppColors.primaryGradient,
+      borderRadius: BorderRadius.circular(24),
+      boxShadow: [
+        BoxShadow(
+          color: AppColors.primaryShadow,
+          blurRadius: 22,
+          offset: const Offset(0, 10),
+        ),
+      ],
+    ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 620;
+        final information = Row(
+          children: [
+            Container(
+              width: 58,
+              height: 58,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(18),
+              ),
+              child: const Icon(
+                Icons.inventory_2_rounded,
+                color: Colors.white,
+                size: 30,
+              ),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Nhập kiện vào kho',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Nhận kiện từ nhân viên lấy hàng bằng QR hoặc Code 128',
+                    style: TextStyle(color: Colors.white, height: 1.35),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+        final button = SizedBox(
+          height: 48,
+          child: FilledButton.icon(
+            onPressed: saving ? null : onScan,
+            style: FilledButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: AppColors.primary,
+              disabledBackgroundColor: Colors.white54,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            icon: const Icon(Icons.qr_code_scanner_rounded),
+            label: const Text(
+              'Quét mã nhập kho',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        );
+        if (compact) {
+          return Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [information, const SizedBox(height: 18), button],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: information),
+            const SizedBox(width: 24),
+            SizedBox(width: 210, child: button),
+          ],
+        );
+      },
+    ),
+  );
+}
+
+class _WarehouseActionTile extends StatelessWidget {
+  const _WarehouseActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: selected ? AppColors.primary10 : colors.surface,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: selected ? AppColors.primary : colors.outlineVariant,
+              width: selected ? 1.6 : 1,
+            ),
+          ),
+          child: Row(
             children: [
-              const Text(
-                'Nhập kiện vào kho',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? AppColors.primary
+                      : colors.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(13),
+                ),
+                child: Icon(
+                  icon,
+                  color: selected ? Colors.white : colors.onSurfaceVariant,
+                ),
               ),
-              const SizedBox(height: 4),
-              const Text('Quét mã QR hoặc mã vạch Code 128 trên kiện hàng.'),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: _saving ? null : _receiveAtWarehouse,
-                icon: const Icon(Icons.qr_code_scanner),
-                label: const Text('Quét mã nhập kho'),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w800,
+                        color: selected ? AppColors.primary : colors.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
               ),
+              if (selected)
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: AppColors.primary,
+                ),
             ],
           ),
         ),
       ),
-      const SizedBox(height: 16),
-      Text(
-        'Xử lý theo chuyến xe',
-        style: Theme.of(
-          context,
-        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+    );
+  }
+}
+
+class _WarehouseEmptyTrips extends StatelessWidget {
+  const _WarehouseEmptyTrips({required this.onRefresh});
+
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 26),
+      decoration: BoxDecoration(
+        color: colors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.outlineVariant),
       ),
-      const SizedBox(height: 10),
-      SegmentedButton<String>(
-        segments: const [
-          ButtonSegment(
-            value: 'XEP_LEN_XE',
-            icon: Icon(Icons.upload),
-            label: Text('Xếp lên xe'),
+      child: Column(
+        children: [
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerHighest,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.local_shipping_outlined,
+              size: 30,
+              color: colors.onSurfaceVariant,
+            ),
           ),
-          ButtonSegment(
-            value: 'NHAP_KHO',
-            icon: Icon(Icons.download),
-            label: Text('Dỡ xe nhập kho'),
+          const SizedBox(height: 12),
+          const Text(
+            'Chưa có chuyến xe được gán',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Khi quản lý kho gán chuyến, thông tin sẽ xuất hiện tại đây.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: colors.onSurfaceVariant),
+          ),
+          const SizedBox(height: 14),
+          TextButton.icon(
+            onPressed: onRefresh,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Kiểm tra lại'),
           ),
         ],
-        selected: {_action},
-        onSelectionChanged: _saving
-            ? null
-            : (value) => setState(() => _action = value.first),
       ),
-      const SizedBox(height: 16),
-      DropdownButtonFormField<int>(
-        initialValue: _tripId,
-        isExpanded: true,
-        decoration: const InputDecoration(
-          labelText: 'Chuyến xe đã được gán',
-          prefixIcon: Icon(Icons.local_shipping_outlined),
-        ),
-        items: widget.trips
-            .map(
-              (trip) => DropdownMenuItem(
-                value: (trip['id'] as num).toInt(),
-                child: Text(
-                  '${trip['ma_chuyen']} • ${trip['bien_so_xe']} • ${trip['ten_kho_di']} → ${trip['ten_kho_den']}',
-                  overflow: TextOverflow.ellipsis,
+    );
+  }
+}
+
+class _AssignedTripCard extends StatelessWidget {
+  const _AssignedTripCard({required this.trip});
+
+  final Map<String, dynamic> trip;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.primary10,
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(
+              Icons.local_shipping_rounded,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${trip['ma_chuyen']}',
+                  style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
+                const SizedBox(height: 3),
+                Text(
+                  '${trip['ten_kho_di']} → ${trip['ten_kho_den']}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: colors.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${trip['so_kien']} kiện',
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
-            )
-            .toList(),
-        onChanged: _saving ? null : (value) => setState(() => _tripId = value),
-      ),
-      const SizedBox(height: 16),
-      if (widget.trips.isEmpty)
-        const Card(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              'Chưa có chuyến xe được quản lý gán cho kho này',
-              textAlign: TextAlign.center,
-            ),
+              const SizedBox(height: 3),
+              Text(
+                '${trip['bien_so_xe']}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
           ),
-        )
-      else
-        FilledButton.icon(
-          onPressed: _saving ? null : _scan,
-          icon: const Icon(Icons.qr_code_scanner),
-          label: Text(_saving ? 'Đang xử lý...' : 'Quét mã kiện hàng'),
-        ),
-      const SizedBox(height: 16),
-      ...widget.trips.map(
-        (trip) => Card(
-          child: ListTile(
-            leading: const CircleAvatar(child: Icon(Icons.local_shipping)),
-            title: Text('${trip['ma_chuyen']}'),
-            subtitle: Text(
-              '${trip['ten_kho_di']} → ${trip['ten_kho_den']}\n${trip['so_kien']} kiện • ${trip['trang_thai']}',
-            ),
-            isThreeLine: true,
-          ),
-        ),
+        ],
       ),
-    ],
-  );
+    );
+  }
 }
 
 class _WarehouseQrScanner extends StatefulWidget {
