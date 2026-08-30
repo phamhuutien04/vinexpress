@@ -307,7 +307,7 @@ class _OrderHistoryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = '${order['trang_thai']}';
-    final statusInfo = _status(status);
+    final statusInfo = _status(order);
     final createdAt = DateTime.tryParse('${order['ngay_tao']}')?.toLocal();
     final canTrack = const {
       'CHO_LAY_HANG',
@@ -682,11 +682,19 @@ class _OrderHistoryCard extends StatelessWidget {
       '${value.hour.toString().padLeft(2, '0')}:'
       '${value.minute.toString().padLeft(2, '0')}';
 
-  static _StatusInfo _status(String status) {
+  static _StatusInfo _status(Map<String, dynamic> order) {
+    final status = '${order['trang_thai']}';
     switch (status) {
       case 'CHO_LAY_HANG':
         return const _StatusInfo('Chờ lấy hàng', Colors.orange);
       case 'DA_LAY_HANG':
+        final distance = (order['khoang_cach_km'] as num?)?.toDouble();
+        final isDirectDelivery =
+            order['phuong_tien'] == 'XE_MAY' ||
+            (distance != null && distance <= 50);
+        if (isDirectDelivery) {
+          return const _StatusInfo('Đang giao', Colors.blue);
+        }
         return const _StatusInfo('Đang chuyển về kho', Colors.blue);
       case 'DANG_VAN_CHUYEN':
       case 'GIAO_CHO_SHIPPER':

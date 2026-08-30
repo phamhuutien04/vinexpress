@@ -25,11 +25,20 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
   bool _loadingSummary = true;
   String? _summaryError;
   List<Map<String, dynamic>> _orders = [];
+  int _selectedTab = 0;
+  String _historyTitle = 'Lịch sử đơn hàng';
+  Set<String>? _historyStatuses;
 
   Map<String, dynamic> get _customer =>
       CustomerAuthService.currentCustomer ?? const {};
 
   List<Map<String, dynamic>> get _recentOrders => _orders.take(3).toList();
+
+  String get _historyKey {
+    final statuses = _historyStatuses?.toList() ?? <String>[];
+    statuses.sort();
+    return '$_historyTitle:${statuses.join(',')}';
+  }
 
   @override
   void initState() {
@@ -79,7 +88,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     final displayName = name == null || name.isEmpty ? 'Khách hàng' : name;
     final theme = Theme.of(context);
 
-    return Scaffold(
+    final homeTab = Scaffold(
       backgroundColor: theme.colorScheme.surface,
       appBar: AppBar(
         toolbarHeight: 68,
@@ -222,39 +231,55 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
           ),
         ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: 0,
-        onDestinationSelected: (index) {
-          if (index == 1) {
-            _openHistory(context);
-          } else if (index == 2) {
-            _openWallet(context);
-          } else if (index == 3) {
-            _openAccount(context);
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.home_outlined),
-            selectedIcon: Icon(Icons.home_rounded),
-            label: 'Trang chủ',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.receipt_long_outlined),
-            selectedIcon: Icon(Icons.receipt_long_rounded),
-            label: 'Đơn hàng',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: Icon(Icons.account_balance_wallet_rounded),
-            label: 'Ví',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.account_circle_outlined),
-            selectedIcon: Icon(Icons.account_circle_rounded),
-            label: 'Tài khoản',
-          ),
-        ],
+    );
+
+    return PopScope(
+      canPop: _selectedTab == 0,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _selectedTab != 0) {
+          setState(() => _selectedTab = 0);
+        }
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _selectedTab,
+          children: [
+            homeTab,
+            OrderHistoryScreen(
+              key: ValueKey(_historyKey),
+              title: _historyTitle,
+              statuses: _historyStatuses,
+            ),
+            const CustomerWalletScreen(),
+            const CustomerAccountScreen(),
+          ],
+        ),
+        bottomNavigationBar: NavigationBar(
+          selectedIndex: _selectedTab,
+          onDestinationSelected: _selectTab,
+          destinations: const [
+            NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'Trang chủ',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.receipt_long_outlined),
+              selectedIcon: Icon(Icons.receipt_long_rounded),
+              label: 'Đơn hàng',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.account_balance_wallet_outlined),
+              selectedIcon: Icon(Icons.account_balance_wallet_rounded),
+              label: 'Ví',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.account_circle_outlined),
+              selectedIcon: Icon(Icons.account_circle_rounded),
+              label: 'Tài khoản',
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -290,32 +315,34 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
     );
   }
 
-  Future<void> _openHistory(
+  void _selectTab(int index) {
+    setState(() {
+      _selectedTab = index;
+      if (index == 1) {
+        _historyTitle = 'Lịch sử đơn hàng';
+        _historyStatuses = null;
+      }
+    });
+  }
+
+  void _openHistory(
     BuildContext context, {
     String title = 'Lịch sử đơn hàng',
     Set<String>? statuses,
-  }) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => OrderHistoryScreen(title: title, statuses: statuses),
-      ),
-    );
-    await _loadOrderSummary();
+  }) {
+    setState(() {
+      _historyTitle = title;
+      _historyStatuses = statuses;
+      _selectedTab = 1;
+    });
   }
 
-  Future<void> _openWallet(BuildContext context) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CustomerWalletScreen()),
-    );
+  void _openWallet(BuildContext context) {
+    setState(() => _selectedTab = 2);
   }
 
-  Future<void> _openAccount(BuildContext context) async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CustomerAccountScreen()),
-    );
+  void _openAccount(BuildContext context) {
+    setState(() => _selectedTab = 3);
   }
 
   void _notAvailable(BuildContext context) {
@@ -774,7 +801,7 @@ class _RecentOrderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusValue = '${order['trang_thai']}';
-    final status = _status(statusValue);
+    final status = _status(order);
     final canTrack = const {
       'CHO_LAY_HANG',
       'DA_LAY_HANG',
@@ -851,11 +878,19 @@ class _RecentOrderRow extends StatelessWidget {
     );
   }
 
-  static _HomeStatus _status(String value) {
+  static _HomeStatus _status(Map<String, dynamic> order) {
+    final value = '${order['trang_thai']}';
     if (value == 'CHO_LAY_HANG') {
       return const _HomeStatus('Chờ lấy', Color(0xFFB26A00));
     }
     if (value == 'DA_LAY_HANG') {
+      final distance = (order['khoang_cach_km'] as num?)?.toDouble();
+      final isDirectDelivery =
+          order['phuong_tien'] == 'XE_MAY' ||
+          (distance != null && distance <= 50);
+      if (isDirectDelivery) {
+        return const _HomeStatus('Đang giao', Color(0xFF276E8C));
+      }
       return const _HomeStatus('Về kho', Color(0xFF276E8C));
     }
     if (value == 'DA_GIAO_HANG') {
