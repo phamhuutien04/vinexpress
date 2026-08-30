@@ -135,6 +135,15 @@ class _TripScannerState extends State<_TripScanner> {
   Map<String, dynamic>? _vehicle;
   List<Map<String, dynamic>> _trips = [];
 
+  Map<String, dynamic>? _tripForId(int? id) {
+    for (final trip in _trips) {
+      if ((trip['id'] as num).toInt() == id) return trip;
+    }
+    return null;
+  }
+
+  Map<String, dynamic>? get _selectedTrip => _tripForId(_tripId);
+
   @override
   void dispose() {
     _vehicleController.dispose();
@@ -181,6 +190,7 @@ class _TripScannerState extends State<_TripScanner> {
         _trips = trips;
         if (trips.length == 1) {
           _tripId = (trips.first['id'] as num).toInt();
+          _action = '${trips.first['thao_tac'] ?? _action}';
         }
       });
       if (notifyWhenEmpty && trips.isEmpty) {
@@ -243,6 +253,14 @@ class _TripScannerState extends State<_TripScanner> {
       ).showSnackBar(const SnackBar(content: Text('Hãy chọn chuyến xe trước')));
       return;
     }
+    if (_selectedTrip?['da_niem_phong'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Xe đã niêm phong, không thể xếp thêm kiện'),
+        ),
+      );
+      return;
+    }
     final code = await Navigator.of(context).push<String>(
       MaterialPageRoute(builder: (_) => const _WarehouseQrScanner()),
     );
@@ -280,11 +298,110 @@ class _TripScannerState extends State<_TripScanner> {
     }
   }
 
+  Future<void> _sealTrip() async {
+    final trip = _selectedTrip;
+    if (trip == null) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Hãy chọn chuyến xe trước')));
+      return;
+    }
+    if (trip['thao_tac'] != 'XEP_LEN_XE') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Chỉ kho xuất phát mới được niêm phong xe'),
+        ),
+      );
+      return;
+    }
+
+    final controller = TextEditingController();
+    final sealCode = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Niêm phong xe'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              '${trip['ma_chuyen']} • ${trip['bien_so_xe']}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Xác nhận đã quét đủ kiện, đóng cửa xe và nhập mã trên dây niêm phong.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.characters,
+              textInputAction: TextInputAction.done,
+              decoration: const InputDecoration(
+                labelText: 'Mã niêm phong',
+                hintText: 'Nhập mã trên dây niêm phong',
+                prefixIcon: Icon(Icons.lock_outline_rounded),
+              ),
+              onSubmitted: (value) {
+                if (value.trim().isNotEmpty) {
+                  Navigator.pop(dialogContext, value.trim());
+                }
+              },
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Hủy'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              final value = controller.text.trim();
+              if (value.isNotEmpty) Navigator.pop(dialogContext, value);
+            },
+            icon: const Icon(Icons.lock_rounded),
+            label: const Text('Xác nhận niêm phong'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (sealCode == null || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      await widget.service.sealTrip(tripId: _tripId!, sealCode: sealCode);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Đã niêm phong xe bằng mã $sealCode'),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      await _findVehicle(notifyWhenEmpty: false);
+    } on WarehouseEmployeeException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = theme.colorScheme;
     final hasTrips = _trips.isNotEmpty;
+    final selectedTrip = _selectedTrip;
+    final selectedTripSealed = selectedTrip?['da_niem_phong'] == true;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -500,29 +617,70 @@ class _TripScannerState extends State<_TripScanner> {
                                   .toList(),
                               onChanged: _saving
                                   ? null
-                                  : (value) => setState(() => _tripId = value),
+                                  : (value) {
+                                      final trip = _tripForId(value);
+                                      setState(() {
+                                        _tripId = value;
+                                        if (trip?['thao_tac'] != null) {
+                                          _action = '${trip!['thao_tac']}';
+                                        }
+                                      });
+                                    },
                             ),
                           ],
                           const SizedBox(height: 14),
                           if (hasTrips)
-                            SizedBox(
-                              height: 50,
-                              child: FilledButton.icon(
-                                onPressed: _saving ? null : _scan,
-                                icon: _saving
-                                    ? const SizedBox.square(
-                                        dimension: 18,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2,
-                                        ),
-                                      )
-                                    : const Icon(Icons.qr_code_scanner_rounded),
-                                label: Text(
-                                  _saving
-                                      ? 'Đang xử lý...'
-                                      : 'Quét mã kiện hàng',
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SizedBox(
+                                  height: 50,
+                                  child: FilledButton.icon(
+                                    onPressed: _saving || selectedTripSealed
+                                        ? null
+                                        : _scan,
+                                    icon: _saving
+                                        ? const SizedBox.square(
+                                            dimension: 18,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.qr_code_scanner_rounded,
+                                          ),
+                                    label: Text(
+                                      selectedTripSealed
+                                          ? 'Xe đã niêm phong'
+                                          : _saving
+                                          ? 'Đang xử lý...'
+                                          : 'Quét mã kiện hàng',
+                                    ),
+                                  ),
                                 ),
-                              ),
+                                if (selectedTrip?['thao_tac'] ==
+                                    'XEP_LEN_XE') ...[
+                                  const SizedBox(height: 10),
+                                  if (selectedTripSealed)
+                                    _SealedTripNotice(
+                                      code:
+                                          '${selectedTrip?['ma_niem_phong'] ?? ''}',
+                                    )
+                                  else
+                                    SizedBox(
+                                      height: 50,
+                                      child: OutlinedButton.icon(
+                                        onPressed: _saving || _tripId == null
+                                            ? null
+                                            : _sealTrip,
+                                        icon: const Icon(Icons.lock_rounded),
+                                        label: const Text(
+                                          'Đã quét xong • Niêm phong xe',
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ],
                             )
                           else
                             _WarehouseVehiclePrompt(
@@ -553,6 +711,37 @@ class _TripScannerState extends State<_TripScanner> {
       },
     );
   }
+}
+
+class _SealedTripNotice extends StatelessWidget {
+  const _SealedTripNotice({required this.code});
+
+  final String code;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    decoration: BoxDecoration(
+      color: AppColors.success.withValues(alpha: 0.1),
+      borderRadius: BorderRadius.circular(14),
+      border: Border.all(color: AppColors.success.withValues(alpha: 0.4)),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.lock_rounded, color: AppColors.success),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            code.isEmpty ? 'Xe đã được niêm phong' : 'Đã niêm phong • Mã $code',
+            style: const TextStyle(
+              color: AppColors.success,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _WarehouseReceivePanel extends StatelessWidget {
@@ -916,6 +1105,28 @@ class _AssignedTripCard extends StatelessWidget {
                 '${trip['bien_so_xe']}',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (trip['da_niem_phong'] == true) ...[
+                const SizedBox(height: 4),
+                const Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.lock_rounded,
+                      size: 14,
+                      color: AppColors.success,
+                    ),
+                    SizedBox(width: 3),
+                    Text(
+                      'Đã niêm phong',
+                      style: TextStyle(
+                        color: AppColors.success,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ],

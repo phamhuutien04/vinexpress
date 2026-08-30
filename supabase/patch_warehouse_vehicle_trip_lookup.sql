@@ -1,6 +1,11 @@
 -- Nhân viên kho chỉ thấy chuyến sau khi nhập đúng ID xe hoặc biển số xe.
 -- Có thể chạy an toàn nhiều lần trong Supabase SQL Editor.
 
+-- Khóa trùng mã ở cấp database, kể cả khác chữ hoa/thường hoặc khoảng trắng.
+-- Unique index cũng xử lý an toàn trường hợp hai nhân viên lưu đồng thời.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_niem_phong_ma_chuan
+ON public.niem_phong_xe ((UPPER(BTRIM(ma_niem_phong))));
+
 CREATE OR REPLACE FUNCTION public.nhan_vien_kho_tim_chuyen_theo_xe(
   p_tu_khoa TEXT
 ) RETURNS JSONB
@@ -72,6 +77,14 @@ BEGIN
       x.bien_so_xe::VARCHAR,tx.ho_ten::VARCHAR AS ten_tai_xe,
       c.kho_di_id,kd.ten_kho::VARCHAR AS ten_kho_di,
       c.kho_den_id,kn.ten_kho::VARCHAR AS ten_kho_den,
+      CASE WHEN c.kho_di_id=v_kho_id THEN 'XEP_LEN_XE' ELSE 'NHAP_KHO' END AS thao_tac,
+      EXISTS(
+        SELECT 1 FROM public.niem_phong_xe np
+        WHERE np.chuyen_xe_id=cx.id AND np.trang_thai='DA_NIEM_PHONG'
+      ) AS da_niem_phong,
+      (SELECT np.ma_niem_phong FROM public.niem_phong_xe np
+        WHERE np.chuyen_xe_id=cx.id AND np.trang_thai='DA_NIEM_PHONG'
+        ORDER BY np.thoi_gian_niem_phong DESC LIMIT 1) AS ma_niem_phong,
       (SELECT COUNT(*) FROM public.chi_tiet_chuyen_xe ct
         WHERE ct.chuyen_xe_id=cx.id)::BIGINT AS so_kien,
       cx.ngay_tao
@@ -101,6 +114,92 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.nhan_vien_kho_niem_phong_chuyen(
+  p_chuyen_xe_id BIGINT,
+  p_ma_niem_phong TEXT
+) RETURNS VARCHAR
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path=public
+AS $$
+DECLARE
+  v_nhan_vien public.nhan_vien%ROWTYPE;
+  v_chuyen public.chuyen_xe%ROWTYPE;
+  v_ma TEXT := UPPER(BTRIM(COALESCE(p_ma_niem_phong,'')));
+  v_so_kien BIGINT;
+BEGIN
+  SELECT nv.*
+  INTO v_nhan_vien
+  FROM public.nhan_vien nv
+  WHERE nv.auth_user_id=auth.uid()
+    AND nv.vai_tro='NHAN_VIEN_KHO'
+    AND nv.trang_thai_duyet='DA_DUYET'
+    AND nv.trang_thai='HOAT_DONG';
+
+  IF NOT FOUND OR v_nhan_vien.kho_hang_id IS NULL THEN
+    RAISE EXCEPTION 'Nhân viên chưa được gán kho';
+  END IF;
+  IF v_ma='' THEN
+    RAISE EXCEPTION 'Hãy nhập mã niêm phong';
+  END IF;
+
+  SELECT cx.*
+  INTO v_chuyen
+  FROM public.chuyen_xe cx
+  JOIN public.chuyen_xe_chang c
+    ON c.chuyen_xe_id=cx.id AND c.thu_tu_chuyen=1
+  WHERE cx.id=p_chuyen_xe_id
+    AND c.kho_di_id=v_nhan_vien.kho_hang_id
+  FOR UPDATE OF cx;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Chuyến xe không xuất phát từ kho của bạn';
+  END IF;
+  IF v_chuyen.trang_thai NOT IN ('CHO_KHOI_HANH','DANG_XEP_HANG') THEN
+    RAISE EXCEPTION 'Trạng thái chuyến không cho phép niêm phong';
+  END IF;
+  IF EXISTS(
+    SELECT 1 FROM public.niem_phong_xe np
+    WHERE np.chuyen_xe_id=p_chuyen_xe_id
+      AND np.trang_thai='DA_NIEM_PHONG'
+  ) THEN
+    RAISE EXCEPTION 'Xe đã được niêm phong';
+  END IF;
+  IF EXISTS(
+    SELECT 1 FROM public.niem_phong_xe np
+    WHERE UPPER(np.ma_niem_phong)=v_ma
+  ) THEN
+    RAISE EXCEPTION 'Mã niêm phong đã được sử dụng';
+  END IF;
+
+  SELECT COUNT(*)
+  INTO v_so_kien
+  FROM public.chi_tiet_chuyen_xe ct
+  WHERE ct.chuyen_xe_id=p_chuyen_xe_id
+    AND ct.trang_thai='DA_XEP_HANG';
+
+  IF v_so_kien=0 THEN
+    RAISE EXCEPTION 'Chuyến chưa có kiện hàng để niêm phong';
+  END IF;
+
+  BEGIN
+    INSERT INTO public.niem_phong_xe(
+      chuyen_xe_id,ma_niem_phong,kho_niem_phong_id,
+      nguoi_niem_phong_id,trang_thai
+    ) VALUES(
+      p_chuyen_xe_id,v_ma,v_nhan_vien.kho_hang_id,
+      v_nhan_vien.id,'DA_NIEM_PHONG'
+    );
+  EXCEPTION WHEN unique_violation THEN
+    RAISE EXCEPTION 'Mã niêm phong đã được sử dụng';
+  END;
+
+  RETURN v_ma;
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.nhan_vien_kho_tim_chuyen_theo_xe(TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_tim_chuyen_theo_xe(TEXT) TO authenticated;
+REVOKE ALL ON FUNCTION public.nhan_vien_kho_niem_phong_chuyen(BIGINT,TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_niem_phong_chuyen(BIGINT,TEXT) TO authenticated;
 NOTIFY pgrst,'reload schema';
