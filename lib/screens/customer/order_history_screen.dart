@@ -312,6 +312,9 @@ class _OrderHistoryCard extends StatelessWidget {
     final canTrack = const {
       'CHO_LAY_HANG',
       'DA_LAY_HANG',
+      'DANG_VAN_CHUYEN',
+      'DEN_KHO_TRUNG_CHUYEN',
+      'DEN_KHO_DICH',
       'GIAO_CHO_SHIPPER',
       'DANG_GIAO_HANG',
     }.contains(status);
@@ -697,9 +700,15 @@ class _OrderHistoryCard extends StatelessWidget {
         }
         return const _StatusInfo('Đang chuyển về kho', Colors.blue);
       case 'DANG_VAN_CHUYEN':
+        return const _StatusInfo('Đang vận chuyển', Colors.blue);
+      case 'DEN_KHO_TRUNG_CHUYEN':
+        return const _StatusInfo('Đã đến kho trung chuyển', AppColors.primary);
+      case 'DEN_KHO_DICH':
+        return const _StatusInfo('Đã đến kho đích', AppColors.primary);
       case 'GIAO_CHO_SHIPPER':
+        return const _StatusInfo('Chờ giao hàng', Colors.blue);
       case 'DANG_GIAO_HANG':
-        return const _StatusInfo('Đang giao', Colors.blue);
+        return const _StatusInfo('Đang giao hàng', Colors.blue);
       case 'DA_GIAO_HANG':
         return const _StatusInfo('Đã giao', AppColors.success);
       case 'DA_HUY':

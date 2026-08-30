@@ -41,19 +41,28 @@ class OrderService {
 
   Future<Map<String, dynamic>> getCustomerOrderTracking(int orderId) async {
     try {
-      final data = await _client
-          .rpc(
-            'theo_doi_don_hang_khach_hang',
-            params: {'p_don_hang_id': orderId},
-          )
-          .single();
-      return Map<String, dynamic>.from(data);
+      final data = await _client.rpc(
+        'theo_doi_don_hang_khach_hang',
+        params: {'p_don_hang_id': orderId},
+      );
+      final tracking = data is List && data.isNotEmpty
+          ? Map<String, dynamic>.from(data.first as Map)
+          : Map<String, dynamic>.from(data as Map);
+      if (!tracking.containsKey('tracking_mode')) {
+        throw const OrderServiceException(
+          'Theo dõi đơn qua kho và xe tải chưa được cập nhật trên Supabase. '
+          'Hãy chạy file patch_customer_long_distance_tracking.sql.',
+        );
+      }
+      return tracking;
+    } on OrderServiceException {
+      rethrow;
     } on PostgrestException catch (error) {
       if (error.code == 'PGRST202' ||
           error.message.contains('theo_doi_don_hang_khach_hang')) {
         throw const OrderServiceException(
           'Chức năng theo dõi chưa được cài trên Supabase. '
-          'Hãy chạy file customer_tracking_setup.sql.',
+          'Hãy chạy file patch_customer_long_distance_tracking.sql.',
         );
       }
       throw OrderServiceException(error.message);

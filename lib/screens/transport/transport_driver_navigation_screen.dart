@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../services/transport_driver_service.dart';
 import '../../widgets/vietnam_island_markers.dart';
 
 class TransportDriverNavigationScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class TransportDriverNavigationScreen extends StatefulWidget {
 class _TransportDriverNavigationScreenState
     extends State<TransportDriverNavigationScreen> {
   final _mapController = MapController();
+  final _driverService = TransportDriverService();
   StreamSubscription<Position>? _positionSubscription;
   Timer? _simulationTimer;
   LatLng? _current;
@@ -39,6 +41,8 @@ class _TransportDriverNavigationScreenState
   double? _distanceKm;
   double? _durationMinutes;
   DateTime? _lastRouteAt;
+  DateTime? _lastLocationSyncAt;
+  LatLng? _lastSyncedLocation;
   bool _loading = true;
   bool _routing = false;
   bool _simulationMode = false;
@@ -96,6 +100,7 @@ class _TransportDriverNavigationScreenState
         throw Exception('Vị trí GPS hiện tại nằm ngoài phạm vi Việt Nam');
       }
       _latestGps = _current;
+      await _syncLocation(_current!, accuracyMeters: position.accuracy);
       _destination = destination;
       await _loadRoute();
       _positionSubscription = Geolocator.getPositionStream(
@@ -250,6 +255,7 @@ class _TransportDriverNavigationScreenState
     final next = LatLng(position.latitude, position.longitude);
     if (!_isInVietnam(next)) return;
     _latestGps = next;
+    _syncLocation(next, accuracyMeters: position.accuracy);
     if (_simulationMode) return;
     setState(() => _current = next);
     final previous = _lastRouteOrigin;
@@ -268,6 +274,39 @@ class _TransportDriverNavigationScreenState
       _loadRoute(moveMap: false).catchError((_) {});
     } else {
       _mapController.move(next, _mapController.camera.zoom);
+    }
+  }
+
+  Future<void> _syncLocation(
+    LatLng position, {
+    double? accuracyMeters,
+    bool force = false,
+  }) async {
+    final previous = _lastSyncedLocation;
+    final elapsed = DateTime.now().difference(
+      _lastLocationSyncAt ?? DateTime.fromMillisecondsSinceEpoch(0),
+    );
+    final movedMeters = previous == null
+        ? double.infinity
+        : Geolocator.distanceBetween(
+            previous.latitude,
+            previous.longitude,
+            position.latitude,
+            position.longitude,
+          );
+    if (!force && elapsed < const Duration(seconds: 8) && movedMeters < 40) {
+      return;
+    }
+    try {
+      await _driverService.updateLocation(
+        latitude: position.latitude,
+        longitude: position.longitude,
+        accuracyMeters: accuracyMeters,
+      );
+      _lastLocationSyncAt = DateTime.now();
+      _lastSyncedLocation = position;
+    } catch (_) {
+      // Mất mạng tạm thời không được làm gián đoạn màn hình chỉ đường.
     }
   }
 
@@ -405,6 +444,7 @@ class _TransportDriverNavigationScreenState
         _distanceKm = originalDistance * remainingRatio;
         _durationMinutes = originalDuration * remainingRatio;
       });
+      _syncLocation(points[index]);
       _mapController.move(points[index], 16);
     });
   }

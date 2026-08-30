@@ -39,6 +39,25 @@ class TransportDriverService {
     }
   }
 
+  Future<void> updateLocation({
+    required double latitude,
+    required double longitude,
+    double? accuracyMeters,
+  }) async {
+    try {
+      await _client.rpc(
+        'cap_nhat_vi_tri_tai_xe_van_chuyen',
+        params: {
+          'p_vi_do': latitude,
+          'p_kinh_do': longitude,
+          'p_do_chinh_xac_met': accuracyMeters,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw TransportDriverException(_message(error));
+    }
+  }
+
   String _message(PostgrestException error) {
     if (error.code == 'PGRST202') {
       return 'Chức năng lộ trình tài xế chưa được cài trên Supabase. Hãy chạy patch_transport_driver_route_stages.sql.';

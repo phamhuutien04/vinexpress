@@ -805,6 +805,9 @@ class _RecentOrderRow extends StatelessWidget {
     final canTrack = const {
       'CHO_LAY_HANG',
       'DA_LAY_HANG',
+      'DANG_VAN_CHUYEN',
+      'DEN_KHO_TRUNG_CHUYEN',
+      'DEN_KHO_DICH',
       'GIAO_CHO_SHIPPER',
       'DANG_GIAO_HANG',
     }.contains(statusValue);
