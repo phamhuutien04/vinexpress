@@ -1775,6 +1775,63 @@ GRANT SELECT ON public.nhan_vien TO authenticated;
 
 NOTIFY pgrst, 'reload schema';
 
+-- ============================================================
+-- SOURCE: supabase/patch_warehouse_unseal_trip.sql
+-- Nhân viên kho đến mở niêm phong sau khi tài xế xác nhận đã đến.
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.nhan_vien_kho_mo_niem_phong_chuyen(
+  p_chuyen_xe_id BIGINT,p_ma_niem_phong TEXT
+) RETURNS VARCHAR LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE
+  v_nhan_vien public.nhan_vien%ROWTYPE;
+  v_niem_phong public.niem_phong_xe%ROWTYPE;
+  v_ma TEXT := UPPER(BTRIM(COALESCE(p_ma_niem_phong,'')));
+  v_trang_thai_chuyen VARCHAR;
+BEGIN
+  SELECT nv.* INTO v_nhan_vien FROM public.nhan_vien nv
+  WHERE nv.auth_user_id=auth.uid() AND nv.vai_tro='NHAN_VIEN_KHO'
+    AND nv.trang_thai_duyet='DA_DUYET' AND nv.trang_thai='HOAT_DONG';
+  IF NOT FOUND OR v_nhan_vien.kho_hang_id IS NULL THEN
+    RAISE EXCEPTION 'Nhân viên chưa được gán kho';
+  END IF;
+  IF v_ma='' THEN RAISE EXCEPTION 'Hãy nhập mã niêm phong trên xe'; END IF;
+
+  SELECT cx.trang_thai INTO v_trang_thai_chuyen
+  FROM public.chuyen_xe cx
+  JOIN public.chuyen_xe_chang c ON c.chuyen_xe_id=cx.id AND c.thu_tu_chuyen=1
+  WHERE cx.id=p_chuyen_xe_id AND c.kho_den_id=v_nhan_vien.kho_hang_id;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Chuyến xe không đến kho của bạn'; END IF;
+  IF v_trang_thai_chuyen<>'DA_DEN' THEN
+    RAISE EXCEPTION 'Tài xế phải xác nhận đã đến kho trước khi mở niêm phong';
+  END IF;
+
+  SELECT np.* INTO v_niem_phong FROM public.niem_phong_xe np
+  WHERE np.chuyen_xe_id=p_chuyen_xe_id AND np.trang_thai='DA_NIEM_PHONG'
+  ORDER BY np.thoi_gian_niem_phong DESC LIMIT 1 FOR UPDATE;
+  IF NOT FOUND THEN
+    IF EXISTS(SELECT 1 FROM public.niem_phong_xe np
+      WHERE np.chuyen_xe_id=p_chuyen_xe_id AND np.trang_thai='DA_MO') THEN
+      RAISE EXCEPTION 'Niêm phong của chuyến đã được mở';
+    END IF;
+    RAISE EXCEPTION 'Không tìm thấy niêm phong đang đóng của chuyến';
+  END IF;
+  IF UPPER(BTRIM(v_niem_phong.ma_niem_phong))<>v_ma THEN
+    RAISE EXCEPTION 'Mã niêm phong không khớp với mã đã ghi nhận';
+  END IF;
+
+  UPDATE public.niem_phong_xe
+  SET trang_thai='DA_MO',kho_mo_niem_phong_id=v_nhan_vien.kho_hang_id,
+    nguoi_mo_id=v_nhan_vien.id,thoi_gian_mo=NOW()
+  WHERE id=v_niem_phong.id;
+  RETURN v_niem_phong.ma_niem_phong;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.nhan_vien_kho_mo_niem_phong_chuyen(BIGINT,TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_mo_niem_phong_chuyen(BIGINT,TEXT) TO authenticated;
+NOTIFY pgrst, 'reload schema';
+
 -- Sau khi kiểm tra hồ sơ, quản trị viên duyệt tài khoản bằng câu lệnh sau:
 -- UPDATE public.nhan_vien SET trang_thai_duyet = 'DA_DUYET'
 -- WHERE email = 'email-nhan-vien@example.com';
@@ -6186,6 +6243,12 @@ BEGIN
     v_trang_thai := 'DA_XEP_HANG';
   ELSIF v_thao_tac='NHAP_KHO' THEN
     IF v_chang.kho_den_id<>v_nv.kho_hang_id THEN RAISE EXCEPTION 'Chuyến xe không đến kho của bạn'; END IF;
+    IF EXISTS(
+      SELECT 1 FROM public.niem_phong_xe np
+      WHERE np.chuyen_xe_id=p_chuyen_xe_id AND np.trang_thai='DA_NIEM_PHONG'
+    ) THEN
+      RAISE EXCEPTION 'Hãy mở niêm phong xe trước khi quét dỡ kiện';
+    END IF;
     IF NOT EXISTS(SELECT 1 FROM public.chi_tiet_chuyen_xe ct WHERE ct.chuyen_xe_id=p_chuyen_xe_id AND ct.don_hang_id=v_don.id) THEN
       RAISE EXCEPTION 'Kiện hàng không thuộc chuyến xe này';
     END IF;
@@ -6425,6 +6488,12 @@ BEGIN
     v_trang_thai := 'DA_XEP_HANG';
   ELSIF v_thao_tac='NHAP_KHO' THEN
     IF v_chang.kho_den_id<>v_nv.kho_hang_id THEN RAISE EXCEPTION 'Chuyến xe không đến kho của bạn'; END IF;
+    IF EXISTS(
+      SELECT 1 FROM public.niem_phong_xe np
+      WHERE np.chuyen_xe_id=p_chuyen_xe_id AND np.trang_thai='DA_NIEM_PHONG'
+    ) THEN
+      RAISE EXCEPTION 'Hãy mở niêm phong xe trước khi quét dỡ kiện';
+    END IF;
     IF NOT EXISTS(SELECT 1 FROM public.chi_tiet_chuyen_xe ct WHERE ct.chuyen_xe_id=p_chuyen_xe_id AND ct.don_hang_id=v_don.id) THEN
       RAISE EXCEPTION 'Kiện hàng không thuộc chuyến xe này';
     END IF;
@@ -6650,6 +6719,8 @@ CREATE OR REPLACE FUNCTION public.quan_ly_kho_tong_quan_theo_kho(p_kho_id BIGINT
 RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path=public AS $$
 DECLARE v_kho public.kho_hang%ROWTYPE; v_quan_ly_ten TEXT;
   v_tinh_thanh VARCHAR; v_phuong_xa VARCHAR;
+  v_don_tai_kho BIGINT; v_don_cho_xu_ly BIGINT;
+  v_dang_van_chuyen BIGINT; v_da_giao BIGINT;
 BEGIN
   IF NOT public.quan_ly_kho_duoc_quan_ly(p_kho_id) THEN
     RAISE EXCEPTION 'Kho không thuộc phạm vi quản lý';
@@ -6660,19 +6731,47 @@ BEGIN
   SELECT kv.tinh_thanh,kv.phuong_xa INTO v_tinh_thanh,v_phuong_xa
   FROM public.khu_vuc kv WHERE kv.id=v_kho.khu_vuc_id;
 
+  SELECT COUNT(*) INTO v_don_tai_kho FROM public.don_hang dh
+  WHERE dh.kho_hien_tai_id=v_kho.id;
+
+  SELECT COUNT(*) INTO v_don_cho_xu_ly FROM (
+    SELECT dh.id AS don_hang_id FROM public.don_hang dh
+    WHERE (dh.kho_gui_id=v_kho.id OR dh.kho_dich_id=v_kho.id OR dh.kho_hien_tai_id=v_kho.id)
+      AND dh.trang_thai IN ('DA_LAY_HANG','DEN_KHO_TRUNG_CHUYEN','DEN_KHO_DICH')
+    UNION
+    SELECT ct.don_hang_id FROM public.chi_tiet_chuyen_xe ct
+    JOIN public.chuyen_xe cx ON cx.id=ct.chuyen_xe_id
+    JOIN public.chuyen_xe_chang c ON c.chuyen_xe_id=cx.id
+    JOIN public.don_hang dh ON dh.id=ct.don_hang_id
+    WHERE c.kho_den_id=v_kho.id AND cx.trang_thai IN ('DA_DEN','DA_HOAN_THANH')
+      AND (ct.trang_thai<>'DA_DO_HANG' OR dh.kho_hien_tai_id IS DISTINCT FROM v_kho.id)
+  ) cho_xu_ly;
+
+  SELECT COUNT(*) INTO v_dang_van_chuyen FROM (
+    SELECT dh.id AS don_hang_id FROM public.don_hang dh
+    WHERE (dh.kho_gui_id=v_kho.id OR dh.kho_dich_id=v_kho.id)
+      AND dh.trang_thai='DANG_VAN_CHUYEN'
+    UNION
+    SELECT ct.don_hang_id FROM public.chi_tiet_chuyen_xe ct
+    JOIN public.chuyen_xe cx ON cx.id=ct.chuyen_xe_id
+    JOIN public.chuyen_xe_chang c ON c.chuyen_xe_id=cx.id
+    WHERE c.kho_den_id=v_kho.id AND cx.trang_thai='DANG_DI'
+      AND ct.trang_thai='DANG_VAN_CHUYEN'
+  ) dang_di;
+
+  SELECT COUNT(*) INTO v_da_giao FROM public.don_hang dh
+  WHERE (dh.kho_gui_id=v_kho.id OR dh.kho_dich_id=v_kho.id)
+    AND dh.trang_thai='DA_GIAO_HANG';
+
   RETURN jsonb_build_object(
     'quan_ly_ten',v_quan_ly_ten,'kho_id',v_kho.id,
     'ma_kho',v_kho.ma_kho,'ten_kho',v_kho.ten_kho,
     'dia_chi',v_kho.dia_chi,'cap_kho',v_kho.cap_kho,
     'tinh_thanh',v_tinh_thanh,'phuong_xa',v_phuong_xa,
-    'don_tai_kho',(SELECT COUNT(*) FROM public.don_hang dh WHERE dh.kho_hien_tai_id=v_kho.id),
-    'don_cho_xu_ly',(SELECT COUNT(*) FROM public.don_hang dh WHERE
-      (dh.kho_gui_id=v_kho.id OR dh.kho_dich_id=v_kho.id OR dh.kho_hien_tai_id=v_kho.id)
-      AND dh.trang_thai IN ('DA_LAY_HANG','DEN_KHO_TRUNG_CHUYEN','DEN_KHO_DICH')),
-    'dang_van_chuyen',(SELECT COUNT(*) FROM public.don_hang dh WHERE
-      (dh.kho_gui_id=v_kho.id OR dh.kho_dich_id=v_kho.id) AND dh.trang_thai='DANG_VAN_CHUYEN'),
-    'da_giao',(SELECT COUNT(*) FROM public.don_hang dh WHERE
-      (dh.kho_gui_id=v_kho.id OR dh.kho_dich_id=v_kho.id) AND dh.trang_thai='DA_GIAO_HANG')
+    'don_tai_kho',v_don_tai_kho,
+    'don_cho_xu_ly',v_don_cho_xu_ly,
+    'dang_van_chuyen',v_dang_van_chuyen,
+    'da_giao',v_da_giao
   );
 END;
 $$;

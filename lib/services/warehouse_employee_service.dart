@@ -84,6 +84,21 @@ class WarehouseEmployeeService {
     }
   }
 
+  Future<String> unsealTrip({
+    required int tripId,
+    required String sealCode,
+  }) async {
+    try {
+      final data = await _client.rpc(
+        'nhan_vien_kho_mo_niem_phong_chuyen',
+        params: {'p_chuyen_xe_id': tripId, 'p_ma_niem_phong': sealCode.trim()},
+      );
+      return '$data';
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
   Future<String> receiveParcel(String code) async {
     try {
       final data = await _client.rpc(

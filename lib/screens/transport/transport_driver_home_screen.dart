@@ -431,7 +431,7 @@ class _TripCard extends StatelessWidget {
                     ),
                     if (trip['da_niem_phong'] == true)
                       Tooltip(
-                        message: 'Mã niêm phong: ${trip['ma_niem_phong']}',
+                        message: 'Xe đã được niêm phong',
                         child: const Icon(
                           Icons.lock_rounded,
                           color: AppColors.success,
@@ -452,7 +452,7 @@ class _TripCard extends StatelessWidget {
                   ),
                 const SizedBox(height: 4),
                 if (trip['da_niem_phong'] == true) ...[
-                  _SealInformation(code: '${trip['ma_niem_phong'] ?? ''}'),
+                  const _SealInformation(),
                   const SizedBox(height: 12),
                 ],
                 _TripActions(
@@ -772,9 +772,7 @@ class _TripStatusLabel extends StatelessWidget {
 }
 
 class _SealInformation extends StatelessWidget {
-  const _SealInformation({required this.code});
-
-  final String code;
+  const _SealInformation();
 
   @override
   Widget build(BuildContext context) => Container(
@@ -790,8 +788,8 @@ class _SealInformation extends StatelessWidget {
         const SizedBox(width: 9),
         Expanded(
           child: Text(
-            code.isEmpty ? 'Xe đã niêm phong' : 'Mã niêm phong: $code',
-            style: const TextStyle(
+            'Xe đã được niêm phong',
+            style: TextStyle(
               color: AppColors.success,
               fontWeight: FontWeight.w700,
             ),
@@ -925,7 +923,6 @@ class _TripHistoryViewState extends State<_TripHistoryView> {
         trip['bien_so_xe'],
         trip['kho_di_ten'],
         trip['kho_den_ten'],
-        trip['ma_niem_phong'],
       ].join(' ').toLowerCase();
       return searchable.contains(query);
     }).toList();
@@ -1381,7 +1378,7 @@ class _TripHistoryDetails extends StatelessWidget {
                 _HistoryTimeLine(trip: trip),
                 if (trip['da_niem_phong'] == true) ...[
                   const SizedBox(height: 14),
-                  _SealInformation(code: '${trip['ma_niem_phong'] ?? ''}'),
+                  const _SealInformation(),
                 ],
                 const SizedBox(height: 22),
                 Text(

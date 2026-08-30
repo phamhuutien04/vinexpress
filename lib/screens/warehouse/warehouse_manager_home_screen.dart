@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
@@ -27,11 +30,94 @@ class _WarehouseManagerHomeScreenState
   List<Map<String, dynamic>> _regions = [];
   List<Map<String, dynamic>> _trips = [];
   int? _warehouseId;
+  bool _refreshing = false;
+  RealtimeChannel? _warehouseChannel;
+  Timer? _realtimeDebounce;
+  Timer? _pollingTimer;
 
   @override
   void initState() {
     super.initState();
     _load();
+    _subscribeWarehouseRealtime();
+    _pollingTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _refreshWarehouseData(),
+    );
+  }
+
+  void _subscribeWarehouseRealtime() {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    _warehouseChannel = Supabase.instance.client
+        .channel('warehouse-overview-$userId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chuyen_xe',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chuyen_xe_chang',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'chi_tiet_chuyen_xe',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'don_hang',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleRealtimeRefresh() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = Timer(
+      const Duration(milliseconds: 300),
+      _refreshWarehouseData,
+    );
+  }
+
+  Future<void> _refreshWarehouseData() async {
+    final warehouseId = _warehouseId;
+    if (!mounted || warehouseId == null || _refreshing || _loading) return;
+    _refreshing = true;
+    try {
+      final values = await Future.wait([
+        _service.overview(warehouseId),
+        _service.orders(warehouseId),
+        _service.trips(warehouseId),
+      ]);
+      if (!mounted || warehouseId != _warehouseId) return;
+      setState(() {
+        _overview = values[0] as Map<String, dynamic>;
+        _orders = values[1] as List<Map<String, dynamic>>;
+        _trips = values[2] as List<Map<String, dynamic>>;
+        _error = null;
+      });
+    } on WarehouseManagerException {
+      // Giữ dữ liệu hiện tại khi lần đồng bộ nền tạm thời thất bại.
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _realtimeDebounce?.cancel();
+    _pollingTimer?.cancel();
+    final channel = _warehouseChannel;
+    if (channel != null) {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -80,6 +166,34 @@ class _WarehouseManagerHomeScreenState
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  Map<String, dynamic> _overviewForDisplay() {
+    final data = Map<String, dynamic>.from(_overview);
+    final warehouseId = _warehouseId;
+    if (warehouseId == null) return data;
+
+    var arrivedPackages = 0;
+    var incomingPackages = 0;
+    for (final trip in _trips) {
+      if ((trip['kho_den_id'] as num?)?.toInt() != warehouseId) continue;
+      final packageCount = (trip['so_kien'] as num?)?.toInt() ?? 0;
+      if (trip['trang_thai'] == 'DA_DEN') {
+        arrivedPackages += packageCount;
+      } else if (trip['trang_thai'] == 'DANG_DI') {
+        incomingPackages += packageCount;
+      }
+    }
+
+    final serverPending = (data['don_cho_xu_ly'] as num?)?.toInt() ?? 0;
+    final serverIncoming = (data['dang_van_chuyen'] as num?)?.toInt() ?? 0;
+    if (arrivedPackages > serverPending) {
+      data['don_cho_xu_ly'] = arrivedPackages;
+    }
+    if (incomingPackages > serverIncoming) {
+      data['dang_van_chuyen'] = incomingPackages;
+    }
+    return data;
   }
 
   @override
@@ -149,7 +263,7 @@ class _WarehouseManagerHomeScreenState
                 child: IndexedStack(
                   index: _tab,
                   children: [
-                    _Overview(data: _overview),
+                    _Overview(data: _overviewForDisplay()),
                     _Orders(items: _orders),
                     _Employees(items: _employees),
                     _WarehouseTrips(items: _trips),
