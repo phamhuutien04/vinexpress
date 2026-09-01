@@ -81,6 +81,21 @@ class WarehouseManagerService {
     }
   }
 
+  Future<int?> defaultReturnWarehouse({
+    required int warehouseId,
+    required int vehicleId,
+  }) async {
+    try {
+      final data = await _client.rpc(
+        'quan_ly_kho_chang_ve_mac_dinh',
+        params: {'p_kho_id': warehouseId, 'p_xe_id': vehicleId},
+      );
+      return (data as num?)?.toInt();
+    } on PostgrestException catch (error) {
+      throw WarehouseManagerException(_message(error));
+    }
+  }
+
   Future<List<Map<String, dynamic>>> trips(int warehouseId) async {
     try {
       final data = await _client.rpc(
@@ -95,20 +110,33 @@ class WarehouseManagerService {
 
   Future<void> createTrip({
     required int originWarehouseId,
-    required int destinationWarehouseId,
+    required List<int> destinationWarehouseIds,
     required int vehicleId,
     DateTime? expectedAt,
   }) async {
     try {
-      await _client.rpc(
-        'quan_ly_kho_gan_xe_tao_chuyen',
-        params: {
-          'p_kho_di_id': originWarehouseId,
-          'p_kho_den_id': destinationWarehouseId,
-          'p_xe_id': vehicleId,
-          'p_ngay_du_kien': expectedAt?.toUtc().toIso8601String(),
-        },
-      );
+      final expectedAtValue = expectedAt?.toUtc().toIso8601String();
+      if (destinationWarehouseIds.length == 1) {
+        await _client.rpc(
+          'quan_ly_kho_gan_xe_tao_chuyen',
+          params: {
+            'p_kho_di_id': originWarehouseId,
+            'p_kho_den_id': destinationWarehouseIds.single,
+            'p_xe_id': vehicleId,
+            'p_ngay_du_kien': expectedAtValue,
+          },
+        );
+      } else {
+        await _client.rpc(
+          'quan_ly_kho_gan_xe_tao_tuyen',
+          params: {
+            'p_kho_di_id': originWarehouseId,
+            'p_kho_den_ids': destinationWarehouseIds,
+            'p_xe_id': vehicleId,
+            'p_ngay_du_kien': expectedAtValue,
+          },
+        );
+      }
     } on PostgrestException catch (error) {
       throw WarehouseManagerException(_message(error));
     }

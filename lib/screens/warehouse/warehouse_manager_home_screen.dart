@@ -650,15 +650,80 @@ class _CreateTripDialog extends StatefulWidget {
 
 class _CreateTripDialogState extends State<_CreateTripDialog> {
   int? _vehicleId;
-  int? _destinationId;
+  final List<int> _destinationIds = [];
+  int? _requiredReturnWarehouseId;
   DateTime? _expectedAt;
   bool _saving = false;
   List<Map<String, dynamic>> get _availableVehicles => widget.vehicles
-      .where((item) => item['trang_thai'] == 'SAN_SANG')
+      .where(
+        (item) =>
+            item['trang_thai'] == 'SAN_SANG' ||
+            item['trang_thai'] == 'CHO_CHANG_VE',
+      )
       .toList();
-  List<Map<String, dynamic>> get _destinations => widget.warehouses
-      .where((item) => (item['id'] as num).toInt() != widget.originWarehouseId)
-      .toList();
+  Map<String, dynamic>? get _selectedVehicle => _availableVehicles
+      .where((item) => (item['id'] as num).toInt() == _vehicleId)
+      .firstOrNull;
+  bool get _isReturnAssignment =>
+      _selectedVehicle?['trang_thai'] == 'CHO_CHANG_VE';
+  List<Map<String, dynamic>> get _destinations {
+    if (!_isReturnAssignment) return widget.warehouses;
+    return widget.warehouses
+        .where(
+          (item) =>
+              (item['cap_kho'] as num?)?.toInt() == 2 &&
+              (item['kho_trung_tam_id'] as num?)?.toInt() ==
+                  widget.originWarehouseId,
+        )
+        .toList();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_availableVehicles.length == 1) {
+        _selectVehicle((_availableVehicles.first['id'] as num).toInt());
+      }
+    });
+  }
+
+  Future<void> _selectVehicle(int? value) async {
+    setState(() {
+      _vehicleId = value;
+      _destinationIds.clear();
+      _requiredReturnWarehouseId = null;
+    });
+    if (value == null) return;
+    final vehicle = _availableVehicles
+        .where((item) => (item['id'] as num).toInt() == value)
+        .firstOrNull;
+    if (vehicle?['trang_thai'] != 'CHO_CHANG_VE') return;
+    try {
+      final warehouseId = await widget.service.defaultReturnWarehouse(
+        warehouseId: widget.originWarehouseId,
+        vehicleId: value,
+      );
+      if (!mounted || _vehicleId != value || warehouseId == null) return;
+      if (!_destinations.any(
+        (item) => (item['id'] as num).toInt() == warehouseId,
+      )) {
+        return;
+      }
+      setState(() {
+        _requiredReturnWarehouseId = warehouseId;
+        _destinationIds.add(warehouseId);
+      });
+    } on WarehouseManagerException catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(error.message),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
 
   Future<void> _pickDate() async {
     final value = await showDatePicker(
@@ -671,7 +736,7 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
   }
 
   Future<void> _submit() async {
-    if (_vehicleId == null || _destinationId == null) {
+    if (_vehicleId == null || _destinationIds.isEmpty) {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Hãy chọn xe và kho đến')));
@@ -681,7 +746,7 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
     try {
       await widget.service.createTrip(
         originWarehouseId: widget.originWarehouseId,
-        destinationWarehouseId: _destinationId!,
+        destinationWarehouseIds: List<int>.from(_destinationIds),
         vehicleId: _vehicleId!,
         expectedAt: _expectedAt,
       );
@@ -701,7 +766,9 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
 
   @override
   Widget build(BuildContext context) => AlertDialog(
-    title: const Text('Gán xe tạo chuyến'),
+    title: Text(
+      _isReturnAssignment ? 'Gán chặng quay về' : 'Gán xe tạo chuyến',
+    ),
     content: SizedBox(
       width: 480,
       child: Column(
@@ -711,7 +778,7 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
             initialValue: _vehicleId,
             isExpanded: true,
             decoration: const InputDecoration(
-              labelText: 'Xe sẵn sàng',
+              labelText: 'Xe đang có tại kho',
               prefixIcon: Icon(Icons.local_shipping_outlined),
             ),
             items: _availableVehicles
@@ -719,38 +786,63 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
                   (item) => DropdownMenuItem(
                     value: (item['id'] as num).toInt(),
                     child: Text(
-                      '${item['bien_so_xe']} • ${item['ten_tai_xe']} • ${item['tai_trong']} kg',
+                      '${item['bien_so_xe']} • ${item['ten_tai_xe']}'
+                      '${item['trang_thai'] == 'CHO_CHANG_VE' ? ' • Chờ chặng về' : ' • ${item['tai_trong']} kg'}',
                     ),
                   ),
                 )
                 .toList(),
-            onChanged: _saving
-                ? null
-                : (value) => setState(() => _vehicleId = value),
+            onChanged: _saving ? null : _selectVehicle,
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<int>(
-            initialValue: _destinationId,
-            isExpanded: true,
+          InputDecorator(
             decoration: const InputDecoration(
-              labelText: 'Kho đến',
-              prefixIcon: Icon(Icons.warehouse_outlined),
+              labelText: 'Các kho cấp 2 theo thứ tự xe ghé',
+              prefixIcon: Icon(Icons.route_outlined),
+              alignLabelWithHint: true,
             ),
-            items: _destinations
-                .map(
-                  (item) => DropdownMenuItem(
-                    value: (item['id'] as num).toInt(),
-                    child: Text(
-                      '${item['ten_kho']} • Cấp ${item['cap_kho']}',
-                      overflow: TextOverflow.ellipsis,
-                    ),
+            child: _destinations.isEmpty
+                ? const Text('Chưa có kho cấp 2 phù hợp')
+                : Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _destinations.map((item) {
+                      final id = (item['id'] as num).toInt();
+                      final selectedIndex = _destinationIds.indexOf(id);
+                      final selected = selectedIndex >= 0;
+                      final required = id == _requiredReturnWarehouseId;
+                      return FilterChip(
+                        selected: selected,
+                        onSelected: _saving || required
+                            ? null
+                            : (value) => setState(() {
+                                if (value) {
+                                  _destinationIds.add(id);
+                                } else {
+                                  _destinationIds.remove(id);
+                                }
+                              }),
+                        avatar: selected
+                            ? CircleAvatar(child: Text('${selectedIndex + 1}'))
+                            : const Icon(Icons.warehouse_outlined, size: 18),
+                        label: Text(
+                          '${item['ten_kho']}${required ? ' • Kho về mặc định' : ''}',
+                        ),
+                      );
+                    }).toList(),
                   ),
-                )
-                .toList(),
-            onChanged: _saving
-                ? null
-                : (value) => setState(() => _destinationId = value),
           ),
+          if (_destinationIds.length > 1)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Xe sẽ ghé lần lượt theo số thứ tự trên từng kho.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ),
           if (_destinations.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 10),
@@ -784,7 +876,9 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
           if (_availableVehicles.isEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 12),
-              child: Text('Kho chưa có xe ở trạng thái sẵn sàng'),
+              child: Text(
+                'Kho chưa có xe sẵn sàng hoặc xe cấp 2 đang chờ chặng về',
+              ),
             ),
         ],
       ),
@@ -796,10 +890,19 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
       ),
       FilledButton(
         onPressed:
-            _saving || _availableVehicles.isEmpty || _destinations.isEmpty
+            _saving ||
+                _availableVehicles.isEmpty ||
+                _destinations.isEmpty ||
+                _destinationIds.isEmpty
             ? null
             : _submit,
-        child: Text(_saving ? 'Đang tạo...' : 'Tạo chuyến'),
+        child: Text(
+          _saving
+              ? 'Đang xử lý...'
+              : _isReturnAssignment
+              ? 'Gán chặng về'
+              : 'Tạo chuyến',
+        ),
       ),
     ],
   );
