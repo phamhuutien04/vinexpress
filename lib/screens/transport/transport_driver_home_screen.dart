@@ -352,9 +352,19 @@ class _TripCard extends StatelessWidget {
     final stages = List<Map<String, dynamic>>.from(
       (trip['chang_duong'] as List?) ?? const [],
     );
+    final hasWaitingStage = stages.any(
+      (stage) => stage['trang_thai'] == 'CHO_KHOI_HANH',
+    );
+    final hasCompletedStage = stages.any(
+      (stage) => stage['trang_thai'] == 'DA_DEN',
+    );
     final next = switch (status) {
-      'CHO_KHOI_HANH' || 'DANG_XEP_HANG' => ('DANG_DI', 'Bắt đầu chạy'),
+      'CHO_KHOI_HANH' || 'DANG_XEP_HANG' => (
+        'DANG_DI',
+        hasCompletedStage ? 'Chạy chặng quay về' : 'Bắt đầu chạy',
+      ),
       'DANG_DI' => ('DA_DEN', 'Đã đến kho'),
+      'DA_DEN' when hasWaitingStage => ('DANG_DI', 'Chạy chặng quay về'),
       'DA_DEN' => ('DA_HOAN_THANH', 'Hoàn thành chuyến'),
       _ => null,
     };
@@ -446,10 +456,7 @@ class _TripCard extends StatelessWidget {
                     to: '${trip['kho_den_ten'] ?? 'Chưa xác định'}',
                   )
                 else
-                  ...stages.map(
-                    (stage) =>
-                        _RouteStage(stage: stage, currentTripStatus: status),
-                  ),
+                  ...stages.map((stage) => _RouteStage(stage: stage)),
                 const SizedBox(height: 4),
                 if (trip['da_niem_phong'] == true) ...[
                   const _SealInformation(),
@@ -486,10 +493,9 @@ class _TripCard extends StatelessWidget {
 }
 
 class _RouteStage extends StatelessWidget {
-  const _RouteStage({required this.stage, required this.currentTripStatus});
+  const _RouteStage({required this.stage});
 
   final Map<String, dynamic> stage;
-  final String currentTripStatus;
 
   @override
   Widget build(BuildContext context) {
@@ -514,9 +520,9 @@ class _RouteStage extends StatelessWidget {
               ),
               const Spacer(),
               Text(
-                _stageStatus(stageStatus, currentTripStatus),
+                _stageStatus(stageStatus),
                 style: TextStyle(
-                  color: _stageColor(stageStatus, currentTripStatus),
+                  color: _stageColor(stageStatus),
                   fontWeight: FontWeight.w700,
                   fontSize: 13,
                 ),
@@ -571,19 +577,15 @@ class _RouteStage extends StatelessWidget {
     );
   }
 
-  static String _stageStatus(String stageStatus, String tripStatus) {
+  static String _stageStatus(String stageStatus) {
     if (stageStatus == 'DA_DEN') return 'Đã đến';
-    if (stageStatus == 'DANG_DI' || tripStatus == 'DANG_DI') {
-      return 'Đang di chuyển';
-    }
+    if (stageStatus == 'DANG_DI') return 'Đang di chuyển';
     return 'Chờ khởi hành';
   }
 
-  static Color _stageColor(String stageStatus, String tripStatus) {
+  static Color _stageColor(String stageStatus) {
     if (stageStatus == 'DA_DEN') return AppColors.success;
-    if (stageStatus == 'DANG_DI' || tripStatus == 'DANG_DI') {
-      return AppColors.primary;
-    }
+    if (stageStatus == 'DANG_DI') return AppColors.primary;
     return AppColors.textSecondary;
   }
 
@@ -677,6 +679,8 @@ class _TripActions extends StatelessWidget {
         };
     final destination =
         '${routeStage['kho_den_dia_chi'] ?? routeStage['kho_den_ten'] ?? ''}';
+    final departureBlocked =
+        next?.$1 == 'DANG_DI' && routeStage['da_niem_phong'] != true;
     final directions = OutlinedButton.icon(
       onPressed: destination.trim().isEmpty
           ? null
@@ -694,9 +698,21 @@ class _TripActions extends StatelessWidget {
     final update = next == null
         ? null
         : FilledButton.icon(
-            onPressed: () => onUpdate((trip['id'] as num).toInt(), next!.$1),
-            icon: Icon(_actionIcon(next!.$1)),
-            label: Text(next!.$2),
+            onPressed: departureBlocked
+                ? null
+                : () => onUpdate((trip['id'] as num).toInt(), next!.$1),
+            icon: Icon(
+              departureBlocked
+                  ? Icons.lock_outline_rounded
+                  : _actionIcon(next!.$1),
+            ),
+            label: Text(
+              departureBlocked
+                  ? (stages.any((stage) => stage['trang_thai'] == 'DA_DEN')
+                        ? 'Chờ kho niêm phong chặng về'
+                        : 'Chờ kho niêm phong xe')
+                  : next!.$2,
+            ),
           );
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -1209,6 +1225,16 @@ class _HistoryTripTile extends StatelessWidget {
         trip['ngay_den_thuc_te'] ??
         trip['ngay_khoi_hanh'] ??
         trip['ngay_du_kien'];
+    final stages = List<Map<String, dynamic>>.from(
+      (trip['chang_duong'] as List?) ?? const [],
+    );
+    final routeNames = <String>[
+      if (stages.isNotEmpty) '${stages.first['kho_di_ten'] ?? 'Chưa xác định'}',
+      for (final stage in stages) '${stage['kho_den_ten'] ?? 'Chưa xác định'}',
+    ];
+    final routeLabel = routeNames.isEmpty
+        ? '${trip['kho_di_ten'] ?? 'Chưa xác định'} → ${trip['kho_den_ten'] ?? 'Chưa xác định'}'
+        : routeNames.join(' → ');
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -1256,7 +1282,7 @@ class _HistoryTripTile extends StatelessWidget {
                     _TripStatusLabel(status: status),
                     const SizedBox(height: 9),
                     Text(
-                      '${trip['kho_di_ten'] ?? 'Chưa xác định'} → ${trip['kho_den_ten'] ?? 'Chưa xác định'}',
+                      routeLabel,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(fontWeight: FontWeight.w600),
@@ -1394,10 +1420,7 @@ class _TripHistoryDetails extends StatelessWidget {
                     to: '${trip['kho_den_ten'] ?? 'Chưa xác định'}',
                   )
                 else
-                  ...stages.map(
-                    (stage) =>
-                        _RouteStage(stage: stage, currentTripStatus: status),
-                  ),
+                  ...stages.map((stage) => _RouteStage(stage: stage)),
               ],
             ),
           ),

@@ -640,7 +640,14 @@ class _TripScannerState extends State<_TripScanner> {
                                   title: 'Xếp lên xe',
                                   subtitle: 'Quét kiện rời khỏi kho',
                                   selected: _action == 'XEP_LEN_XE',
-                                  onTap: _saving
+                                  enabled:
+                                      selectedTrip == null ||
+                                      selectedTrip['thao_tac'] == 'XEP_LEN_XE',
+                                  onTap:
+                                      _saving ||
+                                          (selectedTrip != null &&
+                                              selectedTrip['thao_tac'] !=
+                                                  'XEP_LEN_XE')
                                       ? null
                                       : () => setState(
                                           () => _action = 'XEP_LEN_XE',
@@ -651,7 +658,14 @@ class _TripScannerState extends State<_TripScanner> {
                                   title: 'Dỡ xe nhập kho',
                                   subtitle: 'Quét kiện vừa đến kho',
                                   selected: _action == 'NHAP_KHO',
-                                  onTap: _saving
+                                  enabled:
+                                      selectedTrip == null ||
+                                      selectedTrip['thao_tac'] == 'NHAP_KHO',
+                                  onTap:
+                                      _saving ||
+                                          (selectedTrip != null &&
+                                              selectedTrip['thao_tac'] !=
+                                                  'NHAP_KHO')
                                       ? null
                                       : () => setState(
                                           () => _action = 'NHAP_KHO',
@@ -1049,6 +1063,7 @@ class _WarehouseActionTile extends StatelessWidget {
     required this.title,
     required this.subtitle,
     required this.selected,
+    this.enabled = true,
     required this.onTap,
   });
 
@@ -1056,69 +1071,76 @@ class _WarehouseActionTile extends StatelessWidget {
   final String title;
   final String subtitle;
   final bool selected;
+  final bool enabled;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: selected ? AppColors.primary10 : colors.surface,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
+    return AnimatedOpacity(
+      duration: const Duration(milliseconds: 180),
+      opacity: enabled ? 1 : 0.45,
+      child: Material(
+        color: selected ? AppColors.primary10 : colors.surface,
         borderRadius: BorderRadius.circular(16),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.all(14),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: selected ? AppColors.primary : colors.outlineVariant,
-              width: selected ? 1.6 : 1,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(16),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: selected ? AppColors.primary : colors.outlineVariant,
+                width: selected ? 1.6 : 1,
+              ),
             ),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: selected
-                      ? AppColors.primary
-                      : colors.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(13),
+            child: Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.primary
+                        : colors.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(13),
+                  ),
+                  child: Icon(
+                    icon,
+                    color: selected ? Colors.white : colors.onSurfaceVariant,
+                  ),
                 ),
-                child: Icon(
-                  icon,
-                  color: selected ? Colors.white : colors.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w800,
-                        color: selected ? AppColors.primary : colors.onSurface,
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          color: selected
+                              ? AppColors.primary
+                              : colors.onSurface,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context).textTheme.bodySmall,
-                    ),
-                  ],
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-              if (selected)
-                const Icon(
-                  Icons.check_circle_rounded,
-                  color: AppColors.primary,
-                ),
-            ],
+                if (selected)
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: AppColors.primary,
+                  ),
+              ],
+            ),
           ),
         ),
       ),

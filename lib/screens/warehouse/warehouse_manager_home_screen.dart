@@ -266,7 +266,7 @@ class _WarehouseManagerHomeScreenState
                     _Overview(data: _overviewForDisplay()),
                     _Orders(items: _orders),
                     _Employees(items: _employees),
-                    _WarehouseTrips(items: _trips),
+                    _WarehouseTrips(items: _trips, warehouseId: _warehouseId),
                     _Account(data: _overview, onLogout: _logout),
                   ],
                 ),
@@ -587,8 +587,26 @@ class _Employees extends StatelessWidget {
 }
 
 class _WarehouseTrips extends StatelessWidget {
-  const _WarehouseTrips({required this.items});
+  const _WarehouseTrips({required this.items, required this.warehouseId});
   final List<Map<String, dynamic>> items;
+  final int? warehouseId;
+
+  String _status(Map<String, dynamic> trip) {
+    final status = '${trip['trang_thai']}';
+    final destinationId = (trip['kho_den_id'] as num?)?.toInt();
+    final originId = (trip['kho_di_id'] as num?)?.toInt();
+    return switch (status) {
+      'DA_DEN' when destinationId == warehouseId => 'Đang dỡ hàng',
+      'DANG_XEP_HANG' when originId == warehouseId => 'Đang xếp hàng',
+      'CHO_KHOI_HANH' => 'Chờ khởi hành',
+      'DANG_DI' => 'Đang vận chuyển',
+      'DA_DEN' => 'Đã đến kho',
+      'DA_HOAN_THANH' => 'Đã hoàn thành',
+      'DA_HUY' => 'Đã hủy',
+      _ => status,
+    };
+  }
+
   @override
   Widget build(BuildContext context) => items.isEmpty
       ? const Center(child: Text('Chưa có chuyến xe của kho'))
@@ -608,7 +626,7 @@ class _WarehouseTrips extends StatelessWidget {
                   '${trip['ten_kho_di']} → ${trip['ten_kho_den']}\nTài xế: ${trip['ten_tai_xe'] ?? 'Chưa có'} • ${trip['so_kien'] ?? 0} kiện',
                 ),
                 isThreeLine: true,
-                trailing: Text('${trip['trang_thai']}'),
+                trailing: Text(_status(trip)),
               ),
             );
           },
