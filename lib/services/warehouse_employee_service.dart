@@ -69,6 +69,18 @@ class WarehouseEmployeeService {
     }
   }
 
+  Future<String> confirmUnloadComplete({required int tripId}) async {
+    try {
+      final data = await _client.rpc(
+        'nhan_vien_kho_xac_nhan_do_xong',
+        params: {'p_chuyen_xe_id': tripId},
+      );
+      return '$data';
+    } on PostgrestException catch (error) {
+      throw WarehouseEmployeeException(error.message);
+    }
+  }
+
   Future<String> sealTrip({
     required int tripId,
     required String sealCode,

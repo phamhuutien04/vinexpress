@@ -1,6 +1,15 @@
 -- Không cho một xe nhận đồng thời nhiều chuyến chưa kết thúc.
--- Chuyến xuất phát từ kho cấp 2 lên kho cấp 1 được tạo thêm chặng quay về kho cấp 2.
+-- Chuyến từ kho cấp 2 lên kho cấp 1 và chuyến quay về là hai chuyến độc lập.
 -- Chạy an toàn nhiều lần trong Supabase SQL Editor, không xóa dữ liệu hiện tại.
+
+-- Ghi nhận vị trí vật lý của xe sau khi hoàn tất dỡ hàng. Nhờ đó kho cấp 1
+-- vẫn thấy xe của tài xế thuộc kho cấp 2 để tạo chuyến quay về mới.
+ALTER TABLE public.xe
+ADD COLUMN IF NOT EXISTS kho_hien_tai_id BIGINT
+REFERENCES public.kho_hang(id) ON UPDATE CASCADE ON DELETE SET NULL;
+
+CREATE INDEX IF NOT EXISTS idx_xe_kho_hien_tai
+ON public.xe(kho_hien_tai_id);
 
 -- Ghi rõ kiện thuộc chặng nào để kiện lượt đi không bị nhầm sang lượt về.
 ALTER TABLE public.chi_tiet_chuyen_xe
@@ -235,6 +244,19 @@ BEGIN
         ORDER BY np.thoi_gian_niem_phong DESC LIMIT 1) AS ma_niem_phong,
       (SELECT COUNT(*) FROM public.chi_tiet_chuyen_xe ct
         WHERE ct.chuyen_xe_id=cx.id)::BIGINT AS so_kien,
+      (SELECT COUNT(*) FROM public.chi_tiet_chuyen_xe ct
+        WHERE ct.chuyen_xe_chang_id=c.id)::BIGINT AS so_kien_chang,
+      (SELECT COUNT(*) FROM public.quet_nhap_kho_chang qn
+        WHERE qn.chuyen_xe_chang_id=c.id)::BIGINT AS so_kien_da_nhap,
+      NOT EXISTS(
+        SELECT 1 FROM public.chi_tiet_chuyen_xe ct
+        WHERE ct.chuyen_xe_chang_id=c.id
+          AND NOT EXISTS(
+            SELECT 1 FROM public.quet_nhap_kho_chang qn
+            WHERE qn.chuyen_xe_chang_id=c.id
+              AND qn.don_hang_id=ct.don_hang_id
+          )
+      ) AS da_do_xong,
       cx.ngay_tao
     FROM public.chuyen_xe cx
     JOIN public.xe x ON x.id=cx.xe_id
@@ -318,6 +340,108 @@ BEGIN
     ),
     'chuyen_xe',v_chuyen_xe
   );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.nhan_vien_kho_xac_nhan_do_xong(
+  p_chuyen_xe_id BIGINT
+) RETURNS VARCHAR
+LANGUAGE plpgsql SECURITY DEFINER SET search_path=public AS $$
+DECLARE
+  v_nv public.nhan_vien%ROWTYPE;
+  v_chuyen public.chuyen_xe%ROWTYPE;
+  v_chang public.chuyen_xe_chang%ROWTYPE;
+  v_con_lai BIGINT;
+  v_la_chuyen_len_cap_1 BOOLEAN := FALSE;
+BEGIN
+  SELECT nv.* INTO v_nv FROM public.nhan_vien nv
+  WHERE nv.auth_user_id=auth.uid() AND nv.vai_tro='NHAN_VIEN_KHO'
+    AND nv.trang_thai_duyet='DA_DUYET' AND nv.trang_thai='HOAT_DONG';
+  IF NOT FOUND OR v_nv.kho_hang_id IS NULL THEN
+    RAISE EXCEPTION 'Nhân viên chưa được gán kho';
+  END IF;
+
+  SELECT cx.* INTO v_chuyen FROM public.chuyen_xe cx
+  WHERE cx.id=p_chuyen_xe_id
+    AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
+  FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy chuyến đang xử lý'; END IF;
+
+  SELECT c.* INTO v_chang FROM public.chuyen_xe_chang c
+  WHERE c.chuyen_xe_id=p_chuyen_xe_id
+    AND c.kho_den_id=v_nv.kho_hang_id
+    AND c.trang_thai='DA_DEN'
+  ORDER BY c.thu_tu_chuyen DESC LIMIT 1;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Không có chặng đang dỡ tại kho này'; END IF;
+
+  IF EXISTS(
+    SELECT 1 FROM public.niem_phong_xe np
+    WHERE np.chuyen_xe_id=p_chuyen_xe_id
+      AND np.trang_thai='DA_NIEM_PHONG'
+  ) THEN
+    RAISE EXCEPTION 'Phải mở niêm phong trước khi xác nhận dỡ xong';
+  END IF;
+
+  SELECT COUNT(*) INTO v_con_lai
+  FROM public.chi_tiet_chuyen_xe ct
+  WHERE ct.chuyen_xe_chang_id=v_chang.id
+    AND NOT EXISTS(
+      SELECT 1 FROM public.quet_nhap_kho_chang qn
+      WHERE qn.chuyen_xe_chang_id=v_chang.id
+        AND qn.don_hang_id=ct.don_hang_id
+    );
+  IF v_con_lai>0 THEN
+    RAISE EXCEPTION 'Còn % kiện chưa quét nhập kho',v_con_lai;
+  END IF;
+
+  SELECT EXISTS(
+    SELECT 1
+    FROM public.kho_hang k_di
+    JOIN public.kho_hang k_den ON k_den.id=v_chang.kho_den_id
+    WHERE k_di.id=v_chang.kho_di_id
+      AND k_di.cap_kho=2 AND k_den.cap_kho=1
+      AND k_di.kho_trung_tam_id=k_den.id
+  ) INTO v_la_chuyen_len_cap_1;
+
+  IF v_la_chuyen_len_cap_1 THEN
+    -- Chuyến cấp 2 lên cấp 1 kết thúc hoàn toàn sau khi dỡ xong. Chuyến quay
+    -- về phải do quản lý tạo thành một chuyến mới có mã và niêm phong riêng.
+    IF EXISTS(
+      SELECT 1
+      FROM public.chuyen_xe_chang c_sau
+      JOIN public.chi_tiet_chuyen_xe ct ON ct.chuyen_xe_chang_id=c_sau.id
+      WHERE c_sau.chuyen_xe_id=p_chuyen_xe_id
+        AND c_sau.thu_tu_chuyen>v_chang.thu_tu_chuyen
+        AND c_sau.trang_thai='CHO_KHOI_HANH'
+    ) THEN
+      RAISE EXCEPTION 'Chặng tiếp theo của chuyến cũ đã có kiện, không thể kết thúc';
+    END IF;
+
+    DELETE FROM public.chuyen_xe_chang c_sau
+    WHERE c_sau.chuyen_xe_id=p_chuyen_xe_id
+      AND c_sau.thu_tu_chuyen>v_chang.thu_tu_chuyen
+      AND c_sau.trang_thai='CHO_KHOI_HANH';
+  ELSIF EXISTS(
+    SELECT 1 FROM public.chuyen_xe_chang c_sau
+    WHERE c_sau.chuyen_xe_id=p_chuyen_xe_id
+      AND c_sau.thu_tu_chuyen>v_chang.thu_tu_chuyen
+      AND c_sau.kho_di_id=v_nv.kho_hang_id
+      AND c_sau.trang_thai='CHO_KHOI_HANH'
+  ) THEN
+    UPDATE public.chuyen_xe
+    SET trang_thai='DANG_XEP_HANG',ngay_cap_nhat=NOW()
+    WHERE id=p_chuyen_xe_id;
+    RETURN 'DANG_XEP_HANG';
+  END IF;
+
+  UPDATE public.chuyen_xe
+  SET trang_thai='DA_HOAN_THANH',ngay_cap_nhat=NOW()
+  WHERE id=p_chuyen_xe_id;
+  UPDATE public.xe
+  SET trang_thai='SAN_SANG',kho_hien_tai_id=v_nv.kho_hang_id,
+    ngay_cap_nhat=NOW()
+  WHERE id=v_chuyen.xe_id;
+  RETURN 'DA_HOAN_THANH';
 END;
 $$;
 
@@ -439,26 +563,8 @@ BEGIN
         THEN 'DEN_KHO_DICH' ELSE 'DEN_KHO_TRUNG_CHUYEN' END,
       ngay_cap_nhat=NOW() WHERE id=v_don.id;
 
-    -- Chỉ mở công đoạn xếp chặng kế tiếp sau lần quét nhập cuối cùng.
-    IF NOT EXISTS(
-      SELECT 1 FROM public.chi_tiet_chuyen_xe ct
-      WHERE ct.chuyen_xe_id=p_chuyen_xe_id
-        AND ct.chuyen_xe_chang_id=v_chang.id
-        AND NOT EXISTS(
-          SELECT 1 FROM public.quet_nhap_kho_chang qn
-          WHERE qn.chuyen_xe_chang_id=v_chang.id
-            AND qn.don_hang_id=ct.don_hang_id
-        )
-    ) AND EXISTS(
-      SELECT 1 FROM public.chuyen_xe_chang c_sau
-      WHERE c_sau.chuyen_xe_id=p_chuyen_xe_id
-        AND c_sau.thu_tu_chuyen>v_chang.thu_tu_chuyen
-        AND c_sau.trang_thai='CHO_KHOI_HANH'
-    ) THEN
-      UPDATE public.chuyen_xe
-      SET trang_thai='DANG_XEP_HANG',ngay_cap_nhat=NOW()
-      WHERE id=p_chuyen_xe_id;
-    END IF;
+    -- Giữ công đoạn dỡ xe sau lần quét cuối. Nhân viên phải bấm xác nhận
+    -- đã dỡ xong để tránh tự chuyển chặng khi thực tế còn kiện trên thùng xe.
     v_trang_thai := 'DA_NHAP_KHO';
   END IF;
   RETURN v_trang_thai;
@@ -646,60 +752,36 @@ BEGIN
   END IF;
 
   RETURN QUERY
-  SELECT q.id,q.bien_so_xe,q.tai_trong,q.trang_thai,
-    q.tai_xe_id,q.ten_tai_xe,q.so_dien_thoai
-  FROM (
-    SELECT x.id,x.bien_so_xe::VARCHAR,x.tai_trong,
-      x.trang_thai::VARCHAR AS trang_thai,x.tai_xe_id,
-      nv.ho_ten::VARCHAR AS ten_tai_xe,nv.so_dien_thoai::VARCHAR
-    FROM public.xe x
-    JOIN public.nhan_vien nv ON nv.id=x.tai_xe_id
-    WHERE nv.kho_hang_id=p_kho_id
-      AND nv.vai_tro='VAN_CHUYEN'
-      AND nv.trang_thai_duyet='DA_DUYET'
-      AND nv.trang_thai='HOAT_DONG'
-      AND x.trang_thai='SAN_SANG'
-      AND NOT EXISTS(
-        SELECT 1 FROM public.chuyen_xe cx
-        WHERE cx.xe_id=x.id
-          AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
-      )
-
-    UNION ALL
-
-    -- Xe của kho cấp 2 đã tới kho cấp 1 được phép gán chính chặng quay về.
-    -- Đây vẫn là chuyến cũ, không tạo thêm một chuyến hoạt động cho cùng xe.
-    SELECT DISTINCT
-      x.id,x.bien_so_xe::VARCHAR,x.tai_trong,
-      'CHO_CHANG_VE'::VARCHAR AS trang_thai,x.tai_xe_id,
-      nv.ho_ten::VARCHAR AS ten_tai_xe,nv.so_dien_thoai::VARCHAR
-    FROM public.chuyen_xe cx
-    JOIN public.xe x ON x.id=cx.xe_id
-    JOIN public.nhan_vien nv ON nv.id=x.tai_xe_id
-    JOIN public.chuyen_xe_chang c_ve
-      ON c_ve.chuyen_xe_id=cx.id
-      AND c_ve.kho_di_id=p_kho_id
-      AND c_ve.trang_thai='CHO_KHOI_HANH'
-    WHERE cx.trang_thai IN ('DA_DEN','DANG_XEP_HANG')
-      AND nv.vai_tro='VAN_CHUYEN'
-      AND nv.trang_thai_duyet='DA_DUYET'
-      AND nv.trang_thai='HOAT_DONG'
-      AND EXISTS(
-        SELECT 1 FROM public.chuyen_xe_chang c_truoc
-        WHERE c_truoc.chuyen_xe_id=cx.id
-          AND c_truoc.thu_tu_chuyen<c_ve.thu_tu_chuyen
-          AND c_truoc.kho_den_id=p_kho_id
-          AND c_truoc.trang_thai='DA_DEN'
-      )
-      AND NOT EXISTS(
-        SELECT 1 FROM public.niem_phong_xe np
-        WHERE np.chuyen_xe_id=cx.id
-          AND np.kho_niem_phong_id=p_kho_id
-          AND np.trang_thai='DA_NIEM_PHONG'
-      )
-  ) q
-  ORDER BY CASE q.trang_thai WHEN 'CHO_CHANG_VE' THEN 0 ELSE 1 END,
-    q.bien_so_xe;
+  SELECT x.id,x.bien_so_xe::VARCHAR,x.tai_trong,
+    CASE
+      WHEN x.kho_hien_tai_id=p_kho_id
+        AND k_tx.cap_kho=2 AND k_tx.kho_trung_tam_id=p_kho_id
+      THEN 'CHO_CHANG_VE'::VARCHAR
+      ELSE 'SAN_SANG'::VARCHAR
+    END AS trang_thai,
+    x.tai_xe_id,nv.ho_ten::VARCHAR,nv.so_dien_thoai::VARCHAR
+  FROM public.xe x
+  JOIN public.nhan_vien nv ON nv.id=x.tai_xe_id
+  LEFT JOIN public.kho_hang k_tx ON k_tx.id=nv.kho_hang_id
+  WHERE x.trang_thai='SAN_SANG'
+    AND nv.vai_tro='VAN_CHUYEN'
+    AND nv.trang_thai_duyet='DA_DUYET'
+    AND nv.trang_thai='HOAT_DONG'
+    AND (
+      nv.kho_hang_id=p_kho_id
+      OR (x.kho_hien_tai_id=p_kho_id
+        AND k_tx.cap_kho=2 AND k_tx.kho_trung_tam_id=p_kho_id)
+    )
+    AND NOT EXISTS(
+      SELECT 1 FROM public.chuyen_xe cx
+      WHERE cx.xe_id=x.id
+        AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
+    )
+  ORDER BY CASE
+      WHEN x.kho_hien_tai_id=p_kho_id
+        AND k_tx.cap_kho=2 AND k_tx.kho_trung_tam_id=p_kho_id THEN 0
+      ELSE 1
+    END,x.bien_so_xe;
 END;
 $$;
 
@@ -742,17 +824,71 @@ BEGIN
   IF NOT public.quan_ly_kho_duoc_quan_ly(p_kho_id) THEN
     RAISE EXCEPTION 'Kho không thuộc phạm vi quản lý';
   END IF;
-  SELECT c_ve.kho_den_id INTO v_kho_cap_2_id
-  FROM public.chuyen_xe cx
-  JOIN public.chuyen_xe_chang c_ve ON c_ve.chuyen_xe_id=cx.id
-  JOIN public.kho_hang k2 ON k2.id=c_ve.kho_den_id
+  SELECT tx.kho_hang_id INTO v_kho_cap_2_id
+  FROM public.xe x
+  JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
+  JOIN public.kho_hang k2 ON k2.id=tx.kho_hang_id
+  WHERE x.id=p_xe_id AND x.trang_thai='SAN_SANG'
+    AND x.kho_hien_tai_id=p_kho_id
     AND k2.cap_kho=2 AND k2.kho_trung_tam_id=p_kho_id
-  WHERE cx.xe_id=p_xe_id
-    AND cx.trang_thai IN ('DA_DEN','DANG_XEP_HANG')
-    AND c_ve.kho_di_id=p_kho_id
-    AND c_ve.trang_thai='CHO_KHOI_HANH'
-  ORDER BY c_ve.thu_tu_chuyen LIMIT 1;
+    AND NOT EXISTS(
+      SELECT 1 FROM public.chuyen_xe cx
+      WHERE cx.xe_id=x.id
+        AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
+    );
   RETURN v_kho_cap_2_id;
+END;
+$$;
+
+-- Màn quản lý phải hiển thị chặng đang xử lý tại kho, không cố định chặng 1.
+-- Sau khi xác nhận dỡ xong, thẻ chuyến đổi từ chặng đến sang chặng xuất phát.
+CREATE OR REPLACE FUNCTION public.quan_ly_kho_danh_sach_chuyen(p_kho_id BIGINT)
+RETURNS TABLE(id BIGINT,ma_chuyen VARCHAR,trang_thai VARCHAR,xe_id BIGINT,
+  bien_so_xe VARCHAR,ten_tai_xe VARCHAR,kho_di_id BIGINT,ten_kho_di VARCHAR,
+  kho_den_id BIGINT,ten_kho_den VARCHAR,ngay_du_kien TIMESTAMPTZ,
+  so_kien BIGINT)
+LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path=public AS $$
+BEGIN
+  IF NOT public.quan_ly_kho_duoc_quan_ly(p_kho_id) THEN
+    RAISE EXCEPTION 'Kho không thuộc phạm vi quản lý';
+  END IF;
+  RETURN QUERY
+  SELECT cx.id,cx.ma_chuyen::VARCHAR,cx.trang_thai::VARCHAR,cx.xe_id,
+    x.bien_so_xe::VARCHAR,nv.ho_ten::VARCHAR,c.kho_di_id,kd.ten_kho::VARCHAR,
+    c.kho_den_id,kn.ten_kho::VARCHAR,cx.ngay_du_kien,
+    (SELECT COUNT(*) FROM public.chi_tiet_chuyen_xe ct
+      WHERE ct.chuyen_xe_id=cx.id)::BIGINT
+  FROM public.chuyen_xe cx
+  JOIN public.xe x ON x.id=cx.xe_id
+  LEFT JOIN public.nhan_vien nv ON nv.id=x.tai_xe_id
+  JOIN LATERAL (
+    SELECT c0.*
+    FROM public.chuyen_xe_chang c0
+    WHERE c0.chuyen_xe_id=cx.id
+      AND (c0.kho_di_id=p_kho_id OR c0.kho_den_id=p_kho_id)
+    ORDER BY CASE
+      WHEN cx.trang_thai IN ('CHO_KHOI_HANH','DANG_XEP_HANG')
+        AND c0.kho_di_id=p_kho_id
+        AND c0.trang_thai='CHO_KHOI_HANH'
+        AND NOT EXISTS(
+          SELECT 1 FROM public.chuyen_xe_chang c_truoc
+          WHERE c_truoc.chuyen_xe_id=c0.chuyen_xe_id
+            AND c_truoc.thu_tu_chuyen<c0.thu_tu_chuyen
+            AND c_truoc.trang_thai<>'DA_DEN'
+        ) THEN 0
+      WHEN cx.trang_thai IN ('DANG_DI','DA_DEN')
+        AND c0.kho_den_id=p_kho_id
+        AND c0.trang_thai IN ('DANG_DI','DA_DEN') THEN 0
+      WHEN c0.trang_thai='DANG_DI' THEN 1
+      WHEN c0.trang_thai='DA_DEN' THEN 2
+      WHEN c0.trang_thai='CHO_KHOI_HANH' THEN 3
+      ELSE 4
+    END,c0.thu_tu_chuyen
+    LIMIT 1
+  ) c ON TRUE
+  JOIN public.kho_hang kd ON kd.id=c.kho_di_id
+  JOIN public.kho_hang kn ON kn.id=c.kho_den_id
+  ORDER BY cx.ngay_tao DESC LIMIT 200;
 END;
 $$;
 
@@ -803,50 +939,17 @@ BEGIN
   PERFORM 1 FROM public.xe x WHERE x.id=p_xe_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy xe'; END IF;
 
-  -- Nếu xe cấp 2 đang ở kho này và đã có sẵn chặng quay về thì chỉ cập nhật
-  -- người phân công/ngày dự kiến rồi dùng lại chuyến cũ.
-  SELECT cx.id INTO v_chuyen_id
-  FROM public.chuyen_xe cx
-  JOIN public.chuyen_xe_chang c_ve
-    ON c_ve.chuyen_xe_id=cx.id
-    AND c_ve.kho_di_id=p_kho_di_id
-    AND c_ve.kho_den_id=p_kho_den_id
-    AND c_ve.trang_thai='CHO_KHOI_HANH'
-  WHERE cx.xe_id=p_xe_id
-    AND cx.trang_thai IN ('DA_DEN','DANG_XEP_HANG')
-    AND EXISTS(
-      SELECT 1 FROM public.chuyen_xe_chang c_truoc
-      WHERE c_truoc.chuyen_xe_id=cx.id
-        AND c_truoc.thu_tu_chuyen<c_ve.thu_tu_chuyen
-        AND c_truoc.kho_den_id=p_kho_di_id
-        AND c_truoc.trang_thai='DA_DEN'
-    )
-  ORDER BY c_ve.thu_tu_chuyen
-  LIMIT 1
-  FOR UPDATE OF cx,c_ve;
-  IF v_chuyen_id IS NOT NULL THEN
-    UPDATE public.chuyen_xe_chang c
-    SET nguoi_phan_cong_id=v_nv_id,
-        ngay_den_du_kien=COALESCE(p_ngay_du_kien,c.ngay_den_du_kien),
-        ngay_cap_nhat=NOW()
-    WHERE c.chuyen_xe_id=v_chuyen_id
-      AND c.kho_di_id=p_kho_di_id
-      AND c.kho_den_id=p_kho_den_id
-      AND c.trang_thai='CHO_KHOI_HANH';
-    RETURN v_chuyen_id;
-  END IF;
-
   IF NOT EXISTS(
     SELECT 1 FROM public.xe x
     JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
     WHERE x.id=p_xe_id
       AND x.trang_thai='SAN_SANG'
       AND tx.vai_tro='VAN_CHUYEN'
-      AND tx.kho_hang_id=p_kho_di_id
+      AND (tx.kho_hang_id=p_kho_di_id OR x.kho_hien_tai_id=p_kho_di_id)
       AND tx.trang_thai_duyet='DA_DUYET'
       AND tx.trang_thai='HOAT_DONG'
   ) THEN
-    RAISE EXCEPTION 'Xe không sẵn sàng hoặc không thuộc kho này';
+    RAISE EXCEPTION 'Xe không sẵn sàng hoặc hiện không có tại kho này';
   END IF;
   IF EXISTS(
     SELECT 1 FROM public.chuyen_xe cx
@@ -869,21 +972,11 @@ BEGIN
     v_chuyen_id,1,p_kho_di_id,p_kho_den_id,v_nv_id,p_ngay_du_kien
   );
 
-  IF v_cap_di=2 THEN
-    INSERT INTO public.chuyen_xe_chang(
-      chuyen_xe_id,thu_tu_chuyen,kho_di_id,kho_den_id,
-      nguoi_phan_cong_id,ngay_den_du_kien
-    ) VALUES(
-      v_chuyen_id,2,p_kho_den_id,p_kho_di_id,v_nv_id,NULL
-    );
-  END IF;
-
   RETURN v_chuyen_id;
 END;
 $$;
 
--- Tạo một tuyến giao từ kho cấp 1 đến nhiều kho cấp 2, hoặc nối thêm các
--- điểm dừng vào chuyến đang chờ quay về của xe vừa tới kho cấp 1.
+-- Tạo một chuyến mới từ kho cấp 1 đến một hoặc nhiều kho cấp 2.
 CREATE OR REPLACE FUNCTION public.quan_ly_kho_gan_xe_tao_tuyen(
   p_kho_di_id BIGINT,p_kho_den_ids BIGINT[],p_xe_id BIGINT,
   p_ngay_du_kien TIMESTAMPTZ DEFAULT NULL
@@ -934,81 +1027,31 @@ BEGIN
   PERFORM 1 FROM public.xe x WHERE x.id=p_xe_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy xe'; END IF;
 
-  -- Ưu tiên dùng lại chuyến đang hoạt động khi xe vừa đến kho cấp 1.
-  SELECT cx.id INTO v_chuyen_id
-  FROM public.chuyen_xe cx
-  WHERE cx.xe_id=p_xe_id
-    AND cx.trang_thai IN ('DA_DEN','DANG_XEP_HANG')
-    AND EXISTS(
-      SELECT 1 FROM public.chuyen_xe_chang c
-      WHERE c.chuyen_xe_id=cx.id AND c.kho_den_id=p_kho_di_id
-        AND c.trang_thai='DA_DEN'
-    )
-    AND EXISTS(
-      SELECT 1 FROM public.chuyen_xe_chang c
-      WHERE c.chuyen_xe_id=cx.id AND c.kho_di_id=p_kho_di_id
-        AND c.trang_thai='CHO_KHOI_HANH'
-    )
-  ORDER BY cx.ngay_tao DESC LIMIT 1 FOR UPDATE;
-
-  IF v_chuyen_id IS NULL THEN
-    IF EXISTS(
-      SELECT 1 FROM public.chuyen_xe cx WHERE cx.xe_id=p_xe_id
-        AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
-    ) THEN
-      RAISE EXCEPTION 'Xe đang có chuyến chưa đến kho này';
-    END IF;
-    IF NOT EXISTS(
-      SELECT 1 FROM public.xe x JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
-      WHERE x.id=p_xe_id AND x.trang_thai='SAN_SANG'
-        AND tx.kho_hang_id=p_kho_di_id AND tx.vai_tro='VAN_CHUYEN'
-        AND tx.trang_thai_duyet='DA_DUYET' AND tx.trang_thai='HOAT_DONG'
-    ) THEN
-      RAISE EXCEPTION 'Xe không sẵn sàng hoặc không thuộc kho này';
-    END IF;
-    v_ma := 'CX' || TO_CHAR(NOW(),'YYMMDDHH24MISS')
-      || UPPER(SUBSTR(REPLACE(gen_random_uuid()::TEXT,'-',''),1,5));
-    INSERT INTO public.chuyen_xe(xe_id,ma_chuyen,trang_thai,ngay_du_kien)
-    VALUES(p_xe_id,v_ma,'CHO_KHOI_HANH',p_ngay_du_kien)
-    RETURNING id INTO v_chuyen_id;
-    v_kho_truoc_id := p_kho_di_id;
-    v_thu_tu := 0;
-  ELSE
-    -- Quản lý đang thiết lập lại toàn bộ phần tuyến chưa chạy. Không cho đổi
-    -- thứ tự sau khi đã quét kiện lên một chặng chờ để tránh lạc kiện.
-    IF EXISTS(
-      SELECT 1 FROM public.niem_phong_xe np
-      WHERE np.chuyen_xe_id=v_chuyen_id
-        AND np.kho_niem_phong_id=p_kho_di_id
-        AND np.trang_thai='DA_NIEM_PHONG'
-    ) THEN
-      RAISE EXCEPTION 'Xe đã niêm phong; không thể đổi tuyến';
-    END IF;
-    IF EXISTS(
-      SELECT 1 FROM public.chuyen_xe_chang c
-      JOIN public.chi_tiet_chuyen_xe ct ON ct.chuyen_xe_chang_id=c.id
-      WHERE c.chuyen_xe_id=v_chuyen_id AND c.trang_thai='CHO_KHOI_HANH'
-    ) THEN
-      RAISE EXCEPTION 'Tuyến đã có kiện được xếp; không thể đổi thứ tự điểm dừng';
-    END IF;
-    DELETE FROM public.chuyen_xe_chang c
-    WHERE c.chuyen_xe_id=v_chuyen_id AND c.trang_thai='CHO_KHOI_HANH';
-    SELECT COALESCE(MAX(c.thu_tu_chuyen),0)
-    INTO v_thu_tu
-    FROM public.chuyen_xe_chang c
-    WHERE c.chuyen_xe_id=v_chuyen_id;
-    v_kho_truoc_id := p_kho_di_id;
+  IF EXISTS(
+    SELECT 1 FROM public.chuyen_xe cx WHERE cx.xe_id=p_xe_id
+      AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
+  ) THEN
+    RAISE EXCEPTION 'Xe đang có chuyến chưa hoàn thành, không thể tạo chuyến mới';
+  END IF;
+  IF NOT EXISTS(
+    SELECT 1 FROM public.xe x JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
+    WHERE x.id=p_xe_id AND x.trang_thai='SAN_SANG'
+      AND (tx.kho_hang_id=p_kho_di_id OR x.kho_hien_tai_id=p_kho_di_id)
+      AND tx.vai_tro='VAN_CHUYEN'
+      AND tx.trang_thai_duyet='DA_DUYET' AND tx.trang_thai='HOAT_DONG'
+  ) THEN
+    RAISE EXCEPTION 'Xe không sẵn sàng hoặc hiện không có tại kho này';
   END IF;
 
+  v_ma := 'CX' || TO_CHAR(NOW(),'YYMMDDHH24MISS')
+    || UPPER(SUBSTR(REPLACE(gen_random_uuid()::TEXT,'-',''),1,5));
+  INSERT INTO public.chuyen_xe(xe_id,ma_chuyen,trang_thai,ngay_du_kien)
+  VALUES(p_xe_id,v_ma,'CHO_KHOI_HANH',p_ngay_du_kien)
+  RETURNING id INTO v_chuyen_id;
+  v_kho_truoc_id := p_kho_di_id;
+  v_thu_tu := 0;
+
   FOREACH v_kho_den_id IN ARRAY p_kho_den_ids LOOP
-    IF EXISTS(
-      SELECT 1 FROM public.chuyen_xe_chang c
-      WHERE c.chuyen_xe_id=v_chuyen_id
-        AND c.kho_den_id=v_kho_den_id
-        AND c.trang_thai='CHO_KHOI_HANH'
-    ) THEN
-      CONTINUE;
-    END IF;
     v_thu_tu := v_thu_tu+1;
     INSERT INTO public.chuyen_xe_chang(
       chuyen_xe_id,thu_tu_chuyen,kho_di_id,kho_den_id,
@@ -1023,27 +1066,6 @@ BEGIN
   RETURN v_chuyen_id;
 END;
 $$;
-
--- Bổ sung chặng về cho những chuyến cấp 2 -> cấp 1 được tạo trước bản vá này.
--- Chỉ tác động chuyến đang hoạt động và chưa có chặng thứ hai.
-INSERT INTO public.chuyen_xe_chang(
-  chuyen_xe_id,thu_tu_chuyen,kho_di_id,kho_den_id,
-  nguoi_phan_cong_id,ngay_den_du_kien
-)
-SELECT cx.id,2,c1.kho_den_id,c1.kho_di_id,c1.nguoi_phan_cong_id,NULL
-FROM public.chuyen_xe cx
-JOIN public.chuyen_xe_chang c1
-  ON c1.chuyen_xe_id=cx.id AND c1.thu_tu_chuyen=1
-JOIN public.kho_hang k2
-  ON k2.id=c1.kho_di_id
-  AND k2.cap_kho=2
-  AND k2.kho_trung_tam_id=c1.kho_den_id
-WHERE cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
-  AND NOT EXISTS(
-    SELECT 1 FROM public.chuyen_xe_chang c2
-    WHERE c2.chuyen_xe_id=cx.id AND c2.thu_tu_chuyen>1
-  )
-ON CONFLICT(chuyen_xe_id,thu_tu_chuyen) DO NOTHING;
 
 -- Khôi phục các chuyến đã bị chuyển nhầm sang chặng về trước khi có nhật ký
 -- quét nhập. Khi chưa có bất kỳ lần quét nhập nào tại chặng đến, toàn bộ kiện
@@ -1134,7 +1156,129 @@ WHERE cx.trang_thai='DANG_XEP_HANG'
       )
   );
 
--- Cập nhật đúng từng chặng: đến kho cấp 1 xong mới được chạy chặng quay về cấp 2.
+-- Chuyển đổi dữ liệu cũ: nếu chuyến đến đã mở niêm phong và mọi kiện của
+-- chặng đến đã được quét, kết thúc chuyến cũ và trả xe về trạng thái sẵn sàng
+-- tại kho đến. Chặng quay về trống từng được tạo tự động sẽ được bỏ đi; quản
+-- lý kho cấp 1 sẽ tạo một chuyến mới có mã chuyến riêng.
+WITH chang_da_do_xong AS (
+  SELECT cx.id AS chuyen_xe_id,c_den.id AS chang_den_id
+  FROM public.chuyen_xe cx
+  JOIN public.chuyen_xe_chang c_den ON c_den.chuyen_xe_id=cx.id
+  JOIN public.kho_hang k_di ON k_di.id=c_den.kho_di_id
+    AND k_di.cap_kho=2 AND k_di.kho_trung_tam_id=c_den.kho_den_id
+  JOIN public.kho_hang k_den ON k_den.id=c_den.kho_den_id AND k_den.cap_kho=1
+  WHERE cx.trang_thai IN ('DA_DEN','DANG_XEP_HANG')
+    AND c_den.thu_tu_chuyen=1 AND c_den.trang_thai='DA_DEN'
+    AND NOT EXISTS(
+      SELECT 1 FROM public.niem_phong_xe np
+      WHERE np.chuyen_xe_id=cx.id AND np.trang_thai='DA_NIEM_PHONG'
+    )
+    AND EXISTS(
+      SELECT 1 FROM public.chi_tiet_chuyen_xe ct
+      WHERE ct.chuyen_xe_id=cx.id AND ct.chuyen_xe_chang_id=c_den.id
+    )
+    AND NOT EXISTS(
+      SELECT 1 FROM public.chi_tiet_chuyen_xe ct
+      WHERE ct.chuyen_xe_id=cx.id AND ct.chuyen_xe_chang_id=c_den.id
+        AND NOT EXISTS(
+          SELECT 1 FROM public.quet_nhap_kho_chang qn
+          WHERE qn.chuyen_xe_chang_id=c_den.id
+            AND qn.don_hang_id=ct.don_hang_id
+        )
+    )
+)
+DELETE FROM public.chuyen_xe_chang c_sau
+USING chang_da_do_xong d
+WHERE c_sau.chuyen_xe_id=d.chuyen_xe_id
+  AND c_sau.id<>d.chang_den_id
+  AND c_sau.trang_thai='CHO_KHOI_HANH'
+  AND NOT EXISTS(
+    SELECT 1 FROM public.chi_tiet_chuyen_xe ct
+    WHERE ct.chuyen_xe_chang_id=c_sau.id
+  );
+
+WITH chuyen_da_do_xong AS (
+  SELECT cx.id,cx.xe_id,c_den.kho_den_id
+  FROM public.chuyen_xe cx
+  JOIN public.chuyen_xe_chang c_den ON c_den.chuyen_xe_id=cx.id
+  JOIN public.kho_hang k_di ON k_di.id=c_den.kho_di_id
+    AND k_di.cap_kho=2 AND k_di.kho_trung_tam_id=c_den.kho_den_id
+  JOIN public.kho_hang k_den ON k_den.id=c_den.kho_den_id AND k_den.cap_kho=1
+  WHERE cx.trang_thai IN ('DA_DEN','DANG_XEP_HANG')
+    AND c_den.thu_tu_chuyen=1 AND c_den.trang_thai='DA_DEN'
+    AND NOT EXISTS(
+      SELECT 1 FROM public.chuyen_xe_chang c_cho
+      WHERE c_cho.chuyen_xe_id=cx.id AND c_cho.trang_thai='CHO_KHOI_HANH'
+    )
+    AND NOT EXISTS(
+      SELECT 1 FROM public.niem_phong_xe np
+      WHERE np.chuyen_xe_id=cx.id AND np.trang_thai='DA_NIEM_PHONG'
+    )
+    AND EXISTS(
+      SELECT 1 FROM public.chi_tiet_chuyen_xe ct
+      WHERE ct.chuyen_xe_id=cx.id AND ct.chuyen_xe_chang_id=c_den.id
+    )
+    AND NOT EXISTS(
+      SELECT 1 FROM public.chi_tiet_chuyen_xe ct
+      WHERE ct.chuyen_xe_id=cx.id AND ct.chuyen_xe_chang_id=c_den.id
+        AND NOT EXISTS(
+          SELECT 1 FROM public.quet_nhap_kho_chang qn
+          WHERE qn.chuyen_xe_chang_id=c_den.id
+            AND qn.don_hang_id=ct.don_hang_id
+        )
+    )
+), chuyen_vua_dong AS (
+  UPDATE public.chuyen_xe cx
+  SET trang_thai='DA_HOAN_THANH',
+      ngay_den_thuc_te=COALESCE(cx.ngay_den_thuc_te,NOW()),
+      ngay_cap_nhat=NOW()
+  FROM chuyen_da_do_xong d
+  WHERE cx.id=d.id
+  RETURNING cx.id,cx.xe_id,d.kho_den_id
+)
+UPDATE public.xe x
+SET trang_thai='SAN_SANG',kho_hien_tai_id=d.kho_den_id,ngay_cap_nhat=NOW()
+FROM chuyen_vua_dong d
+WHERE x.id=d.xe_id
+  AND NOT EXISTS(
+    SELECT 1 FROM public.chuyen_xe cx_khac
+    WHERE cx_khac.xe_id=x.id
+      AND cx_khac.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
+  );
+
+-- Đồng bộ lại vị trí cho các chuyến đã được đánh dấu hoàn thành từ trước.
+-- Chỉ lấy chuyến hoàn thành gần nhất của mỗi xe và không đụng tới xe đang
+-- bảo trì/ngừng hoạt động hoặc xe đã nhận một chuyến mới.
+WITH chuyen_hoan_thanh_gan_nhat AS (
+  SELECT DISTINCT ON (cx.xe_id)
+    cx.xe_id,c_cuoi.kho_den_id
+  FROM public.chuyen_xe cx
+  JOIN LATERAL (
+    SELECT c.kho_den_id
+    FROM public.chuyen_xe_chang c
+    WHERE c.chuyen_xe_id=cx.id AND c.trang_thai='DA_DEN'
+    ORDER BY c.thu_tu_chuyen DESC
+    LIMIT 1
+  ) c_cuoi ON TRUE
+  WHERE cx.trang_thai='DA_HOAN_THANH'
+    AND NOT EXISTS(
+      SELECT 1 FROM public.chuyen_xe cx_moi
+      WHERE cx_moi.xe_id=cx.xe_id
+        AND cx_moi.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
+    )
+  ORDER BY cx.xe_id,
+    COALESCE(cx.ngay_den_thuc_te,cx.ngay_cap_nhat,cx.ngay_tao) DESC,
+    cx.id DESC
+)
+UPDATE public.xe x
+SET trang_thai='SAN_SANG',
+    kho_hien_tai_id=g.kho_den_id,
+    ngay_cap_nhat=NOW()
+FROM chuyen_hoan_thanh_gan_nhat g
+WHERE x.id=g.xe_id
+  AND x.trang_thai IN ('DANG_CHAY','SAN_SANG');
+
+-- Cập nhật đúng từng chặng trong một chuyến nhiều điểm dừng.
 CREATE OR REPLACE FUNCTION public.cap_nhat_chuyen_xe_tai_xe(
   p_chuyen_xe_id BIGINT,
   p_trang_thai_moi TEXT
@@ -1147,6 +1291,7 @@ DECLARE
   v_trang_thai VARCHAR(30);
   v_xe_id BIGINT;
   v_chang_id BIGINT;
+  v_kho_hien_tai_id BIGINT;
   v_con_chang_cho BOOLEAN;
 BEGIN
   SELECT cx.trang_thai,x.id
@@ -1227,6 +1372,11 @@ BEGIN
           ELSE COALESCE(ngay_den_thuc_te,NOW()) END,
         ngay_cap_nhat=NOW()
     WHERE id=p_chuyen_xe_id;
+    SELECT c.kho_den_id INTO v_kho_hien_tai_id
+    FROM public.chuyen_xe_chang c WHERE c.id=v_chang_id;
+    UPDATE public.xe
+    SET kho_hien_tai_id=v_kho_hien_tai_id,ngay_cap_nhat=NOW()
+    WHERE id=v_xe_id;
 
   ELSIF p_trang_thai_moi='DA_HOAN_THANH' THEN
     IF v_trang_thai<>'DA_DEN' THEN
@@ -1236,7 +1386,7 @@ BEGIN
       SELECT 1 FROM public.chuyen_xe_chang c
       WHERE c.chuyen_xe_id=p_chuyen_xe_id AND c.trang_thai<>'DA_DEN'
     ) THEN
-      RAISE EXCEPTION 'Xe còn chặng quay về chưa hoàn thành';
+      RAISE EXCEPTION 'Xe còn điểm dừng chưa hoàn thành';
     END IF;
     IF EXISTS(SELECT 1 FROM public.niem_phong_xe np
       WHERE np.chuyen_xe_id=p_chuyen_xe_id AND np.trang_thai='DA_NIEM_PHONG') THEN
@@ -1251,7 +1401,13 @@ BEGIN
         ngay_den_thuc_te=COALESCE(ngay_den_thuc_te,NOW()),
         ngay_cap_nhat=NOW()
     WHERE id=p_chuyen_xe_id;
-    UPDATE public.xe SET trang_thai='SAN_SANG',ngay_cap_nhat=NOW()
+    SELECT c.kho_den_id INTO v_kho_hien_tai_id
+    FROM public.chuyen_xe_chang c
+    WHERE c.chuyen_xe_id=p_chuyen_xe_id AND c.trang_thai='DA_DEN'
+    ORDER BY c.thu_tu_chuyen DESC LIMIT 1;
+    UPDATE public.xe
+    SET trang_thai='SAN_SANG',kho_hien_tai_id=v_kho_hien_tai_id,
+        ngay_cap_nhat=NOW()
     WHERE id=v_xe_id;
     UPDATE public.chi_tiet_chuyen_xe
     SET trang_thai='DA_DO_HANG',ngay_do_hang=COALESCE(ngay_do_hang,NOW())
@@ -1265,22 +1421,26 @@ $$;
 REVOKE ALL ON FUNCTION public.quan_ly_kho_danh_sach_xe(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.quan_ly_kho_danh_sach_kho_den(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.quan_ly_kho_chang_ve_mac_dinh(BIGINT,BIGINT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.quan_ly_kho_danh_sach_chuyen(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.quan_ly_kho_gan_xe_tao_chuyen(BIGINT,BIGINT,BIGINT,TIMESTAMPTZ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.quan_ly_kho_gan_xe_tao_tuyen(BIGINT,BIGINT[],BIGINT,TIMESTAMPTZ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.cap_nhat_chuyen_xe_tai_xe(BIGINT,TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.chuyen_xe_cua_tai_xe_co_chang() FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.nhan_vien_kho_tim_chuyen_theo_xe(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.nhan_vien_kho_xac_nhan_do_xong(BIGINT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.nhan_vien_kho_quet_kien_chuyen(BIGINT,TEXT,TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.nhan_vien_kho_niem_phong_chuyen(BIGINT,TEXT) FROM PUBLIC;
 REVOKE ALL ON FUNCTION public.nhan_vien_kho_mo_niem_phong_chuyen(BIGINT,TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.quan_ly_kho_danh_sach_xe(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.quan_ly_kho_danh_sach_kho_den(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.quan_ly_kho_chang_ve_mac_dinh(BIGINT,BIGINT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.quan_ly_kho_danh_sach_chuyen(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.quan_ly_kho_gan_xe_tao_chuyen(BIGINT,BIGINT,BIGINT,TIMESTAMPTZ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.quan_ly_kho_gan_xe_tao_tuyen(BIGINT,BIGINT[],BIGINT,TIMESTAMPTZ) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.cap_nhat_chuyen_xe_tai_xe(BIGINT,TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.chuyen_xe_cua_tai_xe_co_chang() TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_tim_chuyen_theo_xe(TEXT) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_xac_nhan_do_xong(BIGINT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_quet_kien_chuyen(BIGINT,TEXT,TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_niem_phong_chuyen(BIGINT,TEXT) TO authenticated;
 GRANT EXECUTE ON FUNCTION public.nhan_vien_kho_mo_niem_phong_chuyen(BIGINT,TEXT) TO authenticated;

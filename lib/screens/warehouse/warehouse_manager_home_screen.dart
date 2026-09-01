@@ -598,6 +598,7 @@ class _WarehouseTrips extends StatelessWidget {
     return switch (status) {
       'DA_DEN' when destinationId == warehouseId => 'Đang dỡ hàng',
       'DANG_XEP_HANG' when originId == warehouseId => 'Đang xếp hàng',
+      'DANG_XEP_HANG' => 'Đang xếp hàng',
       'CHO_KHOI_HANH' => 'Chờ khởi hành',
       'DANG_DI' => 'Đang vận chuyển',
       'DA_DEN' => 'Đã đến kho',
@@ -626,7 +627,24 @@ class _WarehouseTrips extends StatelessWidget {
                   '${trip['ten_kho_di']} → ${trip['ten_kho_den']}\nTài xế: ${trip['ten_tai_xe'] ?? 'Chưa có'} • ${trip['so_kien'] ?? 0} kiện',
                 ),
                 isThreeLine: true,
-                trailing: Text(_status(trip)),
+                trailing: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary10,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    _status(trip),
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
               ),
             );
           },
@@ -654,6 +672,8 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
   int? _requiredReturnWarehouseId;
   DateTime? _expectedAt;
   bool _saving = false;
+  bool _loadingReturnWarehouse = false;
+  String? _returnWarehouseError;
   List<Map<String, dynamic>> get _availableVehicles => widget.vehicles
       .where(
         (item) =>
@@ -666,6 +686,11 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
       .firstOrNull;
   bool get _isReturnAssignment =>
       _selectedVehicle?['trang_thai'] == 'CHO_CHANG_VE';
+  Map<String, dynamic>? get _requiredReturnWarehouse => _destinations
+      .where(
+        (item) => (item['id'] as num).toInt() == _requiredReturnWarehouseId,
+      )
+      .firstOrNull;
   List<Map<String, dynamic>> get _destinations {
     if (!_isReturnAssignment) return widget.warehouses;
     return widget.warehouses
@@ -689,30 +714,48 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
   }
 
   Future<void> _selectVehicle(int? value) async {
+    final vehicle = _availableVehicles
+        .where((item) => (item['id'] as num).toInt() == value)
+        .firstOrNull;
+    final isReturnVehicle = vehicle?['trang_thai'] == 'CHO_CHANG_VE';
     setState(() {
       _vehicleId = value;
       _destinationIds.clear();
       _requiredReturnWarehouseId = null;
+      _loadingReturnWarehouse = isReturnVehicle;
+      _returnWarehouseError = null;
     });
     if (value == null) return;
-    final vehicle = _availableVehicles
-        .where((item) => (item['id'] as num).toInt() == value)
-        .firstOrNull;
-    if (vehicle?['trang_thai'] != 'CHO_CHANG_VE') return;
+    if (!isReturnVehicle) return;
     try {
-      final warehouseId = await widget.service.defaultReturnWarehouse(
+      var warehouseId = await widget.service.defaultReturnWarehouse(
         warehouseId: widget.originWarehouseId,
         vehicleId: value,
       );
-      if (!mounted || _vehicleId != value || warehouseId == null) return;
+      if (!mounted || _vehicleId != value) return;
+      warehouseId ??= _destinations.length == 1
+          ? (_destinations.single['id'] as num).toInt()
+          : null;
+      if (warehouseId == null) {
+        setState(() {
+          _returnWarehouseError =
+              'Chưa xác định được kho cấp 2 mà xe trực thuộc.';
+        });
+        return;
+      }
+      final returnWarehouseId = warehouseId;
       if (!_destinations.any(
-        (item) => (item['id'] as num).toInt() == warehouseId,
+        (item) => (item['id'] as num).toInt() == returnWarehouseId,
       )) {
+        setState(() {
+          _returnWarehouseError =
+              'Kho của xe không thuộc danh sách kho cấp 2 được phép.';
+        });
         return;
       }
       setState(() {
-        _requiredReturnWarehouseId = warehouseId;
-        _destinationIds.add(warehouseId);
+        _requiredReturnWarehouseId = returnWarehouseId;
+        _destinationIds.add(returnWarehouseId);
       });
     } on WarehouseManagerException catch (error) {
       if (!mounted) return;
@@ -722,6 +765,11 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
           backgroundColor: AppColors.error,
         ),
       );
+      setState(() => _returnWarehouseError = error.message);
+    } finally {
+      if (mounted && _vehicleId == value) {
+        setState(() => _loadingReturnWarehouse = false);
+      }
     }
   }
 
@@ -765,147 +813,282 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
-    title: Text(
-      _isReturnAssignment ? 'Gán chặng quay về' : 'Gán xe tạo chuyến',
-    ),
-    content: SizedBox(
-      width: 480,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          DropdownButtonFormField<int>(
-            initialValue: _vehicleId,
-            isExpanded: true,
-            decoration: const InputDecoration(
-              labelText: 'Xe đang có tại kho',
-              prefixIcon: Icon(Icons.local_shipping_outlined),
-            ),
-            items: _availableVehicles
-                .map(
-                  (item) => DropdownMenuItem(
-                    value: (item['id'] as num).toInt(),
-                    child: Text(
-                      '${item['bien_so_xe']} • ${item['ten_tai_xe']}'
-                      '${item['trang_thai'] == 'CHO_CHANG_VE' ? ' • Chờ chặng về' : ' • ${item['tai_trong']} kg'}',
+  Widget build(BuildContext context) {
+    final requiredWarehouse = _requiredReturnWarehouse;
+    final colors = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Text(
+        _isReturnAssignment ? 'Tạo chuyến quay về' : 'Gán xe tạo chuyến',
+      ),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            DropdownButtonFormField<int>(
+              initialValue: _vehicleId,
+              isExpanded: true,
+              decoration: const InputDecoration(
+                labelText: 'Xe đang có tại kho',
+                prefixIcon: Icon(Icons.local_shipping_outlined),
+              ),
+              items: _availableVehicles
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: (item['id'] as num).toInt(),
+                      child: Text(
+                        '${item['bien_so_xe']} • ${item['ten_tai_xe']}'
+                        '${item['trang_thai'] == 'CHO_CHANG_VE' ? ' • Chờ chuyến về mới' : ' • ${item['tai_trong']} kg'}',
+                      ),
                     ),
-                  ),
-                )
-                .toList(),
-            onChanged: _saving ? null : _selectVehicle,
-          ),
-          const SizedBox(height: 12),
-          InputDecorator(
-            decoration: const InputDecoration(
-              labelText: 'Các kho cấp 2 theo thứ tự xe ghé',
-              prefixIcon: Icon(Icons.route_outlined),
-              alignLabelWithHint: true,
+                  )
+                  .toList(),
+              onChanged: _saving ? null : _selectVehicle,
             ),
-            child: _destinations.isEmpty
-                ? const Text('Chưa có kho cấp 2 phù hợp')
-                : Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: _destinations.map((item) {
-                      final id = (item['id'] as num).toInt();
-                      final selectedIndex = _destinationIds.indexOf(id);
-                      final selected = selectedIndex >= 0;
-                      final required = id == _requiredReturnWarehouseId;
-                      return FilterChip(
-                        selected: selected,
-                        onSelected: _saving || required
-                            ? null
-                            : (value) => setState(() {
-                                if (value) {
-                                  _destinationIds.add(id);
-                                } else {
-                                  _destinationIds.remove(id);
-                                }
-                              }),
-                        avatar: selected
-                            ? CircleAvatar(child: Text('${selectedIndex + 1}'))
-                            : const Icon(Icons.warehouse_outlined, size: 18),
-                        label: Text(
-                          '${item['ten_kho']}${required ? ' • Kho về mặc định' : ''}',
-                        ),
-                      );
-                    }).toList(),
+            const SizedBox(height: 12),
+            if (_isReturnAssignment) ...[
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                width: double.infinity,
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: _returnWarehouseError == null
+                      ? AppColors.primary.withValues(alpha: 0.09)
+                      : AppColors.error.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: _returnWarehouseError == null
+                        ? AppColors.primary.withValues(alpha: 0.55)
+                        : AppColors.error.withValues(alpha: 0.55),
                   ),
-          ),
-          if (_destinationIds.length > 1)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  'Xe sẽ ghé lần lượt theo số thứ tự trên từng kho.',
-                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                child: _loadingReturnWarehouse
+                    ? const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Đang xác định kho xe trực thuộc',
+                            style: TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                          SizedBox(height: 10),
+                          LinearProgressIndicator(minHeight: 3),
+                        ],
+                      )
+                    : Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 42,
+                            height: 42,
+                            decoration: BoxDecoration(
+                              color: _returnWarehouseError == null
+                                  ? AppColors.primary
+                                  : AppColors.error,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(
+                              _returnWarehouseError == null
+                                  ? Icons.home_work_outlined
+                                  : Icons.warning_amber_rounded,
+                              color: AppColors.white,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _returnWarehouseError == null
+                                      ? 'Kho xe trực thuộc'
+                                      : 'Không xác định được kho xe',
+                                  style: TextStyle(
+                                    color: _returnWarehouseError == null
+                                        ? AppColors.primary
+                                        : AppColors.error,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  _returnWarehouseError ??
+                                      '${requiredWarehouse?['ten_kho'] ?? 'Đang cập nhật'}',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(fontWeight: FontWeight.w800),
+                                ),
+                                if (_returnWarehouseError == null) ...[
+                                  const SizedBox(height: 4),
+                                  const Row(
+                                    children: [
+                                      Icon(
+                                        Icons.push_pin_outlined,
+                                        size: 16,
+                                        color: AppColors.primary,
+                                      ),
+                                      SizedBox(width: 5),
+                                      Expanded(
+                                        child: Text(
+                                          'Điểm về bắt buộc, luôn đứng số 1 trong tuyến',
+                                          style: TextStyle(
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            InputDecorator(
+              decoration: InputDecoration(
+                labelText: _isReturnAssignment
+                    ? 'Chọn thêm kho cấp 2 xe sẽ ghé'
+                    : 'Các kho cấp 2 theo thứ tự xe ghé',
+                prefixIcon: const Icon(Icons.route_outlined),
+                alignLabelWithHint: true,
+              ),
+              child: _destinations.isEmpty
+                  ? const Text('Chưa có kho cấp 2 phù hợp')
+                  : Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: _destinations.map((item) {
+                        final id = (item['id'] as num).toInt();
+                        final selectedIndex = _destinationIds.indexOf(id);
+                        final selected = selectedIndex >= 0;
+                        final required = id == _requiredReturnWarehouseId;
+                        return FilterChip(
+                          selected: selected,
+                          selectedColor: AppColors.primary.withValues(
+                            alpha: 0.16,
+                          ),
+                          checkmarkColor: AppColors.primary,
+                          side: required
+                              ? const BorderSide(
+                                  color: AppColors.primary,
+                                  width: 1.5,
+                                )
+                              : null,
+                          onSelected: _saving
+                              ? null
+                              : required
+                              ? (
+                                  _,
+                                ) => ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(
+                                    content: Text(
+                                      'Đây là kho xe trực thuộc nên không thể bỏ khỏi tuyến.',
+                                    ),
+                                  ),
+                                )
+                              : (value) => setState(() {
+                                  if (value) {
+                                    _destinationIds.add(id);
+                                  } else {
+                                    _destinationIds.remove(id);
+                                  }
+                                }),
+                          avatar: selected
+                              ? CircleAvatar(
+                                  backgroundColor: required
+                                      ? AppColors.primary
+                                      : colors.surfaceContainerHighest,
+                                  foregroundColor: required
+                                      ? AppColors.white
+                                      : colors.onSurface,
+                                  child: Text('${selectedIndex + 1}'),
+                                )
+                              : const Icon(Icons.warehouse_outlined, size: 18),
+                          label: Text(
+                            '${item['ten_kho']}${required ? ' • Kho của xe' : ''}',
+                          ),
+                        );
+                      }).toList(),
+                    ),
+            ),
+            if (_destinationIds.length > 1)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Xe sẽ ghé lần lượt theo số thứ tự trên từng kho.',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               ),
-            ),
-          if (_destinations.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.warning_amber_rounded, color: AppColors.warning),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Kho này chưa có tuyến hợp lệ. Nếu là kho cấp 2, hãy kiểm tra kho đã được gán đúng kho cấp 1 trực thuộc và kho cấp 1 đang hoạt động.',
+            if (_destinations.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 10),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.warning_amber_rounded, color: AppColors.warning),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Kho này chưa có tuyến hợp lệ. Nếu là kho cấp 2, hãy kiểm tra kho đã được gán đúng kho cấp 1 trực thuộc và kho cấp 1 đang hoạt động.',
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-          const SizedBox(height: 12),
-          ListTile(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-              side: BorderSide(color: Theme.of(context).colorScheme.outline),
-            ),
-            leading: const Icon(Icons.event_outlined),
-            title: Text(
-              _expectedAt == null
-                  ? 'Chọn ngày dự kiến (không bắt buộc)'
-                  : 'Dự kiến: ${_expectedAt!.day}/${_expectedAt!.month}/${_expectedAt!.year}',
-            ),
-            onTap: _saving ? null : _pickDate,
-          ),
-          if (_availableVehicles.isEmpty)
-            const Padding(
-              padding: EdgeInsets.only(top: 12),
-              child: Text(
-                'Kho chưa có xe sẵn sàng hoặc xe cấp 2 đang chờ chặng về',
+            const SizedBox(height: 12),
+            ListTile(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+                side: BorderSide(color: Theme.of(context).colorScheme.outline),
               ),
+              leading: const Icon(Icons.event_outlined),
+              title: Text(
+                _expectedAt == null
+                    ? 'Chọn ngày dự kiến (không bắt buộc)'
+                    : 'Dự kiến: ${_expectedAt!.day}/${_expectedAt!.month}/${_expectedAt!.year}',
+              ),
+              onTap: _saving ? null : _pickDate,
             ),
-        ],
-      ),
-    ),
-    actions: [
-      TextButton(
-        onPressed: _saving ? null : () => Navigator.pop(context),
-        child: const Text('Hủy'),
-      ),
-      FilledButton(
-        onPressed:
-            _saving ||
-                _availableVehicles.isEmpty ||
-                _destinations.isEmpty ||
-                _destinationIds.isEmpty
-            ? null
-            : _submit,
-        child: Text(
-          _saving
-              ? 'Đang xử lý...'
-              : _isReturnAssignment
-              ? 'Gán chặng về'
-              : 'Tạo chuyến',
+            if (_availableVehicles.isEmpty)
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  'Chưa có xe sẵn sàng tại kho. Hãy tải lại sau khi chuyến đến đã dỡ xong.',
+                ),
+              ),
+          ],
         ),
       ),
-    ],
-  );
+      actions: [
+        TextButton(
+          onPressed: _saving ? null : () => Navigator.pop(context),
+          child: const Text('Hủy'),
+        ),
+        FilledButton(
+          onPressed:
+              _saving ||
+                  _loadingReturnWarehouse ||
+                  _returnWarehouseError != null ||
+                  _availableVehicles.isEmpty ||
+                  _destinations.isEmpty ||
+                  _destinationIds.isEmpty
+              ? null
+              : _submit,
+          child: Text(
+            _saving
+                ? 'Đang xử lý...'
+                : _isReturnAssignment
+                ? 'Tạo chuyến về'
+                : 'Tạo chuyến',
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _CreateWarehouseEmployeeDialog extends StatefulWidget {

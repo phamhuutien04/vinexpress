@@ -302,6 +302,82 @@ class _TripScannerState extends State<_TripScanner> {
     }
   }
 
+  Future<void> _confirmUnloadComplete() async {
+    final trip = _selectedTrip;
+    if (trip == null || _tripId == null) return;
+    final total = (trip['so_kien_chang'] as num?)?.toInt() ?? 0;
+    final scanned = (trip['so_kien_da_nhap'] as num?)?.toInt() ?? 0;
+    if (trip['da_do_xong'] != true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Còn ${total - scanned} kiện chưa quét nhập kho'),
+        ),
+      );
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xác nhận đã dỡ xong'),
+        content: Text(
+          'Đã quét đủ $scanned/$total kiện. Hãy kiểm tra thùng xe không còn kiện trước khi xác nhận.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Kiểm tra lại'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.task_alt_rounded),
+            label: const Text('Xác nhận dỡ xong'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _saving = true);
+    try {
+      final result = await widget.service.confirmUnloadComplete(
+        tripId: _tripId!,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            result == 'DA_HOAN_THANH'
+                ? 'Đã dỡ xong và hoàn thành chuyến xe'
+                : 'Đã dỡ xong, có thể xếp hàng cho chặng tiếp theo',
+          ),
+          backgroundColor: AppColors.success,
+        ),
+      );
+      if (result == 'DA_HOAN_THANH') {
+        setState(() {
+          _trips = [];
+          _tripId = null;
+          _searched = true;
+        });
+      } else {
+        await _findVehicle(notifyWhenEmpty: false);
+      }
+      await widget.onChanged();
+    } on WarehouseEmployeeException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
   Future<void> _sealTrip() async {
     final trip = _selectedTrip;
     if (trip == null) {
@@ -554,6 +630,10 @@ class _TripScannerState extends State<_TripScanner> {
     final hasTrips = _trips.isNotEmpty;
     final selectedTrip = _selectedTrip;
     final selectedTripSealed = selectedTrip?['da_niem_phong'] == true;
+    final unloadTotal = (selectedTrip?['so_kien_chang'] as num?)?.toInt() ?? 0;
+    final unloadScanned =
+        (selectedTrip?['so_kien_da_nhap'] as num?)?.toInt() ?? 0;
+    final unloadComplete = selectedTrip?['da_do_xong'] == true;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -867,6 +947,29 @@ class _TripScannerState extends State<_TripScanner> {
                                     ),
                                   ] else
                                     const _OpenedSealNotice(),
+                                  const SizedBox(height: 10),
+                                  _UnloadProgress(
+                                    scanned: unloadScanned,
+                                    total: unloadTotal,
+                                  ),
+                                  const SizedBox(height: 10),
+                                  SizedBox(
+                                    height: 50,
+                                    child: FilledButton.icon(
+                                      onPressed:
+                                          _saving ||
+                                              selectedTripSealed ||
+                                              !unloadComplete
+                                          ? null
+                                          : _confirmUnloadComplete,
+                                      icon: const Icon(Icons.task_alt_rounded),
+                                      label: Text(
+                                        unloadComplete
+                                            ? 'Xác nhận đã dỡ xong'
+                                            : 'Còn ${unloadTotal - unloadScanned} kiện chưa quét',
+                                      ),
+                                    ),
+                                  ),
                                 ],
                               ],
                             )
@@ -897,6 +1000,79 @@ class _TripScannerState extends State<_TripScanner> {
           ],
         );
       },
+    );
+  }
+}
+
+class _UnloadProgress extends StatelessWidget {
+  const _UnloadProgress({required this.scanned, required this.total});
+
+  final int scanned;
+  final int total;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final remaining = (total - scanned).clamp(0, total);
+    final complete = remaining == 0;
+    final progress = total == 0 ? 1.0 : (scanned / total).clamp(0.0, 1.0);
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: complete
+            ? AppColors.success.withValues(alpha: 0.09)
+            : colors.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: complete
+              ? AppColors.success.withValues(alpha: 0.4)
+              : colors.outlineVariant,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                complete
+                    ? Icons.inventory_2_outlined
+                    : Icons.downloading_rounded,
+                color: complete ? AppColors.success : AppColors.primary,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  complete
+                      ? 'Đã quét đủ $scanned/$total kiện'
+                      : 'Đã nhập $scanned/$total kiện, còn $remaining kiện',
+                  style: TextStyle(
+                    color: complete ? AppColors.success : colors.onSurface,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          LinearProgressIndicator(
+            value: progress,
+            minHeight: 6,
+            borderRadius: BorderRadius.circular(999),
+            backgroundColor: colors.surfaceContainerHighest,
+            color: complete ? AppColors.success : AppColors.primary,
+          ),
+          if (complete) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Kiểm tra thùng xe rồi xác nhận để kết thúc công đoạn dỡ hàng.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: colors.onSurfaceVariant),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
