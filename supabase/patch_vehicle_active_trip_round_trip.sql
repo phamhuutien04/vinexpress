@@ -502,21 +502,43 @@ BEGIN
         AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')) THEN
       RAISE EXCEPTION 'Kiện hàng đã thuộc chuyến xe khác';
     END IF;
-    -- Một xe có thể đi nhiều kho cấp 2. Kiện được gắn vào đúng chặng nơi
-    -- kiện phải dỡ; các chặng trước chỉ là chặng kiện đi xuyên qua.
+    -- Kiện được dỡ tại đúng kho đích, hoặc tại kho cấp 1 chủ quản của kho
+    -- đích cấp 2. Ví dụ kiện về một kho cấp 2 ở Sài Gòn sẽ đi chuyến liên
+    -- vùng đến kho cấp 1 Sài Gòn trước, rồi mới được phân tuyến nội vùng.
     SELECT c_do.* INTO v_chang_do
     FROM public.chuyen_xe_chang c_do
+    JOIN public.kho_hang k_dich ON k_dich.id=v_don.kho_dich_id
     WHERE c_do.chuyen_xe_id=p_chuyen_xe_id
       AND c_do.thu_tu_chuyen>=v_chang.thu_tu_chuyen
-      AND c_do.kho_den_id=v_don.kho_dich_id
+      AND (
+        c_do.kho_den_id=v_don.kho_dich_id
+        OR (k_dich.cap_kho=2 AND k_dich.kho_trung_tam_id=c_do.kho_den_id)
+      )
       AND c_do.trang_thai='CHO_KHOI_HANH'
     ORDER BY c_do.thu_tu_chuyen
     LIMIT 1;
     IF NOT FOUND THEN
-      IF v_chang.kho_den_id=v_don.kho_dich_id THEN
+      IF v_chang.kho_den_id=v_don.kho_dich_id OR EXISTS(
+        SELECT 1 FROM public.kho_hang k_dich
+        WHERE k_dich.id=v_don.kho_dich_id
+          AND k_dich.cap_kho=2
+          AND k_dich.kho_trung_tam_id=v_chang.kho_den_id
+      ) THEN
         v_chang_do := v_chang;
       ELSE
-        RAISE EXCEPTION 'Tuyến xe chưa có điểm dừng tại kho đích của kiện hàng';
+        -- Nhân viên đã chủ động chọn chuyến trước khi quét. Với dữ liệu cũ
+        -- chưa gắn đúng cây kho, lấy điểm dừng cuối của chuyến làm kho dỡ
+        -- trung chuyển thay vì chặn không cho xếp kiện lên xe.
+        SELECT c_cuoi.* INTO v_chang_do
+        FROM public.chuyen_xe_chang c_cuoi
+        WHERE c_cuoi.chuyen_xe_id=p_chuyen_xe_id
+          AND c_cuoi.thu_tu_chuyen>=v_chang.thu_tu_chuyen
+          AND c_cuoi.trang_thai='CHO_KHOI_HANH'
+        ORDER BY c_cuoi.thu_tu_chuyen DESC
+        LIMIT 1;
+        IF NOT FOUND THEN
+          RAISE EXCEPTION 'Chuyến xe không còn chặng chờ để xếp kiện';
+        END IF;
       END IF;
     END IF;
     INSERT INTO public.chi_tiet_chuyen_xe(
@@ -785,8 +807,8 @@ BEGIN
 END;
 $$;
 
--- Danh sách kho đến đúng cấp: kho cấp 2 đi lên kho cấp 1 cha; kho cấp 1 chỉ
--- phân tuyến xuống các kho cấp 2 trực thuộc, không đưa kho cấp 1 khác vào.
+-- Kho cấp 2 đi lên kho cấp 1 cha. Tại kho cấp 1 trả cả các kho cấp 1 khác
+-- (chuyến thường) và kho cấp 2 trực thuộc (chỉ dùng cho chuyến quay về).
 CREATE OR REPLACE FUNCTION public.quan_ly_kho_danh_sach_kho_den(p_kho_di_id BIGINT)
 RETURNS TABLE(id BIGINT,ma_kho VARCHAR,ten_kho VARCHAR,dia_chi TEXT,
   cap_kho SMALLINT,kho_trung_tam_id BIGINT)
@@ -809,9 +831,13 @@ BEGIN
     RETURN QUERY SELECT kh.id,kh.ma_kho::VARCHAR,kh.ten_kho::VARCHAR,
       kh.dia_chi,kh.cap_kho,kh.kho_trung_tam_id
     FROM public.kho_hang kh
-    WHERE kh.cap_kho=2 AND kh.kho_trung_tam_id=p_kho_di_id
+    WHERE kh.id<>p_kho_di_id
       AND kh.trang_thai='HOAT_DONG'
-    ORDER BY kh.ten_kho;
+      AND (
+        kh.cap_kho=1
+        OR (kh.cap_kho=2 AND kh.kho_trung_tam_id=p_kho_di_id)
+      )
+    ORDER BY kh.cap_kho,kh.ten_kho;
   END IF;
 END;
 $$;
@@ -942,14 +968,30 @@ BEGIN
   IF NOT EXISTS(
     SELECT 1 FROM public.xe x
     JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
+    LEFT JOIN public.kho_hang k_tx ON k_tx.id=tx.kho_hang_id
     WHERE x.id=p_xe_id
       AND x.trang_thai='SAN_SANG'
       AND tx.vai_tro='VAN_CHUYEN'
-      AND (tx.kho_hang_id=p_kho_di_id OR x.kho_hien_tai_id=p_kho_di_id)
+      AND (
+        -- Chuyến thường của xe thuộc kho: chỉ chạy đến một kho cấp 1.
+        (tx.kho_hang_id=p_kho_di_id AND EXISTS(
+          SELECT 1 FROM public.kho_hang k_den
+          WHERE k_den.id=p_kho_den_id AND k_den.cap_kho=1
+        ))
+        OR (
+          -- Ngoại lệ duy nhất tại kho cấp 1: xe cấp 2 vừa tới đang quay về
+          -- đúng kho cấp 2 mà tài xế trực thuộc.
+          v_cap_di=1
+          AND x.kho_hien_tai_id=p_kho_di_id
+          AND k_tx.cap_kho=2
+          AND k_tx.kho_trung_tam_id=p_kho_di_id
+          AND tx.kho_hang_id=p_kho_den_id
+        )
+      )
       AND tx.trang_thai_duyet='DA_DUYET'
       AND tx.trang_thai='HOAT_DONG'
   ) THEN
-    RAISE EXCEPTION 'Xe không sẵn sàng hoặc hiện không có tại kho này';
+    RAISE EXCEPTION 'Chuyến thường chỉ được gán xe của kho khởi hành; xe cấp 2 chỉ được gán chuyến quay về kho trực thuộc';
   END IF;
   IF EXISTS(
     SELECT 1 FROM public.chuyen_xe cx
@@ -976,7 +1018,8 @@ BEGIN
 END;
 $$;
 
--- Tạo một chuyến mới từ kho cấp 1 đến một hoặc nhiều kho cấp 2.
+-- Tạo tuyến nhiều điểm: xe kho cấp 1 đi qua các kho cấp 1 khác; riêng xe
+-- cấp 2 đang chờ quay về mới đi qua các kho cấp 2 trực thuộc.
 CREATE OR REPLACE FUNCTION public.quan_ly_kho_gan_xe_tao_tuyen(
   p_kho_di_id BIGINT,p_kho_den_ids BIGINT[],p_xe_id BIGINT,
   p_ngay_du_kien TIMESTAMPTZ DEFAULT NULL
@@ -988,6 +1031,7 @@ DECLARE
   v_kho_den_id BIGINT;
   v_kho_truoc_id BIGINT;
   v_thu_tu INTEGER;
+  v_xe_quay_ve BOOLEAN := FALSE;
 BEGIN
   IF COALESCE(array_length(p_kho_den_ids,1),0)=0 THEN
     RAISE EXCEPTION 'Hãy chọn ít nhất một kho cấp 2';
@@ -1005,18 +1049,9 @@ BEGIN
   IF NOT public.quan_ly_kho_duoc_quan_ly(p_kho_di_id) THEN
     RAISE EXCEPTION 'Bạn không quản lý kho khởi hành';
   END IF;
-  IF NOT EXISTS(
-    SELECT 1 FROM public.kho_hang k
-    WHERE k.id=p_kho_di_id AND k.cap_kho=1
-  ) THEN
-    RAISE EXCEPTION 'Chỉ kho cấp 1 được gán tuyến đến nhiều kho cấp 2';
-  END IF;
-  IF EXISTS(
-    SELECT 1 FROM unnest(p_kho_den_ids) d(id)
-    LEFT JOIN public.kho_hang k ON k.id=d.id
-    WHERE k.id IS NULL OR k.cap_kho<>2 OR k.kho_trung_tam_id<>p_kho_di_id
-  ) THEN
-    RAISE EXCEPTION 'Các điểm dừng phải là kho cấp 2 trực thuộc kho cấp 1 này';
+  IF NOT EXISTS(SELECT 1 FROM public.kho_hang k
+    WHERE k.id=p_kho_di_id AND k.cap_kho=1) THEN
+    RAISE EXCEPTION 'Chỉ kho cấp 1 được tạo tuyến nhiều điểm';
   END IF;
 
   SELECT nv.id INTO v_nv_id FROM public.nhan_vien nv
@@ -1027,6 +1062,36 @@ BEGIN
   PERFORM 1 FROM public.xe x WHERE x.id=p_xe_id FOR UPDATE;
   IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy xe'; END IF;
 
+  SELECT EXISTS(
+    SELECT 1 FROM public.xe x
+    JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
+    JOIN public.kho_hang k_tx ON k_tx.id=tx.kho_hang_id
+    WHERE x.id=p_xe_id AND x.kho_hien_tai_id=p_kho_di_id
+      AND k_tx.cap_kho=2 AND k_tx.kho_trung_tam_id=p_kho_di_id
+  ) INTO v_xe_quay_ve;
+
+  IF v_xe_quay_ve THEN
+    IF EXISTS(
+      SELECT 1 FROM unnest(p_kho_den_ids) d(id)
+      LEFT JOIN public.kho_hang k ON k.id=d.id
+      WHERE k.id IS NULL OR k.cap_kho<>2 OR k.kho_trung_tam_id<>p_kho_di_id
+    ) THEN
+      RAISE EXCEPTION 'Chuyến quay về chỉ được ghé các kho cấp 2 trực thuộc';
+    END IF;
+    IF NOT EXISTS(
+      SELECT 1 FROM public.xe x JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
+      WHERE x.id=p_xe_id AND tx.kho_hang_id=ANY(p_kho_den_ids)
+    ) THEN
+      RAISE EXCEPTION 'Tuyến quay về phải có kho cấp 2 mà xe trực thuộc';
+    END IF;
+  ELSIF EXISTS(
+    SELECT 1 FROM unnest(p_kho_den_ids) d(id)
+    LEFT JOIN public.kho_hang k ON k.id=d.id
+    WHERE k.id IS NULL OR k.cap_kho<>1
+  ) THEN
+    RAISE EXCEPTION 'Xe kho cấp 1 chỉ được chạy đến các kho cấp 1 khác';
+  END IF;
+
   IF EXISTS(
     SELECT 1 FROM public.chuyen_xe cx WHERE cx.xe_id=p_xe_id
       AND cx.trang_thai NOT IN ('DA_HOAN_THANH','DA_HUY')
@@ -1035,12 +1100,25 @@ BEGIN
   END IF;
   IF NOT EXISTS(
     SELECT 1 FROM public.xe x JOIN public.nhan_vien tx ON tx.id=x.tai_xe_id
+    LEFT JOIN public.kho_hang k_tx ON k_tx.id=tx.kho_hang_id
     WHERE x.id=p_xe_id AND x.trang_thai='SAN_SANG'
-      AND (tx.kho_hang_id=p_kho_di_id OR x.kho_hien_tai_id=p_kho_di_id)
+      AND (
+        -- Xe thuộc kho cấp 1: tuyến liên kho cấp 1.
+        (NOT v_xe_quay_ve AND tx.kho_hang_id=p_kho_di_id)
+        OR (
+          -- Xe cấp 2 đang ở kho cấp 1: chỉ là chuyến quay về và kho của xe
+          -- bắt buộc phải nằm trong danh sách điểm dừng đã chọn.
+          v_xe_quay_ve
+          AND x.kho_hien_tai_id=p_kho_di_id
+          AND k_tx.cap_kho=2
+          AND k_tx.kho_trung_tam_id=p_kho_di_id
+          AND tx.kho_hang_id=ANY(p_kho_den_ids)
+        )
+      )
       AND tx.vai_tro='VAN_CHUYEN'
       AND tx.trang_thai_duyet='DA_DUYET' AND tx.trang_thai='HOAT_DONG'
   ) THEN
-    RAISE EXCEPTION 'Xe không sẵn sàng hoặc hiện không có tại kho này';
+    RAISE EXCEPTION 'Chuyến thường chỉ được gán xe kho cấp 1; xe cấp 2 phải có kho trực thuộc trong tuyến quay về';
   END IF;
 
   v_ma := 'CX' || TO_CHAR(NOW(),'YYMMDDHH24MISS')

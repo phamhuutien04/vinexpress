@@ -692,13 +692,13 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
       )
       .firstOrNull;
   List<Map<String, dynamic>> get _destinations {
-    if (!_isReturnAssignment) return widget.warehouses;
     return widget.warehouses
         .where(
-          (item) =>
-              (item['cap_kho'] as num?)?.toInt() == 2 &&
-              (item['kho_trung_tam_id'] as num?)?.toInt() ==
-                  widget.originWarehouseId,
+          (item) => _isReturnAssignment
+              ? (item['cap_kho'] as num?)?.toInt() == 2 &&
+                    (item['kho_trung_tam_id'] as num?)?.toInt() ==
+                        widget.originWarehouseId
+              : (item['cap_kho'] as num?)?.toInt() == 1,
         )
         .toList();
   }
@@ -838,7 +838,7 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
                       value: (item['id'] as num).toInt(),
                       child: Text(
                         '${item['bien_so_xe']} • ${item['ten_tai_xe']}'
-                        '${item['trang_thai'] == 'CHO_CHANG_VE' ? ' • Chờ chuyến về mới' : ' • ${item['tai_trong']} kg'}',
+                        '${item['trang_thai'] == 'CHO_CHANG_VE' ? ' • Xe cấp 2 quay về' : ' • Xe thuộc kho • ${item['tai_trong']} kg'}',
                       ),
                     ),
                   )
@@ -949,7 +949,7 @@ class _CreateTripDialogState extends State<_CreateTripDialog> {
               decoration: InputDecoration(
                 labelText: _isReturnAssignment
                     ? 'Chọn thêm kho cấp 2 xe sẽ ghé'
-                    : 'Các kho cấp 2 theo thứ tự xe ghé',
+                    : 'Chọn các kho cấp 1 theo thứ tự xe ghé',
                 prefixIcon: const Icon(Icons.route_outlined),
                 alignLabelWithHint: true,
               ),
