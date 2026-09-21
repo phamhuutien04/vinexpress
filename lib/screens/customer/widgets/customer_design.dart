@@ -24,6 +24,10 @@ class CustomerConstrained extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
+    // Không cho wrapper giãn theo chiều cao khi dùng trong bottomNavigationBar.
+    // Nếu thiếu heightFactor, Center có thể chiếm toàn bộ phần chiều cao còn
+    // lại của Scaffold trên web và đẩy nội dung biểu mẫu ra khỏi màn hình.
+    heightFactor: 1,
     child: ConstrainedBox(
       constraints: const BoxConstraints(maxWidth: CustomerUi.maxContentWidth),
       child: child,

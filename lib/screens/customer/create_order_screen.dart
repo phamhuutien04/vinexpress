@@ -262,9 +262,40 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     );
   }
 
+  Widget _submitButton({required bool compact}) {
+    final onPressed = _isLoading || _calculatingFee ? null : _submit;
+    final label = _isLoading
+        ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.white,
+            ),
+          )
+        : const Text('Tạo đơn');
+    final style = FilledButton.styleFrom(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 18 : 24,
+        vertical: 16,
+      ),
+    );
+    if (compact) {
+      return FilledButton(onPressed: onPressed, style: style, child: label);
+    }
+    return FilledButton.icon(
+      onPressed: onPressed,
+      icon: const Icon(Icons.arrow_forward_rounded),
+      iconAlignment: IconAlignment.end,
+      label: label,
+      style: style,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
+    final compactBottomBar = MediaQuery.sizeOf(context).width < 420;
     return Scaffold(
       backgroundColor: colors.surface,
       appBar: AppBar(
@@ -527,27 +558,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                     ],
                   ),
                 ),
-                FilledButton.icon(
-                  onPressed: _isLoading || _calculatingFee ? null : _submit,
-                  icon: const Icon(Icons.arrow_forward_rounded),
-                  iconAlignment: IconAlignment.end,
-                  label: _isLoading
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Tạo đơn'),
-                  style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 16,
-                    ),
-                  ),
-                ),
+                _submitButton(compact: compactBottomBar),
               ],
             ),
           ),
@@ -824,18 +835,24 @@ class _SummaryCard extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontWeight: strong ? FontWeight.bold : FontWeight.normal,
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontWeight: strong ? FontWeight.bold : FontWeight.normal,
+            ),
           ),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: strong ? 18 : 14,
-            fontWeight: FontWeight.bold,
-            color: strong ? AppColors.primary : null,
+        const SizedBox(width: 12),
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              fontSize: strong ? 18 : 14,
+              fontWeight: FontWeight.bold,
+              color: strong ? AppColors.primary : null,
+            ),
           ),
         ),
       ],

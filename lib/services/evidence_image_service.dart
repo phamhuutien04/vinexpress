@@ -1,6 +1,6 @@
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 class EvidenceImageService {
@@ -19,6 +19,11 @@ class EvidenceImageService {
     required double longitude,
     required DateTime capturedAt,
   }) async {
+    // ImageDescriptor.width/height chưa được Flutter Web hỗ trợ ổn định.
+    // Trên web giữ nguyên ảnh; thông tin đơn, địa chỉ, GPS và thời gian vẫn
+    // được gửi riêng trong context của request tải minh chứng.
+    if (kIsWeb) return sourceBytes;
+
     final source = await _decode(sourceBytes);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
