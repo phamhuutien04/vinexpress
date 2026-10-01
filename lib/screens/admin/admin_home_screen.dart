@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -122,15 +124,31 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                 onPressed: _loading ? null : _loadAll,
                 icon: const Icon(Icons.refresh),
               ),
-              PopupMenuButton<String>(
-                onSelected: (value) {
-                  if (value == 'logout') _logout();
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'logout', child: Text('Đăng xuất')),
-                ],
-                icon: const Icon(Icons.account_circle_outlined),
-              ),
+              if (desktop)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: TextButton.icon(
+                    onPressed: _confirmLogout,
+                    icon: const Icon(Icons.logout_rounded, size: 19),
+                    label: const Text('Đăng xuất'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: Theme.of(context).colorScheme.error,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                IconButton(
+                  tooltip: 'Đăng xuất',
+                  onPressed: _confirmLogout,
+                  icon: const Icon(Icons.logout_rounded),
+                ),
             ],
           ),
           body: _body(),
@@ -223,7 +241,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       );
     }
     return switch (_selected) {
-      0 => _AdminOverview(data: _overview, onRefresh: _loadAll),
+      0 => _AdminOverview(
+        data: _overview,
+        orders: _orders,
+        walletRequests: _walletRequests,
+        onRefresh: _loadAll,
+      ),
       1 => _EmployeeList(employees: _employees, onAction: _updateEmployee),
       2 => _CustomerList(customers: _customers),
       3 => _OrderList(orders: _orders),
@@ -393,6 +416,39 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     );
   }
 
+  Future<void> _confirmLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: Icon(
+          Icons.logout_rounded,
+          color: Theme.of(dialogContext).colorScheme.error,
+        ),
+        title: const Text('Đăng xuất khỏi hệ thống?'),
+        content: const Text(
+          'Bạn sẽ cần đăng nhập lại để tiếp tục quản trị VinExpress.',
+          textAlign: TextAlign.center,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Ở lại'),
+          ),
+          FilledButton.icon(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            icon: const Icon(Icons.logout_rounded, size: 18),
+            label: const Text('Đăng xuất'),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(dialogContext).colorScheme.error,
+              foregroundColor: Theme.of(dialogContext).colorScheme.onError,
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed == true) await _logout();
+  }
+
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message), backgroundColor: AppColors.error),
@@ -401,176 +457,165 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
 }
 
 class _AdminOverview extends StatelessWidget {
-  const _AdminOverview({required this.data, required this.onRefresh});
+  const _AdminOverview({
+    required this.data,
+    required this.orders,
+    required this.walletRequests,
+    required this.onRefresh,
+  });
+
   final Map<String, dynamic> data;
+  final List<Map<String, dynamic>> orders;
+  final List<Map<String, dynamic>> walletRequests;
   final Future<void> Function() onRefresh;
+
+  int _number(dynamic value) => (value as num?)?.toInt() ?? 0;
+
+  List<int> get _lastSevenDays {
+    final now = DateTime.now();
+    return List.generate(7, (index) {
+      final day = DateTime(now.year, now.month, now.day - (6 - index));
+      return orders.where((order) {
+        final createdAt = DateTime.tryParse(
+          '${order['ngay_tao'] ?? ''}',
+        )?.toLocal();
+        return createdAt != null &&
+            createdAt.year == day.year &&
+            createdAt.month == day.month &&
+            createdAt.day == day.day;
+      }).length;
+    });
+  }
+
+  List<String> get _lastSevenLabels {
+    final now = DateTime.now();
+    return List.generate(7, (index) {
+      final day = DateTime(now.year, now.month, now.day - (6 - index));
+      return '${day.day}/${day.month}';
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     final name = CustomerAuthService.currentEmployee?['ho_ten'] ?? 'Admin';
+    final pendingWallets = walletRequests
+        .where((item) => item['trang_thai'] == 'CHO_DUYET')
+        .length;
+    final waiting = _number(data['don_cho_lay']);
+    final delivering = _number(data['don_dang_giao']);
+    final delivered = _number(data['don_da_giao']);
+    final chartValues = _lastSevenDays;
+    final colors = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
         children: [
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: AppColors.primaryGradient,
-              borderRadius: BorderRadius.circular(22),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: .18),
-                    borderRadius: BorderRadius.circular(16),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 1320),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _OverviewHero(
+                    name: '$name',
+                    revenue: data['tong_doanh_thu_van_chuyen'],
                   ),
-                  child: const Icon(
-                    Icons.admin_panel_settings_rounded,
-                    color: Colors.white,
-                    size: 31,
+                  const SizedBox(height: 24),
+                  const _SectionTitle(
+                    title: 'Sức khỏe hệ thống',
+                    subtitle:
+                        'Các chỉ số quan trọng được cập nhật theo dữ liệu mới nhất',
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Xin chào,',
-                        style: TextStyle(color: Colors.white70),
-                      ),
-                      Text(
-                        '$name',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 21,
-                          fontWeight: FontWeight.w800,
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final columns = constraints.maxWidth >= 900
+                          ? 4
+                          : constraints.maxWidth >= 560
+                          ? 2
+                          : 1;
+                      return GridView.count(
+                        crossAxisCount: columns,
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        childAspectRatio: columns == 1 ? 3.15 : 1.8,
+                        children: [
+                          _SummaryCard(
+                            label: 'Tổng đơn hàng',
+                            value: '${data['tong_don_hang'] ?? 0}',
+                            icon: Icons.inventory_2_outlined,
+                            color: AppColors.primary,
+                          ),
+                          _SummaryCard(
+                            label: 'Khách hàng',
+                            value: '${data['tong_khach_hang'] ?? 0}',
+                            icon: Icons.groups_outlined,
+                            color: colors.secondary,
+                          ),
+                          _SummaryCard(
+                            label: 'Nhân viên',
+                            value: '${data['tong_nhan_vien'] ?? 0}',
+                            icon: Icons.badge_outlined,
+                            color: colors.tertiary,
+                          ),
+                          _SummaryCard(
+                            label: 'Cần xử lý',
+                            value:
+                                '${_number(data['nhan_vien_cho_duyet']) + pendingWallets}',
+                            icon: Icons.notification_important_outlined,
+                            color: AppColors.warning,
+                          ),
+                        ],
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 24),
+                  const _SectionTitle(
+                    title: 'Phân tích vận hành',
+                    subtitle: 'Xu hướng đơn mới và cơ cấu trạng thái giao hàng',
+                  ),
+                  const SizedBox(height: 12),
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      final wide = constraints.maxWidth >= 820;
+                      final trend = _TrendChartCard(
+                        values: chartValues,
+                        labels: _lastSevenLabels,
+                      );
+                      final status = _StatusChartCard(
+                        waiting: waiting,
+                        delivering: delivering,
+                        delivered: delivered,
+                      );
+                      if (!wide) {
+                        return Column(
+                          children: [trend, const SizedBox(height: 12), status],
+                        );
+                      }
+                      return SizedBox(
+                        height: 330,
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(flex: 3, child: trend),
+                            const SizedBox(width: 12),
+                            Expanded(flex: 2, child: status),
+                          ],
                         ),
-                      ),
-                      const Text(
-                        'Quản trị viên hệ thống',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ],
+                      );
+                    },
                   ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 22),
-          const _SectionTitle(
-            title: 'Tổng quan hệ thống',
-            subtitle: 'Dữ liệu được cập nhật theo thời gian thực',
-          ),
-          const SizedBox(height: 12),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 760 ? 4 : 2;
-              final ratio = constraints.maxWidth >= 760 ? 1.75 : 1.48;
-              return GridView.count(
-                crossAxisCount: columns,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-                childAspectRatio: ratio,
-                children: [
-                  _SummaryCard(
-                    label: 'Nhân viên',
-                    value: '${data['tong_nhan_vien'] ?? 0}',
-                    icon: Icons.badge_outlined,
-                    color: AppColors.primary,
-                  ),
-                  _SummaryCard(
-                    label: 'Chờ duyệt',
-                    value: '${data['nhan_vien_cho_duyet'] ?? 0}',
-                    icon: Icons.pending_actions_outlined,
-                    color: Colors.orange,
-                  ),
-                  _SummaryCard(
-                    label: 'Khách hàng',
-                    value: '${data['tong_khach_hang'] ?? 0}',
-                    icon: Icons.groups_outlined,
-                    color: Colors.blue,
-                  ),
-                  _SummaryCard(
-                    label: 'Tổng đơn hàng',
-                    value: '${data['tong_don_hang'] ?? 0}',
-                    icon: Icons.receipt_long_outlined,
-                    color: Colors.purple,
-                  ),
-                ],
-              );
-            },
-          ),
-          const SizedBox(height: 24),
-          const _SectionTitle(
-            title: 'Tình trạng vận hành',
-            subtitle: 'Theo dõi tiến độ giao hàng',
-          ),
-          const SizedBox(height: 12),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 18),
-              child: Row(
-                children: [
-                  _OrderMetric(
-                    value: data['don_cho_lay'],
-                    label: 'Chờ lấy',
-                    color: Colors.orange,
-                  ),
-                  _OrderMetric(
-                    value: data['don_dang_giao'],
-                    label: 'Đang giao',
-                    color: Colors.blue,
-                  ),
-                  _OrderMetric(
-                    value: data['don_da_giao'],
-                    label: 'Đã giao',
-                    color: Colors.green,
+                  const SizedBox(height: 24),
+                  _AttentionPanel(
+                    pendingEmployees: _number(data['nhan_vien_cho_duyet']),
+                    pendingWallets: pendingWallets,
+                    waitingOrders: waiting,
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              color: AppColors.primary.withValues(alpha: .10),
-              border: Border.all(
-                color: AppColors.primary.withValues(alpha: .25),
-              ),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              children: [
-                const CircleAvatar(
-                  backgroundColor: AppColors.primary,
-                  child: Icon(Icons.payments_outlined, color: Colors.white),
-                ),
-                const SizedBox(width: 14),
-                const Expanded(
-                  child: Text(
-                    'Doanh thu vận chuyển',
-                    style: TextStyle(fontWeight: FontWeight.w700),
-                  ),
-                ),
-                Text(
-                  _money(data['tong_doanh_thu_van_chuyen']),
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
             ),
           ),
         ],
@@ -612,8 +657,10 @@ class _SummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Card(
     margin: EdgeInsets.zero,
+    elevation: 0,
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
     child: Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Row(
         children: [
           Container(
@@ -634,7 +681,7 @@ class _SummaryCard extends StatelessWidget {
                 Text(
                   value,
                   style: const TextStyle(
-                    fontSize: 22,
+                    fontSize: 24,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -653,33 +700,493 @@ class _SummaryCard extends StatelessWidget {
   );
 }
 
-class _OrderMetric extends StatelessWidget {
-  const _OrderMetric({
-    required this.value,
-    required this.label,
-    required this.color,
-  });
-  final dynamic value;
-  final String label;
-  final Color color;
+class _OverviewHero extends StatelessWidget {
+  const _OverviewHero({required this.name, required this.revenue});
+
+  final String name;
+  final dynamic revenue;
 
   @override
-  Widget build(BuildContext context) => Expanded(
-    child: Column(
-      children: [
-        Text(
-          '${value ?? 0}',
-          style: TextStyle(
-            color: color,
-            fontSize: 23,
-            fontWeight: FontWeight.w900,
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(22),
+    decoration: BoxDecoration(
+      gradient: AppColors.primaryGradient,
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 600;
+        final greeting = Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'TRUNG TÂM ĐIỀU HÀNH',
+              style: TextStyle(
+                color: Colors.white70,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Chào $name',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 24,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 5),
+            const Text(
+              'Theo dõi toàn bộ hoạt động VinExpress tại một nơi.',
+              style: TextStyle(color: Colors.white),
+            ),
+          ],
+        );
+        final revenueBlock = Container(
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: .16),
+            borderRadius: BorderRadius.circular(14),
           ),
-        ),
-        const SizedBox(height: 3),
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-      ],
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Doanh thu đã giao',
+                style: TextStyle(color: Colors.white70, fontSize: 12),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _money(revenue),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 21,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        );
+        if (compact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [greeting, const SizedBox(height: 18), revenueBlock],
+          );
+        }
+        return Row(
+          children: [
+            Expanded(child: greeting),
+            const SizedBox(width: 20),
+            revenueBlock,
+          ],
+        );
+      },
     ),
   );
+}
+
+class _TrendChartCard extends StatelessWidget {
+  const _TrendChartCard({required this.values, required this.labels});
+
+  final List<int> values;
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final total = values.fold<int>(0, (sum, value) => sum + value);
+    return _AnalyticsCard(
+      title: 'Đơn hàng 7 ngày',
+      subtitle: '$total đơn mới trong tuần gần nhất',
+      child: SizedBox(
+        height: 210,
+        child: Semantics(
+          label:
+              'Biểu đồ đơn hàng 7 ngày: ${List.generate(values.length, (index) => '${labels[index]} ${values[index]} đơn').join(', ')}',
+          child: CustomPaint(
+            painter: _BarChartPainter(
+              values: values,
+              labels: labels,
+              color: AppColors.primary,
+              gridColor: Theme.of(context).dividerColor,
+            ),
+            size: Size.infinite,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StatusChartCard extends StatelessWidget {
+  const _StatusChartCard({
+    required this.waiting,
+    required this.delivering,
+    required this.delivered,
+  });
+
+  final int waiting;
+  final int delivering;
+  final int delivered;
+
+  @override
+  Widget build(BuildContext context) {
+    final values = [waiting, delivering, delivered];
+    const chartColors = [AppColors.warning, AppColors.info, AppColors.success];
+    final total = values.fold<int>(0, (sum, value) => sum + value);
+    return _AnalyticsCard(
+      title: 'Trạng thái đơn',
+      subtitle: '$total đơn trong luồng vận hành',
+      child: SizedBox(
+        height: 210,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final chartSize = math.min(
+              180.0,
+              math.max(112.0, constraints.maxWidth - 132),
+            );
+            return Row(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: SizedBox.square(
+                      dimension: chartSize,
+                      child: Semantics(
+                        label:
+                            'Chờ lấy $waiting, đang giao $delivering, đã giao $delivered',
+                        child: CustomPaint(
+                          painter: _DonutChartPainter(
+                            values: values,
+                            colors: chartColors,
+                            trackColor: Theme.of(
+                              context,
+                            ).colorScheme.surfaceContainerHighest,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _ChartLegend(
+                      color: chartColors[0],
+                      label: 'Chờ lấy',
+                      value: waiting,
+                    ),
+                    const SizedBox(height: 13),
+                    _ChartLegend(
+                      color: chartColors[1],
+                      label: 'Đang giao',
+                      value: delivering,
+                    ),
+                    const SizedBox(height: 13),
+                    _ChartLegend(
+                      color: chartColors[2],
+                      label: 'Đã giao',
+                      value: delivered,
+                    ),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+}
+
+class _AnalyticsCard extends StatelessWidget {
+  const _AnalyticsCard({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Card(
+    margin: EdgeInsets.zero,
+    elevation: 0,
+    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    child: Padding(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 2),
+          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+          const SizedBox(height: 16),
+          child,
+        ],
+      ),
+    ),
+  );
+}
+
+class _ChartLegend extends StatelessWidget {
+  const _ChartLegend({
+    required this.color,
+    required this.label,
+    required this.value,
+  });
+  final Color color;
+  final String label;
+  final int value;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(
+          color: color,
+          borderRadius: BorderRadius.circular(3),
+        ),
+      ),
+      const SizedBox(width: 8),
+      Text(label, style: Theme.of(context).textTheme.bodySmall),
+      const SizedBox(width: 8),
+      Text('$value', style: const TextStyle(fontWeight: FontWeight.w800)),
+    ],
+  );
+}
+
+class _AttentionPanel extends StatelessWidget {
+  const _AttentionPanel({
+    required this.pendingEmployees,
+    required this.pendingWallets,
+    required this.waitingOrders,
+  });
+  final int pendingEmployees;
+  final int pendingWallets;
+  final int waitingOrders;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      ('Tài khoản chờ duyệt', pendingEmployees, Icons.badge_outlined),
+      (
+        'Yêu cầu ví chờ xử lý',
+        pendingWallets,
+        Icons.account_balance_wallet_outlined,
+      ),
+      ('Đơn đang chờ lấy', waitingOrders, Icons.schedule_outlined),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.warning.withValues(alpha: .08),
+        border: Border.all(color: AppColors.warning.withValues(alpha: .28)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.bolt_rounded, color: AppColors.warning),
+              SizedBox(width: 9),
+              Text(
+                'Cần chú ý hôm nay',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final compact = constraints.maxWidth < 650;
+              final widgets = items
+                  .map(
+                    (item) => _AttentionItem(
+                      label: item.$1,
+                      value: item.$2,
+                      icon: item.$3,
+                    ),
+                  )
+                  .toList();
+              return compact
+                  ? Column(
+                      children: [
+                        for (var i = 0; i < widgets.length; i++) ...[
+                          widgets[i],
+                          if (i < widgets.length - 1) const Divider(height: 22),
+                        ],
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        for (var i = 0; i < widgets.length; i++) ...[
+                          Expanded(child: widgets[i]),
+                          if (i < widgets.length - 1) const SizedBox(width: 18),
+                        ],
+                      ],
+                    );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AttentionItem extends StatelessWidget {
+  const _AttentionItem({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
+  final String label;
+  final int value;
+  final IconData icon;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    children: [
+      Icon(
+        icon,
+        size: 21,
+        color: Theme.of(context).colorScheme.onSurfaceVariant,
+      ),
+      const SizedBox(width: 10),
+      Expanded(child: Text(label)),
+      Text(
+        '$value',
+        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900),
+      ),
+    ],
+  );
+}
+
+class _DonutChartPainter extends CustomPainter {
+  const _DonutChartPainter({
+    required this.values,
+    required this.colors,
+    required this.trackColor,
+  });
+  final List<int> values;
+  final List<Color> colors;
+  final Color trackColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) * .36;
+    final stroke = math.max(12.0, radius * .28);
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    final total = values.fold<int>(0, (sum, value) => sum + value);
+    canvas.drawArc(
+      rect,
+      0,
+      math.pi * 2,
+      false,
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke,
+    );
+    if (total == 0) return;
+    var start = -math.pi / 2;
+    for (var i = 0; i < values.length; i++) {
+      if (values[i] == 0) continue;
+      final sweep = math.pi * 2 * values[i] / total;
+      canvas.drawArc(
+        rect,
+        start + .025,
+        math.max(0, sweep - .05),
+        false,
+        Paint()
+          ..color = colors[i]
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke
+          ..strokeCap = StrokeCap.round,
+      );
+      start += sweep;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _DonutChartPainter oldDelegate) =>
+      oldDelegate.values != values || oldDelegate.trackColor != trackColor;
+}
+
+class _BarChartPainter extends CustomPainter {
+  const _BarChartPainter({
+    required this.values,
+    required this.labels,
+    required this.color,
+    required this.gridColor,
+  });
+  final List<int> values;
+  final List<String> labels;
+  final Color color;
+  final Color gridColor;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const bottom = 26.0;
+    const top = 8.0;
+    final chartHeight = size.height - bottom - top;
+    final maxValue = math.max(1, values.fold<int>(0, math.max));
+    final slot = size.width / values.length;
+    final barWidth = math.min(34.0, slot * .54);
+    final gridPaint = Paint()
+      ..color = gridColor.withValues(alpha: .6)
+      ..strokeWidth = 1;
+    for (var i = 0; i <= 3; i++) {
+      final y = top + chartHeight * i / 3;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+    for (var i = 0; i < values.length; i++) {
+      final x = slot * i + (slot - barWidth) / 2;
+      final height = chartHeight * values[i] / maxValue;
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, top + chartHeight - height, barWidth, height),
+        const Radius.circular(7),
+      );
+      canvas.drawRRect(
+        rect,
+        Paint()
+          ..color = color.withValues(
+            alpha: values[i] == maxValue && maxValue > 0 ? 1 : .58,
+          ),
+      );
+      final painter = TextPainter(
+        text: TextSpan(
+          text: labels[i],
+          style: TextStyle(color: gridColor.withValues(alpha: 1), fontSize: 10),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      painter.paint(
+        canvas,
+        Offset(
+          slot * i + (slot - painter.width) / 2,
+          size.height - painter.height,
+        ),
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _BarChartPainter oldDelegate) =>
+      oldDelegate.values != values || oldDelegate.gridColor != gridColor;
 }
 
 class _EmployeeList extends StatelessWidget {
