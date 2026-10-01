@@ -226,10 +226,7 @@ class _TripScannerState extends State<_TripScanner> {
       await widget.service.receiveParcel(code);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã nhập kiện hàng vào kho'),
-          backgroundColor: AppColors.success,
-        ),
+        const SnackBar(content: Text('Đã nhập kiện hàng vào kho')),
       );
       await widget.onChanged();
     } on WarehouseEmployeeException catch (error) {
@@ -284,7 +281,6 @@ class _TripScannerState extends State<_TripScanner> {
                 ? 'Đã xếp kiện lên xe'
                 : 'Đã nhập kiện vào kho',
           ),
-          backgroundColor: AppColors.success,
         ),
       );
       await _findVehicle(notifyWhenEmpty: false);
@@ -351,7 +347,6 @@ class _TripScannerState extends State<_TripScanner> {
                 ? 'Đã dỡ xong và hoàn thành chuyến xe'
                 : 'Đã dỡ xong, có thể xếp hàng cho chặng tiếp theo',
           ),
-          backgroundColor: AppColors.success,
         ),
       );
       if (result == 'DA_HOAN_THANH') {
@@ -478,10 +473,7 @@ class _TripScannerState extends State<_TripScanner> {
       await widget.service.sealTrip(tripId: _tripId!, sealCode: sealCode);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã niêm phong xe thành công'),
-          backgroundColor: AppColors.success,
-        ),
+        const SnackBar(content: Text('Đã niêm phong xe thành công')),
       );
       await _findVehicle(notifyWhenEmpty: false);
     } on WarehouseEmployeeException catch (error) {
@@ -602,10 +594,7 @@ class _TripScannerState extends State<_TripScanner> {
       await widget.service.unsealTrip(tripId: _tripId!, sealCode: sealCode);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã mở niêm phong, có thể dỡ kiện'),
-          backgroundColor: AppColors.success,
-        ),
+        const SnackBar(content: Text('Đã mở niêm phong, có thể dỡ kiện')),
       );
       await _findVehicle(notifyWhenEmpty: false);
       await widget.onChanged();

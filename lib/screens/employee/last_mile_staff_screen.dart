@@ -311,10 +311,7 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
       if (!mounted) return;
       final claimedOrder = Map<String, dynamic>.from(item)..['da_nhan'] = true;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã nhận đơn, đang mở chỉ đường'),
-          backgroundColor: AppColors.success,
-        ),
+        const SnackBar(content: Text('Đã nhận đơn, đang mở chỉ đường')),
       );
       await _openPickupNavigation(claimedOrder);
     } catch (e) {
@@ -379,12 +376,9 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
     try {
       await action();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(successMessage),
-            backgroundColor: AppColors.success,
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(successMessage)));
       }
       await _load();
     } catch (e) {

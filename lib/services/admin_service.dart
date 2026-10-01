@@ -52,6 +52,28 @@ class AdminService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getTransportIncidents() =>
+      _list('admin_danh_sach_su_co_van_chuyen');
+
+  Future<void> processTransportIncident({
+    required int incidentId,
+    required String action,
+    String? note,
+  }) async {
+    try {
+      await _client.rpc(
+        'admin_xu_ly_su_co_van_chuyen',
+        params: {
+          'p_su_co_id': incidentId,
+          'p_hanh_dong': action,
+          'p_ghi_chu': note?.trim(),
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw AdminServiceException(_message(error));
+    }
+  }
+
   Future<void> processWalletRequest({
     required int requestId,
     required String action,

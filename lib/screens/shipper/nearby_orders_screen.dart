@@ -31,18 +31,20 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
     _offerTimer = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted || _activeOrders.isNotEmpty) return;
       _offerTicks++;
-      final expiredIds = _orders.where((order) {
-        final expiresAt = DateTime.tryParse(
-          '${order['loi_moi_het_han_luc'] ?? ''}',
-        )?.toLocal();
-        return expiresAt != null && !expiresAt.isAfter(DateTime.now());
-      }).map((order) => order['id']).toSet();
+      final expiredIds = _orders
+          .where((order) {
+            final expiresAt = DateTime.tryParse(
+              '${order['loi_moi_het_han_luc'] ?? ''}',
+            )?.toLocal();
+            return expiresAt != null && !expiresAt.isAfter(DateTime.now());
+          })
+          .map((order) => order['id'])
+          .toSet();
 
       if (expiredIds.isNotEmpty) {
         setState(
-          () => _orders.removeWhere(
-            (order) => expiredIds.contains(order['id']),
-          ),
+          () =>
+              _orders.removeWhere((order) => expiredIds.contains(order['id'])),
         );
         unawaited(_refreshExpiredOffer());
       } else if (_orders.isNotEmpty) {
@@ -134,10 +136,7 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
       await _service.acceptOrder(order['id'] as int);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Đã nhận đơn ${order['ma_van_don']}'),
-          backgroundColor: AppColors.success,
-        ),
+        SnackBar(content: Text('Đã nhận đơn ${order['ma_van_don']}')),
       );
       setState(() => _loading = false);
       final completed = await Navigator.of(context).push<bool>(
@@ -155,7 +154,8 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
       unawaited(_refreshOrdersFromSavedLocation());
     } on ShipperServiceException catch (error) {
       if (!mounted) return;
-      final expired = error.message.contains('hết 30 giây') ||
+      final expired =
+          error.message.contains('hết 30 giây') ||
           error.message.contains('không còn khả dụng');
       if (expired) {
         setState(
@@ -410,7 +410,7 @@ class _NearbyOrderCard extends StatelessWidget {
     final secondsLeft = expiresAt == null
         ? 0
         : ((expiresAt.difference(DateTime.now()).inMilliseconds + 999) ~/ 1000)
-            .clamp(0, 30);
+              .clamp(0, 30);
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: Padding(

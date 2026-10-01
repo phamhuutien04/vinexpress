@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
 import '../../services/transport_driver_service.dart';
+import '../../widgets/evidence_image_dialog.dart';
 import '../auth/login_screen.dart';
 import 'transport_driver_navigation_screen.dart';
+import 'transport_incident_report_screen.dart';
 
 class TransportDriverHomeScreen extends StatefulWidget {
   const TransportDriverHomeScreen({super.key});
@@ -21,6 +23,7 @@ class _TransportDriverHomeScreenState extends State<TransportDriverHomeScreen> {
   String? _error;
   Map<String, dynamic> _profile = {};
   List<Map<String, dynamic>> _trips = [];
+  List<Map<String, dynamic>> _incidents = [];
 
   @override
   void initState() {
@@ -37,11 +40,13 @@ class _TransportDriverHomeScreenState extends State<TransportDriverHomeScreen> {
       final result = await Future.wait([
         _service.getProfile(),
         _service.getTrips(),
+        _service.getIncidents(),
       ]);
       if (!mounted) return;
       setState(() {
         _profile = result[0] as Map<String, dynamic>;
         _trips = result[1] as List<Map<String, dynamic>>;
+        _incidents = result[2] as List<Map<String, dynamic>>;
       });
     } on TransportDriverException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -66,13 +71,14 @@ class _TransportDriverHomeScreenState extends State<TransportDriverHomeScreen> {
     const titles = <String>[
       'Lộ trình vận chuyển',
       'Lịch sử chuyến',
+      'Báo cáo của tôi',
       'Tài khoản tài xế',
     ];
     return Scaffold(
       appBar: AppBar(
         title: Text(titles[_tab]),
         actions: [
-          if (_tab != 2)
+          if (_tab != 3)
             IconButton(
               onPressed: _loading ? null : _load,
               tooltip: 'Làm mới dữ liệu',
@@ -93,6 +99,7 @@ class _TransportDriverHomeScreenState extends State<TransportDriverHomeScreen> {
                   onUpdate: _updateTrip,
                 ),
                 _TripHistoryView(trips: historyTrips),
+                _DriverIncidentView(incidents: _incidents, onRefresh: _load),
                 _DriverAccount(
                   profile: _profile,
                   name: name,
@@ -113,6 +120,11 @@ class _TransportDriverHomeScreenState extends State<TransportDriverHomeScreen> {
             icon: Icon(Icons.history_rounded),
             selectedIcon: Icon(Icons.manage_history_rounded),
             label: 'Lịch sử',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.report_problem_outlined),
+            selectedIcon: Icon(Icons.report_problem_rounded),
+            label: 'Sự cố',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),
@@ -695,6 +707,16 @@ class _TripActions extends StatelessWidget {
       icon: const Icon(Icons.directions_rounded),
       label: const Text('Mở chỉ đường'),
     );
+    final report = OutlinedButton.icon(
+      onPressed: () => Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => TransportIncidentReportScreen(trip: trip),
+        ),
+      ),
+      icon: const Icon(Icons.report_problem_outlined),
+      label: const Text('Báo sự cố'),
+      style: OutlinedButton.styleFrom(foregroundColor: AppColors.warning),
+    );
     final update = next == null
         ? null
         : FilledButton.icon(
@@ -721,6 +743,8 @@ class _TripActions extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               SizedBox(height: 48, child: directions),
+              const SizedBox(height: 9),
+              SizedBox(height: 48, child: report),
               if (update != null) ...[
                 const SizedBox(height: 9),
                 SizedBox(height: 50, child: update),
@@ -731,6 +755,8 @@ class _TripActions extends StatelessWidget {
         return Row(
           children: [
             Expanded(child: SizedBox(height: 48, child: directions)),
+            const SizedBox(width: 10),
+            Expanded(child: SizedBox(height: 48, child: report)),
             if (update != null) ...[
               const SizedBox(width: 10),
               Expanded(child: SizedBox(height: 48, child: update)),
@@ -1476,6 +1502,161 @@ String _historyDate(dynamic raw, {bool includeTime = false}) {
   String two(int number) => number.toString().padLeft(2, '0');
   final date = '${two(value.day)}/${two(value.month)}/${value.year}';
   return includeTime ? '${two(value.hour)}:${two(value.minute)} $date' : date;
+}
+
+class _DriverIncidentView extends StatelessWidget {
+  const _DriverIncidentView({required this.incidents, required this.onRefresh});
+  final List<Map<String, dynamic>> incidents;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) => RefreshIndicator(
+    onRefresh: onRefresh,
+    child: incidents.isEmpty
+        ? ListView(
+            padding: const EdgeInsets.all(32),
+            children: const [
+              SizedBox(height: 120),
+              Icon(Icons.assignment_outlined, size: 62),
+              SizedBox(height: 14),
+              Text(
+                'Bạn chưa gửi báo cáo sự cố nào',
+                textAlign: TextAlign.center,
+              ),
+            ],
+          )
+        : ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            itemCount: incidents.length,
+            itemBuilder: (context, index) {
+              final item = incidents[index];
+              final color = switch (item['trang_thai']) {
+                'DA_DUYET' => AppColors.success,
+                'TU_CHOI' => AppColors.error,
+                _ => AppColors.warning,
+              };
+              return Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 760),
+                  child: Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                backgroundColor: color.withValues(alpha: .13),
+                                child: Icon(
+                                  Icons.report_problem_rounded,
+                                  color: color,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '${item['ma_chuyen']} • ${_driverIncidentType(item['loai_su_co'])}',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w900,
+                                      ),
+                                    ),
+                                    Text(
+                                      _driverIncidentDate(item['ngay_tao']),
+                                      style: Theme.of(
+                                        context,
+                                      ).textTheme.bodySmall,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: color.withValues(alpha: .12),
+                                  borderRadius: BorderRadius.circular(99),
+                                ),
+                                child: Text(
+                                  _driverIncidentStatus(item['trang_thai']),
+                                  style: TextStyle(
+                                    color: color,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Divider(height: 24),
+                          Text(
+                            '${item['mo_ta']}',
+                            style: const TextStyle(height: 1.45),
+                          ),
+                          if ('${item['ghi_chu_admin'] ?? ''}'.isNotEmpty) ...[
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: color.withValues(alpha: .08),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Phản hồi Admin: ${item['ghi_chu_admin']}',
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: OutlinedButton.icon(
+                              onPressed: () => showEvidenceImageDialog(
+                                context,
+                                imageUrl: '${item['anh_minh_chung_url']}',
+                                title: 'Minh chứng ${item['ma_chuyen']}',
+                              ),
+                              icon: const Icon(Icons.image_outlined),
+                              label: const Text('Xem minh chứng'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+  );
+}
+
+String _driverIncidentType(dynamic value) => switch ('$value') {
+  'HONG_XE' => 'Hỏng xe',
+  'TAI_NAN' => 'Tai nạn giao thông',
+  'UN_TAC' => 'Ùn tắc nghiêm trọng',
+  'HU_HONG_HANG' => 'Hư hỏng hàng hóa',
+  'MAT_NIEM_PHONG' => 'Mất hoặc hỏng niêm phong',
+  'THOI_TIET' => 'Thời tiết nguy hiểm',
+  _ => 'Sự cố khác',
+};
+
+String _driverIncidentStatus(dynamic value) => switch ('$value') {
+  'DA_DUYET' => 'Đã duyệt',
+  'TU_CHOI' => 'Từ chối',
+  _ => 'Chờ duyệt',
+};
+
+String _driverIncidentDate(dynamic raw) {
+  final value = DateTime.tryParse('$raw')?.toLocal();
+  if (value == null) return '$raw';
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(value.hour)}:${two(value.minute)} ${two(value.day)}/${two(value.month)}/${value.year}';
 }
 
 class _DriverAccount extends StatelessWidget {

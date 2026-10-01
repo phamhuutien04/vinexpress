@@ -64,10 +64,7 @@ class _BankAccountScreenState extends State<BankAccountScreen> {
       if (!mounted) return;
       setState(() => _linked = true);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Đã lưu tài khoản ngân hàng.'),
-          backgroundColor: AppColors.success,
-        ),
+        const SnackBar(content: Text('Đã lưu tài khoản ngân hàng.')),
       );
     } on WalletServiceException catch (error) {
       if (mounted) {

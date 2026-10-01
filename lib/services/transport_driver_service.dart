@@ -28,6 +28,15 @@ class TransportDriverService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> getIncidents() async {
+    try {
+      final data = await _client.rpc('tai_xe_danh_sach_su_co');
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw TransportDriverException(_message(error));
+    }
+  }
+
   Future<void> updateTrip(int tripId, String status) async {
     try {
       await _client.rpc(
@@ -58,9 +67,31 @@ class TransportDriverService {
     }
   }
 
+  Future<int> reportIncident({
+    required int tripId,
+    required String type,
+    required String description,
+    required String evidenceUrl,
+  }) async {
+    try {
+      final data = await _client.rpc(
+        'tai_xe_bao_cao_su_co',
+        params: {
+          'p_chuyen_xe_id': tripId,
+          'p_loai_su_co': type,
+          'p_mo_ta': description.trim(),
+          'p_anh_minh_chung_url': evidenceUrl,
+        },
+      );
+      return (data as num).toInt();
+    } on PostgrestException catch (error) {
+      throw TransportDriverException(_message(error));
+    }
+  }
+
   String _message(PostgrestException error) {
     if (error.code == 'PGRST202') {
-      return 'Chức năng lộ trình tài xế chưa được cài trên Supabase. Hãy chạy patch_transport_driver_route_stages.sql.';
+      return 'Chức năng tài xế chưa được cài đủ trên Supabase. Hãy chạy patch_transport_driver_route_stages.sql và patch_transport_incident_reports.sql.';
     }
     return error.message;
   }

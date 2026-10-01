@@ -11,6 +11,21 @@ class CloudinaryUploadException implements Exception {
 }
 
 class CloudinaryService {
+  Future<String> uploadTransportIncident({
+    required Uint8List imageBytes,
+    required int tripId,
+    required String tripCode,
+    required String incidentType,
+  }) async {
+    final safeType = incidentType.replaceAll('|', ' ').replaceAll('=', '-');
+    return _upload(
+      imageBytes: imageBytes,
+      fileName: '${tripCode}_incident.png',
+      context:
+          'trip_id=$tripId|trip_code=$tripCode|type=transport_incident|incident_type=$safeType',
+    );
+  }
+
   Future<String> uploadEvidence({
     required Uint8List imageBytes,
     required String trackingCode,
@@ -21,17 +36,29 @@ class CloudinaryService {
     required double longitude,
   }) async {
     final safeAddress = address.replaceAll('|', ' ').replaceAll('=', '-');
+    return _upload(
+      imageBytes: imageBytes,
+      fileName: '${trackingCode}_$evidenceType.png',
+      context:
+          'order_id=$orderId|tracking_code=$trackingCode|type=$evidenceType|'
+          'latitude=$latitude|longitude=$longitude|address=$safeAddress',
+    );
+  }
+
+  Future<String> _upload({
+    required Uint8List imageBytes,
+    required String fileName,
+    required String context,
+  }) async {
     final request =
         http.MultipartRequest('POST', CloudinaryConfig.imageUploadUri)
           ..fields['upload_preset'] = CloudinaryConfig.uploadPreset
-          ..fields['context'] =
-              'order_id=$orderId|tracking_code=$trackingCode|type=$evidenceType|'
-              'latitude=$latitude|longitude=$longitude|address=$safeAddress'
+          ..fields['context'] = context
           ..files.add(
             http.MultipartFile.fromBytes(
               'file',
               imageBytes,
-              filename: '${trackingCode}_$evidenceType.png',
+              filename: fileName,
             ),
           );
 

@@ -48,7 +48,9 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
 
   void _subscribeWalletRealtime() {
     _walletChannel = Supabase.instance.client
-        .channel('shipper-wallet-${Supabase.instance.client.auth.currentUser?.id}')
+        .channel(
+          'shipper-wallet-${Supabase.instance.client.auth.currentUser?.id}',
+        )
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
@@ -157,7 +159,6 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
           content: Text(
             'Đã gửi yêu cầu #$requestId. Tiền sẽ vào ví sau khi được duyệt.',
           ),
-          backgroundColor: AppColors.success,
         ),
       );
       await _load();

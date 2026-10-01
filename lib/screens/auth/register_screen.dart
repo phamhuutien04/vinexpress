@@ -68,7 +68,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ? 'Đăng ký nhân viên thành công. Vui lòng chờ quản trị viên duyệt tài khoản.'
                 : 'Đăng ký thành công. Vui lòng đăng nhập.',
           ),
-          backgroundColor: AppColors.success,
         ),
       );
       Navigator.pop(context, email);

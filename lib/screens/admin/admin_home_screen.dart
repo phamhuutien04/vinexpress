@@ -6,6 +6,7 @@ import '../../core/constants/app_colors.dart';
 import '../../services/admin_service.dart';
 import '../../services/customer_auth_service.dart';
 import '../../widgets/address_input.dart';
+import '../../widgets/evidence_image_dialog.dart';
 import '../auth/login_screen.dart';
 
 class AdminHomeScreen extends StatefulWidget {
@@ -27,6 +28,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> _warehouses = [];
   List<Map<String, dynamic>> _regions = [];
   List<Map<String, dynamic>> _walletRequests = [];
+  List<Map<String, dynamic>> _transportIncidents = [];
 
   static const _titles = [
     'Tổng quan',
@@ -35,6 +37,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     'Đơn hàng',
     'Kho hàng',
     'Duyệt ví',
+    'Sự cố',
   ];
   static const _destinations = [
     NavigationDestination(
@@ -67,6 +70,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       selectedIcon: Icon(Icons.account_balance_wallet),
       label: 'Duyệt ví',
     ),
+    NavigationDestination(
+      icon: Icon(Icons.report_problem_outlined),
+      selectedIcon: Icon(Icons.report_problem_rounded),
+      label: 'Sự cố',
+    ),
   ];
 
   @override
@@ -89,6 +97,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _service.getWarehouses(),
         _service.getRegions(),
         _service.getWalletRequests(),
+        _service.getTransportIncidents(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -99,6 +108,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _warehouses = result[4] as List<Map<String, dynamic>>;
         _regions = result[5] as List<Map<String, dynamic>>;
         _walletRequests = result[6] as List<Map<String, dynamic>>;
+        _transportIncidents = result[7] as List<Map<String, dynamic>>;
       });
     } on AdminServiceException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -251,12 +261,74 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       2 => _CustomerList(customers: _customers),
       3 => _OrderList(orders: _orders),
       4 => _WarehouseList(warehouses: _warehouses, employees: _employees),
-      _ => _WalletRequestList(
+      5 => _WalletRequestList(
         requests: _walletRequests,
         onProcess: _processWalletRequest,
         onRefresh: _loadAll,
       ),
+      _ => _TransportIncidentList(
+        incidents: _transportIncidents,
+        onProcess: _processTransportIncident,
+        onRefresh: _loadAll,
+      ),
     };
+  }
+
+  Future<void> _processTransportIncident(
+    Map<String, dynamic> incident,
+    String action,
+  ) async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(
+          action == 'DUYET' ? 'Duyệt báo cáo sự cố' : 'Từ chối báo cáo',
+        ),
+        content: TextField(
+          controller: controller,
+          minLines: 2,
+          maxLines: 4,
+          decoration: InputDecoration(
+            labelText: action == 'DUYET'
+                ? 'Ghi chú xử lý (không bắt buộc)'
+                : 'Lý do từ chối',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            style: action == 'TU_CHOI'
+                ? FilledButton.styleFrom(backgroundColor: AppColors.error)
+                : null,
+            child: Text(
+              action == 'DUYET' ? 'Duyệt báo cáo' : 'Xác nhận từ chối',
+            ),
+          ),
+        ],
+      ),
+    );
+    final note = controller.text;
+    controller.dispose();
+    if (confirmed != true) return;
+    if (action == 'TU_CHOI' && note.trim().isEmpty) {
+      _showError('Vui lòng nhập lý do từ chối.');
+      return;
+    }
+    try {
+      await _service.processTransportIncident(
+        incidentId: (incident['id'] as num).toInt(),
+        action: action,
+        note: note,
+      );
+      await _loadAll();
+    } on AdminServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    }
   }
 
   Future<void> _processWalletRequest(
@@ -1303,6 +1375,178 @@ class _OrderList extends StatelessWidget {
     },
   );
 }
+
+class _TransportIncidentList extends StatelessWidget {
+  const _TransportIncidentList({
+    required this.incidents,
+    required this.onProcess,
+    required this.onRefresh,
+  });
+
+  final List<Map<String, dynamic>> incidents;
+  final Future<void> Function(Map<String, dynamic>, String) onProcess;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) => RefreshIndicator(
+    onRefresh: onRefresh,
+    child: incidents.isEmpty
+        ? ListView(
+            children: const [
+              SizedBox(height: 150),
+              Icon(Icons.verified_outlined, size: 60, color: AppColors.success),
+              SizedBox(height: 12),
+              Center(child: Text('Chưa có báo cáo sự cố vận chuyển')),
+            ],
+          )
+        : ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            itemCount: incidents.length,
+            itemBuilder: (context, index) => _TransportIncidentCard(
+              incident: incidents[index],
+              onProcess: onProcess,
+            ),
+          ),
+  );
+}
+
+class _TransportIncidentCard extends StatelessWidget {
+  const _TransportIncidentCard({
+    required this.incident,
+    required this.onProcess,
+  });
+  final Map<String, dynamic> incident;
+  final Future<void> Function(Map<String, dynamic>, String) onProcess;
+
+  @override
+  Widget build(BuildContext context) {
+    final pending = incident['trang_thai'] == 'CHO_DUYET';
+    final color = switch (incident['trang_thai']) {
+      'DA_DUYET' => AppColors.success,
+      'TU_CHOI' => AppColors.error,
+      _ => AppColors.warning,
+    };
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 980),
+        child: Card(
+          margin: const EdgeInsets.only(bottom: 12),
+          color: Theme.of(context).colorScheme.surfaceContainerLow,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor: color.withValues(alpha: .14),
+                      child: Icon(Icons.report_problem_rounded, color: color),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${incident['ma_chuyen']} • ${_incidentType(incident['loai_su_co'])}',
+                            style: const TextStyle(fontWeight: FontWeight.w900),
+                          ),
+                          Text(
+                            '${incident['tai_xe_ten']} • Xe ${incident['bien_so_xe']} • ${_dateTime(incident['ngay_tao'])}',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        _incidentStatus(incident['trang_thai']),
+                        style: TextStyle(
+                          color: color,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const Divider(height: 26),
+                Text(
+                  '${incident['mo_ta']}',
+                  style: const TextStyle(height: 1.45),
+                ),
+                if ('${incident['ghi_chu_admin'] ?? ''}'.isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    'Ghi chú Admin: ${incident['ghi_chu_admin']}',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 14),
+                Wrap(
+                  alignment: WrapAlignment.end,
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: () => showEvidenceImageDialog(
+                        context,
+                        imageUrl: '${incident['anh_minh_chung_url']}',
+                        title: 'Minh chứng ${incident['ma_chuyen']}',
+                      ),
+                      icon: const Icon(Icons.image_outlined),
+                      label: const Text('Xem minh chứng'),
+                    ),
+                    if (pending)
+                      OutlinedButton(
+                        onPressed: () => onProcess(incident, 'TU_CHOI'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.error,
+                        ),
+                        child: const Text('Từ chối'),
+                      ),
+                    if (pending)
+                      FilledButton.icon(
+                        onPressed: () => onProcess(incident, 'DUYET'),
+                        icon: const Icon(Icons.check_rounded),
+                        label: const Text('Duyệt'),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _incidentType(dynamic value) => switch ('$value') {
+  'HONG_XE' => 'Hỏng xe',
+  'TAI_NAN' => 'Tai nạn giao thông',
+  'UN_TAC' => 'Ùn tắc nghiêm trọng',
+  'HU_HONG_HANG' => 'Hư hỏng hàng hóa',
+  'MAT_NIEM_PHONG' => 'Mất hoặc hỏng niêm phong',
+  'THOI_TIET' => 'Thời tiết nguy hiểm',
+  _ => 'Sự cố khác',
+};
+
+String _incidentStatus(dynamic value) => switch ('$value') {
+  'DA_DUYET' => 'Đã duyệt',
+  'TU_CHOI' => 'Từ chối',
+  _ => 'Chờ duyệt',
+};
 
 class _WalletRequestList extends StatefulWidget {
   const _WalletRequestList({

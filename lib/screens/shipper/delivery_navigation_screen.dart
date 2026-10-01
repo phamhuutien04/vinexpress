@@ -525,7 +525,6 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
                 ? 'Giả lập đã đến địa chỉ người nhận'
                 : 'Giả lập đã đến điểm lấy hàng',
           ),
-          backgroundColor: AppColors.success,
         ),
       );
     }
