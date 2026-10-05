@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/shipper_service.dart';
 import '../../widgets/wallet_withdrawal_sheet.dart';
+import '../../widgets/shipper_income_chart.dart';
 
 class ShipperWalletScreen extends StatefulWidget {
   const ShipperWalletScreen({super.key});
@@ -238,6 +239,11 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
                       _IncomeGrid(
                         total: _totalIncome,
                         orderCount: _incomeEntries.length,
+                      ),
+                      const SizedBox(height: 14),
+                      ShipperIncomeChart(
+                        entries: _incomeEntries,
+                        errorMessage: _error,
                       ),
                       const SizedBox(height: 22),
                       Row(

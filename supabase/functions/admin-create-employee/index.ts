@@ -1,23 +1,32 @@
+// Supabase provides Deno at runtime. Keep the APIs used here typed even when
+// this file is opened in an editor without the Deno extension.
+const deno = (globalThis as typeof globalThis & {
+  Deno: {
+    serve: (handler: (request: Request) => Response | Promise<Response>) => void
+    env: { get: (name: string) => string | undefined }
+  }
+}).Deno
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
 }
 
-function json(data, status = 200) {
+function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
     headers: { ...corsHeaders, 'Content-Type': 'application/json' },
   })
 }
 
-Deno.serve(async (request) => {
+deno.serve(async (request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (request.method !== 'POST') return json({ error: 'Chỉ hỗ trợ POST' }, 405)
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? ''
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? ''
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+  const supabaseUrl = deno.env.get('SUPABASE_URL') ?? ''
+  const anonKey = deno.env.get('SUPABASE_ANON_KEY') ?? ''
+  const serviceKey = deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
   const authorization = request.headers.get('Authorization') ?? ''
   let createdUserId = null
 

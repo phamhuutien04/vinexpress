@@ -4,6 +4,9 @@
 ALTER TABLE public.nhan_vien
     ADD COLUMN IF NOT EXISTS auth_user_id UUID;
 
+ALTER TABLE public.nhan_vien
+    ADD COLUMN IF NOT EXISTS san_sang_nhan_don BOOLEAN NOT NULL DEFAULT TRUE;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_nhan_vien_auth_user
     ON public.nhan_vien(auth_user_id)
     WHERE auth_user_id IS NOT NULL;
@@ -184,6 +187,7 @@ SET search_path = public
 AS $$
 DECLARE
     v_nhan_vien_id BIGINT;
+    v_san_sang BOOLEAN;
 BEGIN
     SELECT nv.id INTO v_nhan_vien_id
     FROM public.nhan_vien nv
@@ -196,18 +200,22 @@ BEGIN
         RAISE EXCEPTION 'Tài khoản không phải shipper đã được duyệt';
     END IF;
 
+    PERFORM pg_advisory_xact_lock(v_nhan_vien_id);
+    SELECT nv.san_sang_nhan_don INTO v_san_sang
+    FROM public.nhan_vien nv WHERE nv.id = v_nhan_vien_id;
+
     INSERT INTO public.vi_tri_nhan_vien (
         nhan_vien_id, vi_do, kinh_do, do_chinh_xac_met,
         dang_truc_tuyen, thoi_gian_cap_nhat
     ) VALUES (
         v_nhan_vien_id, p_vi_do, p_kinh_do, p_do_chinh_xac_met,
-        TRUE, NOW()
+        v_san_sang, NOW()
     )
     ON CONFLICT (nhan_vien_id) DO UPDATE SET
         vi_do = EXCLUDED.vi_do,
         kinh_do = EXCLUDED.kinh_do,
         do_chinh_xac_met = EXCLUDED.do_chinh_xac_met,
-        dang_truc_tuyen = TRUE,
+        dang_truc_tuyen = EXCLUDED.dang_truc_tuyen,
         thoi_gian_cap_nhat = NOW();
 END;
 $$;

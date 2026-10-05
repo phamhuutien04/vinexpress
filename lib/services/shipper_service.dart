@@ -13,6 +13,25 @@ class ShipperService {
   final SupabaseClient? _clientOverride;
   SupabaseClient get _client => _clientOverride ?? SupabaseConfig.client;
 
+  Future<bool> getReceivingStatus() async {
+    try {
+      return await _client.rpc('trang_thai_nhan_don_shipper') as bool;
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
+  Future<void> setReceivingStatus(bool enabled) async {
+    try {
+      await _client.rpc(
+        'cap_nhat_trang_thai_nhan_don_shipper',
+        params: {'p_san_sang': enabled},
+      );
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
   Future<void> updateTrackingLocation({
     required double latitude,
     required double longitude,

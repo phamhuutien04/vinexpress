@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/constants/app_colors.dart';
 import '../../services/customer_auth_service.dart';
+import '../../services/shipper_service.dart';
 import '../auth/login_screen.dart';
 import '../shipper/nearby_orders_screen.dart';
 import '../shipper/shipper_order_history_screen.dart';
@@ -15,7 +16,55 @@ class DeliveryHomeScreen extends StatefulWidget {
 }
 
 class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
+  final _shipperService = ShipperService();
   int _tab = 0;
+  int _nearbyRevision = 0;
+  bool? _receivingOrders;
+  bool _updatingAvailability = false;
+  String? _availabilityError;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadAvailability();
+  }
+
+  Future<void> _loadAvailability() async {
+    try {
+      final enabled = await _shipperService.getReceivingStatus();
+      if (!mounted) return;
+      setState(() {
+        _receivingOrders = enabled;
+        _availabilityError = null;
+      });
+    } on ShipperServiceException catch (error) {
+      if (mounted) setState(() => _availabilityError = error.message);
+    }
+  }
+
+  Future<void> _setAvailability(bool enabled) async {
+    setState(() => _updatingAvailability = true);
+    try {
+      await _shipperService.setReceivingStatus(enabled);
+      if (!mounted) return;
+      setState(() {
+        _receivingOrders = enabled;
+        _availabilityError = null;
+        _nearbyRevision++;
+      });
+    } on ShipperServiceException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _updatingAvailability = false);
+    }
+  }
 
   String get _name =>
       CustomerAuthService.currentEmployee?['ho_ten'] as String? ?? 'Shipper';
@@ -31,54 +80,172 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
           2 => 'Lịch sử giao hàng',
           _ => 'Tài khoản shipper',
         }),
-        actions: _tab == 0
-            ? [
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: Chip(
-                    avatar: const Icon(
-                      Icons.delivery_dining_rounded,
-                      size: 18,
-                      color: AppColors.primary,
-                    ),
-                    label: Text(_name),
-                  ),
-                ),
-              ]
-            : null,
+      ),
+      drawer: Drawer(
+        width: MediaQuery.sizeOf(context).width < 360
+            ? MediaQuery.sizeOf(context).width * .88
+            : 310,
+        child: Builder(builder: (drawerContext) => _buildDrawer(drawerContext)),
       ),
       body: IndexedStack(
         index: _tab,
         children: [
-          const NearbyOrdersScreen(embedded: true),
+          NearbyOrdersScreen(key: ValueKey(_nearbyRevision), embedded: true),
           const ShipperWalletScreen(),
           const ShipperOrderHistoryScreen(),
           _ProfilePage(name: _name, onLogout: _logout),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (value) => setState(() => _tab = value),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.near_me_outlined),
-            selectedIcon: Icon(Icons.near_me_rounded),
-            label: 'Đơn gần bạn',
+    );
+  }
+
+  Widget _buildDrawer(BuildContext drawerContext) {
+    final colors = Theme.of(context).colorScheme;
+    void goTo(int tab) {
+      Navigator.of(drawerContext).pop();
+      setState(() => _tab = tab);
+    }
+
+    Widget destination(int tab, IconData icon, String label) => ListTile(
+      leading: Icon(
+        icon,
+        color: _tab == tab ? AppColors.primary : colors.onSurfaceVariant,
+      ),
+      title: Text(
+        label,
+        style: TextStyle(
+          fontWeight: _tab == tab ? FontWeight.w700 : FontWeight.w500,
+        ),
+      ),
+      selected: _tab == tab,
+      selectedTileColor: AppColors.primary.withValues(alpha: .1),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      onTap: () => goTo(tab),
+    );
+
+    return SafeArea(
+      child: Column(
+        children: [
+          InkWell(
+            onTap: () => goTo(3),
+            borderRadius: BorderRadius.circular(12),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 26,
+                    backgroundColor: AppColors.primary.withValues(alpha: .14),
+                    child: const Icon(
+                      Icons.delivery_dining_rounded,
+                      color: AppColors.primary,
+                      size: 28,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.titleMedium
+                              ?.copyWith(fontWeight: FontWeight.w800),
+                        ),
+                        Text(
+                          'Shipper giao chặng ngắn',
+                          style: TextStyle(
+                            color: colors.onSurfaceVariant,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.account_balance_wallet_outlined),
-            selectedIcon: Icon(Icons.account_balance_wallet_rounded),
-            label: 'Ví',
+          Divider(height: 1, color: colors.outlineVariant),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+              children: [
+                SwitchListTile.adaptive(
+                  title: const Text(
+                    'Trạng thái hoạt động',
+                    style: TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text(
+                    _receivingOrders == null
+                        ? 'Đang tải trạng thái'
+                        : _receivingOrders!
+                        ? 'Đang nhận đơn mới'
+                        : 'Tạm ngừng nhận đơn',
+                  ),
+                  value: _receivingOrders ?? false,
+                  activeTrackColor: AppColors.primary,
+                  onChanged: _receivingOrders == null || _updatingAvailability
+                      ? null
+                      : _setAvailability,
+                ),
+                if (_updatingAvailability)
+                  const LinearProgressIndicator(minHeight: 2),
+                if (_availabilityError != null)
+                  TextButton.icon(
+                    onPressed: _loadAvailability,
+                    icon: const Icon(Icons.refresh_rounded),
+                    label: const Text('Tải lại trạng thái'),
+                  ),
+                const SizedBox(height: 16),
+                destination(0, Icons.near_me_outlined, 'Đơn gần bạn'),
+                destination(2, Icons.history_rounded, 'Lịch sử đơn hàng'),
+                destination(
+                  1,
+                  Icons.account_balance_wallet_outlined,
+                  'Ví và thu nhập',
+                ),
+                const SizedBox(height: 16),
+                Divider(color: colors.outlineVariant),
+                destination(3, Icons.person_outline_rounded, 'Tài khoản'),
+                ListTile(
+                  leading: const Icon(Icons.account_balance_outlined),
+                  title: const Text('Tài khoản ngân hàng'),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  onTap: () {
+                    Navigator.of(drawerContext).pop();
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const BankAccountScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
           ),
-          NavigationDestination(
-            icon: Icon(Icons.history_outlined),
-            selectedIcon: Icon(Icons.history_rounded),
-            label: 'Lịch sử',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person_rounded),
-            label: 'Tài khoản',
+          Divider(height: 1, color: colors.outlineVariant),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: ListTile(
+              leading: const Icon(Icons.logout_rounded),
+              title: const Text('Đăng xuất'),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              onTap: () {
+                Navigator.of(drawerContext).pop();
+                _logout();
+              },
+            ),
           ),
         ],
       ),
