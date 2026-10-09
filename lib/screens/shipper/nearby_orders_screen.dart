@@ -134,10 +134,15 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
 
   Future<void> _refreshOrdersFromSavedLocation() async {
     try {
-      final active = await _service.getActiveOrders();
-      final nearby = _receivingOrders == true && active.isEmpty
-          ? await _service.getNearbyOrders()
-          : <Map<String, dynamic>>[];
+      final results = await Future.wait([
+        _service.getActiveOrders(),
+        if (_receivingOrders == true)
+          _service.getNearbyOrders()
+        else
+          Future.value(<Map<String, dynamic>>[]),
+      ]);
+      final active = results[0];
+      final nearby = active.isEmpty ? results[1] : <Map<String, dynamic>>[];
       if (!mounted) return;
       setState(() {
         _activeOrders = active;
@@ -149,13 +154,19 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
   }
 
   Future<void> _updateLocationAndLoad() async {
+    if (_loading) return;
     setState(() => _loading = true);
     try {
       await _service.updateCurrentLocation();
-      final active = await _service.getActiveOrders();
-      final nearby = _receivingOrders == true && active.isEmpty
-          ? await _service.getNearbyOrders()
-          : <Map<String, dynamic>>[];
+      final results = await Future.wait([
+        _service.getActiveOrders(),
+        if (_receivingOrders == true)
+          _service.getNearbyOrders()
+        else
+          Future.value(<Map<String, dynamic>>[]),
+      ]);
+      final active = results[0];
+      final nearby = active.isEmpty ? results[1] : <Map<String, dynamic>>[];
       if (!mounted) return;
       setState(() {
         _locationReady = true;

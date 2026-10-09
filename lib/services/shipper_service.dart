@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/config/supabase_config.dart';
@@ -67,12 +69,32 @@ class ShipperService {
       );
     }
 
-    final position = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 20),
-      ),
-    );
+    // Dùng vị trí gần nhất làm phương án dự phòng để màn nhận đơn không phải
+    // chờ GPS độ chính xác cao quá lâu (đặc biệt trên trình duyệt).
+    final cachedPosition = await Geolocator.getLastKnownPosition();
+    final cachedIsFresh = cachedPosition != null &&
+        DateTime.now().difference(cachedPosition.timestamp).abs() <
+            const Duration(minutes: 2);
+    late final Position position;
+    if (cachedIsFresh) {
+      position = cachedPosition;
+    } else {
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.medium,
+            timeLimit: Duration(seconds: 6),
+          ),
+        );
+      } on TimeoutException {
+        if (cachedPosition == null) {
+          throw const ShipperServiceException(
+            'Chưa lấy được vị trí. Hãy kiểm tra GPS rồi thử lại.',
+          );
+        }
+        position = cachedPosition;
+      }
+    }
 
     try {
       await updateTrackingLocation(
@@ -218,6 +240,73 @@ class ShipperService {
           'p_vi_do': latitude,
           'p_kinh_do': longitude,
           'p_minh_chung': evidenceUrl,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
+  Future<void> reportDeliveryFailed({
+    required int orderId,
+    required String reason,
+    required String evidenceUrl,
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      await _client.rpc(
+        'shipper_bao_giao_that_bai',
+        params: {
+          'p_don_hang_id': orderId,
+          'p_ly_do': reason,
+          'p_minh_chung': evidenceUrl,
+          'p_vi_do': latitude,
+          'p_kinh_do': longitude,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
+  Future<void> reportPickupFailed({
+    required int orderId,
+    required String reason,
+    required String evidenceUrl,
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      await _client.rpc(
+        'shipper_bao_khong_nhan_duoc_hang',
+        params: {
+          'p_don_hang_id': orderId,
+          'p_ly_do': reason,
+          'p_minh_chung': evidenceUrl,
+          'p_vi_do': latitude,
+          'p_kinh_do': longitude,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw ShipperServiceException(error.message);
+    }
+  }
+
+  Future<void> confirmReturnedToSender({
+    required int orderId,
+    required String evidenceUrl,
+    double? latitude,
+    double? longitude,
+  }) async {
+    try {
+      await _client.rpc(
+        'shipper_xac_nhan_hoan_hang',
+        params: {
+          'p_don_hang_id': orderId,
+          'p_minh_chung': evidenceUrl,
+          'p_vi_do': latitude,
+          'p_kinh_do': longitude,
         },
       );
     } on PostgrestException catch (error) {

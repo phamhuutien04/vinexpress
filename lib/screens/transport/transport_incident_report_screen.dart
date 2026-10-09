@@ -5,6 +5,8 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/constants/app_colors.dart';
 import '../../services/cloudinary_service.dart';
+import '../../services/customer_auth_service.dart';
+import '../../services/evidence_image_service.dart';
 import '../../services/transport_driver_service.dart';
 
 class TransportIncidentReportScreen extends StatefulWidget {
@@ -23,6 +25,7 @@ class _TransportIncidentReportScreenState
   final _description = TextEditingController();
   final _picker = ImagePicker();
   final _cloudinary = CloudinaryService();
+  final _evidenceImageService = EvidenceImageService();
   final _service = TransportDriverService();
   String _type = 'HONG_XE';
   Uint8List? _imageBytes;
@@ -66,8 +69,18 @@ class _TransportIncidentReportScreenState
     try {
       final tripId = (widget.trip['id'] as num).toInt();
       final tripCode = '${widget.trip['ma_chuyen']}';
+      final stampedImage = await _evidenceImageService.stampTransportIncident(
+        sourceBytes: _imageBytes!,
+        tripId: tripId,
+        tripCode: tripCode,
+        incidentType: _types[_type] ?? _type,
+        driverName:
+            '${CustomerAuthService.currentEmployee?['ho_ten'] ?? 'Tài xế vận chuyển'}',
+        vehiclePlate: '${widget.trip['bien_so_xe'] ?? 'Chưa xác định'}',
+        capturedAt: DateTime.now(),
+      );
       final url = await _cloudinary.uploadTransportIncident(
-        imageBytes: _imageBytes!,
+        imageBytes: stampedImage,
         tripId: tripId,
         tripCode: tripCode,
         incidentType: _type,

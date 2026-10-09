@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -43,6 +42,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   LatLng? _delivery;
   List<LatLng> _route = [];
   bool _toReceiver = false;
+  bool _returning = false;
   bool _navigationStarted = false;
   bool _simulating = false;
   bool _simulatedThisStage = false;
@@ -68,11 +68,14 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   @override
   void initState() {
     super.initState();
-    _toReceiver = const {
-      'DA_LAY_HANG',
-      'GIAO_CHO_SHIPPER',
-      'DANG_GIAO_HANG',
-    }.contains(widget.order['trang_thai']);
+    _returning = widget.order['trang_thai'] == 'GIAO_HANG_THAT_BAI';
+    _toReceiver =
+        const {
+          'DA_LAY_HANG',
+          'GIAO_CHO_SHIPPER',
+          'DANG_GIAO_HANG',
+        }.contains(widget.order['trang_thai']) &&
+        !_returning;
     _prepareNavigation();
   }
 
@@ -116,11 +119,14 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       );
       if (latest == null) return;
       widget.order.addAll(latest);
-      _toReceiver = const {
-        'DA_LAY_HANG',
-        'GIAO_CHO_SHIPPER',
-        'DANG_GIAO_HANG',
-      }.contains(latest['trang_thai']);
+      _returning = latest['trang_thai'] == 'GIAO_HANG_THAT_BAI';
+      _toReceiver =
+          const {
+            'DA_LAY_HANG',
+            'GIAO_CHO_SHIPPER',
+            'DANG_GIAO_HANG',
+          }.contains(latest['trang_thai']) &&
+          !_returning;
     } catch (_) {
       // Vẫn cho phép mở bản đồ khi mạng tạm thời gián đoạn.
     }
@@ -523,6 +529,8 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
           content: Text(
             _toReceiver
                 ? 'Giả lập đã đến địa chỉ người nhận'
+                : _returning
+                ? 'Giả lập đã quay lại địa chỉ người gửi'
                 : 'Giả lập đã đến điểm lấy hàng',
           ),
         ),
@@ -620,6 +628,367 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     }
   }
 
+  Future<void> _reportDeliveryFailure() async {
+    final reasonController = TextEditingController();
+    var canContinue = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.edit_note_rounded, size: 36),
+          title: const Text('Nhập lý do không giao được'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: .45),
+                  ),
+                ),
+                child: const Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(Icons.info_outline_rounded, color: AppColors.warning),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Lưu ý: Hãy gọi cho người nhận ít nhất 3 cuộc, '
+                        'mỗi cuộc cách nhau 3 phút trước khi báo giao thất bại.',
+                        style: TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                autofocus: true,
+                maxLines: 3,
+                maxLength: 300,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(
+                  hintText:
+                      'Ví dụ: Đã gọi 3 lần nhưng người nhận không nghe máy',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  final enabled = value.trim().isNotEmpty;
+                  if (enabled != canContinue) {
+                    setDialogState(() => canContinue = enabled);
+                  }
+                },
+                onSubmitted: (_) {
+                  if (canContinue) Navigator.pop(dialogContext, true);
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton.icon(
+              onPressed: canContinue
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
+              icon: const Icon(Icons.camera_alt_outlined),
+              label: const Text('Chụp minh chứng'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || reason.isEmpty || !mounted) return;
+
+    setState(() => _updatingStatus = true);
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 60,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+      if (image == null) return;
+      final position = await _evidencePosition();
+      final orderId = (widget.order['id'] as num).toInt();
+      final trackingCode = '${widget.order['ma_van_don']}';
+      final evidenceBytes = await _prepareEvidenceBytes(
+        image: image,
+        orderId: orderId,
+        trackingCode: trackingCode,
+        evidenceLabel: 'GIAO HÀNG THẤT BẠI',
+        employeeName: _employeeName,
+        address: '${widget.order['nguoi_nhan_dia_chi']}',
+        latitude: position.latitude,
+        longitude: position.longitude,
+        capturedAt: DateTime.now(),
+      );
+      final evidenceUrl = await _cloudinaryService.uploadEvidence(
+        imageBytes: evidenceBytes,
+        trackingCode: trackingCode,
+        evidenceType: 'delivery_failed_evidence',
+        orderId: orderId,
+        address: '${widget.order['nguoi_nhan_dia_chi']}',
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      await _shipperService.reportDeliveryFailed(
+        orderId: orderId,
+        reason: reason,
+        evidenceUrl: evidenceUrl,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      if (!mounted) return;
+      widget.order['trang_thai'] = 'GIAO_HANG_THAT_BAI';
+      _stopSimulation();
+      setState(() {
+        _returning = true;
+        _toReceiver = false;
+        _navigationStarted = false;
+        _simulatedThisStage = false;
+      });
+      await _loadRoute();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Đã ghi nhận giao thất bại. Hãy mang kiện về trả người gửi.',
+            ),
+          ),
+        );
+      }
+    } on CloudinaryUploadException catch (error) {
+      if (mounted) _showError(error.message);
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } catch (error) {
+      if (mounted) _showError('Không thể báo giao thất bại: $error');
+    } finally {
+      if (mounted) setState(() => _updatingStatus = false);
+    }
+  }
+
+  Future<void> _reportPickupFailure() async {
+    final pickup = _pickup;
+    final shipper = _shipper;
+    if (pickup == null || shipper == null) {
+      _showError('Chưa xác định được vị trí lấy hàng.');
+      return;
+    }
+    final distanceMeters = const Distance().as(
+      LengthUnit.Meter,
+      shipper,
+      pickup,
+    );
+    if (!_simulatedThisStage && distanceMeters > 500) {
+      _showError(
+        'Bạn còn cách điểm lấy ${distanceMeters.round()} m. '
+        'Chỉ được báo không nhận được hàng trong phạm vi 500 m.',
+      );
+      return;
+    }
+
+    final reasonController = TextEditingController();
+    var canContinue = false;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => StatefulBuilder(
+        builder: (context, setDialogState) => AlertDialog(
+          icon: const Icon(Icons.inventory_2_outlined, size: 36),
+          title: const Text('Không nhận được hàng'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Text(
+                  'Hãy liên hệ người gửi ít nhất 3 cuộc, mỗi cuộc cách nhau '
+                  '3 phút trước khi kết thúc đơn.',
+                  style: TextStyle(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: reasonController,
+                autofocus: true,
+                maxLines: 3,
+                maxLength: 300,
+                decoration: const InputDecoration(
+                  hintText: 'Ghi rõ lý do không nhận được kiện từ người gửi',
+                  border: OutlineInputBorder(),
+                ),
+                onChanged: (value) {
+                  final enabled = value.trim().isNotEmpty;
+                  if (enabled != canContinue) {
+                    setDialogState(() => canContinue = enabled);
+                  }
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Hủy'),
+            ),
+            FilledButton.icon(
+              onPressed: canContinue
+                  ? () => Navigator.pop(dialogContext, true)
+                  : null,
+              icon: const Icon(Icons.camera_alt_outlined),
+              label: const Text('Chụp minh chứng'),
+            ),
+          ],
+        ),
+      ),
+    );
+    final reason = reasonController.text.trim();
+    reasonController.dispose();
+    if (confirmed != true || reason.isEmpty || !mounted) return;
+
+    setState(() => _updatingStatus = true);
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 60,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+      if (image == null) return;
+      final position = await _evidencePosition();
+      final orderId = (widget.order['id'] as num).toInt();
+      final trackingCode = '${widget.order['ma_van_don']}';
+      final evidenceBytes = await _prepareEvidenceBytes(
+        image: image,
+        orderId: orderId,
+        trackingCode: trackingCode,
+        evidenceLabel: 'KHÔNG NHẬN ĐƯỢC HÀNG TỪ NGƯỜI GỬI',
+        employeeName: _employeeName,
+        address: '${widget.order['nguoi_gui_dia_chi']}',
+        latitude: position.latitude,
+        longitude: position.longitude,
+        capturedAt: DateTime.now(),
+      );
+      final evidenceUrl = await _cloudinaryService.uploadEvidence(
+        imageBytes: evidenceBytes,
+        trackingCode: trackingCode,
+        evidenceType: 'pickup_failed_evidence',
+        orderId: orderId,
+        address: '${widget.order['nguoi_gui_dia_chi']}',
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      await _shipperService.reportPickupFailed(
+        orderId: orderId,
+        reason: reason,
+        evidenceUrl: evidenceUrl,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Đã ghi nhận không nhận được hàng. Đơn đã kết thúc và không bị trừ ví.',
+          ),
+        ),
+      );
+      Navigator.pop(context, true);
+    } on CloudinaryUploadException catch (error) {
+      if (mounted) _showError(error.message);
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } catch (error) {
+      if (mounted) _showError('Không thể báo không nhận được hàng: $error');
+    } finally {
+      if (mounted) setState(() => _updatingStatus = false);
+    }
+  }
+
+  Future<void> _completeReturn() async {
+    final pickup = _pickup;
+    final shipper = _shipper;
+    if (pickup == null || shipper == null) {
+      _showError('Chưa xác định được vị trí hoàn hàng.');
+      return;
+    }
+    final distanceMeters = const Distance().as(
+      LengthUnit.Meter,
+      shipper,
+      pickup,
+    );
+    if (!_simulatedThisStage && distanceMeters > 500) {
+      _showError(
+        'Bạn còn cách người gửi ${distanceMeters.round()} m. '
+        'Chỉ được xác nhận hoàn hàng trong phạm vi 500 m.',
+      );
+      return;
+    }
+
+    setState(() => _updatingStatus = true);
+    try {
+      final image = await _imagePicker.pickImage(
+        source: ImageSource.camera,
+        imageQuality: 60,
+        maxWidth: 800,
+        maxHeight: 800,
+      );
+      if (image == null) return;
+      final position = await _evidencePosition();
+      final orderId = (widget.order['id'] as num).toInt();
+      final trackingCode = '${widget.order['ma_van_don']}';
+      final evidenceBytes = await _prepareEvidenceBytes(
+        image: image,
+        orderId: orderId,
+        trackingCode: trackingCode,
+        evidenceLabel: 'NGƯỜI GỬI ĐÃ NHẬN LẠI HÀNG',
+        employeeName: _employeeName,
+        address: '${widget.order['nguoi_gui_dia_chi']}',
+        latitude: position.latitude,
+        longitude: position.longitude,
+        capturedAt: DateTime.now(),
+      );
+      final evidenceUrl = await _cloudinaryService.uploadEvidence(
+        imageBytes: evidenceBytes,
+        trackingCode: trackingCode,
+        evidenceType: 'return_to_sender_evidence',
+        orderId: orderId,
+        address: '${widget.order['nguoi_gui_dia_chi']}',
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      await _shipperService.confirmReturnedToSender(
+        orderId: orderId,
+        evidenceUrl: evidenceUrl,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      if (!mounted) return;
+      Navigator.pop(context, true);
+    } on CloudinaryUploadException catch (error) {
+      if (mounted) _showError(error.message);
+    } on ShipperServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    } catch (error) {
+      if (mounted) _showError('Không thể xác nhận hoàn hàng: $error');
+    } finally {
+      if (mounted) setState(() => _updatingStatus = false);
+    }
+  }
+
   Future<bool> _hasEnoughWalletForCod() async {
     final cod = (widget.order['cod'] as num?)?.toDouble() ?? 0;
     if (cod <= 0) return true;
@@ -650,10 +1019,6 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     final sourceBytes = await image.readAsBytes().timeout(
       const Duration(seconds: 15),
     );
-
-    // Canvas mã hóa PNG trên Flutter Web có thể treo trước khi request upload
-    // được tạo. Cloudinary vẫn nhận đủ mã đơn, địa chỉ và GPS qua context.
-    if (kIsWeb) return sourceBytes;
 
     return _evidenceImageService
         .stamp(
@@ -937,6 +1302,8 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
                   child: Text(
                     _toReceiver
                         ? 'Đang giao tới người nhận'
+                        : _returning
+                        ? 'Đang hoàn hàng về người gửi'
                         : 'Đang đến lấy hàng',
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
@@ -1063,20 +1430,54 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
                 ),
               ),
               const SizedBox(height: 8),
+              if (_toReceiver && !_returning) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _loadingRoute || _updatingStatus
+                        ? null
+                        : _reportDeliveryFailure,
+                    icon: const Icon(Icons.assignment_return_outlined),
+                    label: const Text('Không giao được hàng'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+              if (!_toReceiver && !_returning) ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _loadingRoute || _updatingStatus
+                        ? null
+                        : _reportPickupFailure,
+                    icon: const Icon(Icons.inventory_2_outlined),
+                    label: const Text('Không nhận được hàng'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
               SizedBox(
                 width: double.infinity,
                 child: FilledButton.icon(
                   onPressed: _loadingRoute || _updatingStatus
                       ? null
+                      : _returning
+                      ? _completeReturn
                       : _toReceiver
                       ? _completeDelivery
                       : _switchToDelivery,
                   icon: Icon(
-                    _toReceiver ? Icons.check_circle : Icons.inventory,
+                    _returning
+                        ? Icons.keyboard_return_rounded
+                        : _toReceiver
+                        ? Icons.check_circle
+                        : Icons.inventory,
                   ),
                   label: Text(
                     _updatingStatus
                         ? 'Đang xử lý ảnh...'
+                        : _returning
+                        ? 'Xác nhận đã trả người gửi'
                         : _toReceiver
                         ? 'Đã giao hàng'
                         : 'Đã lấy hàng',

@@ -30,6 +30,13 @@ class LastMileStaffService {
     return Map<String, dynamic>.from(data as Map);
   }
 
+  Future<String> reportPickupContactFailed({
+    required int orderId,
+    required String evidenceUrl,
+    String? note,
+  }) async =>
+      '${await _client.rpc('nhan_vien_lay_hang_bao_khong_lien_lac', params: {'p_don_hang_id': orderId, 'p_minh_chung': evidenceUrl, 'p_ghi_chu': note})}';
+
   Future<void> claimPickup(int orderId) => _client.rpc(
     'nhan_vien_lay_hang_nhan_don',
     params: {'p_don_hang_id': orderId},

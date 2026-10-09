@@ -440,6 +440,138 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
     }
   }
 
+  Future<void> _reportCannotContactSender() async {
+    final noteController = TextEditingController();
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        icon: const Icon(Icons.phone_disabled_outlined, size: 36),
+        title: const Text('Không liên lạc được người gửi?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Đơn vẫn ở trạng thái chờ lấy hàng để bạn có thể liên hệ và lấy lại sau. '
+              'Báo cáo này không thu tiền và không trừ ví.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: noteController,
+              maxLines: 2,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Ghi chú (không bắt buộc)',
+                hintText: 'Ví dụ: Đã gọi nhiều lần nhưng không bắt máy',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Quay lại'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Chụp minh chứng'),
+          ),
+        ],
+      ),
+    );
+    final note = noteController.text.trim();
+    noteController.dispose();
+    if (accepted != true || !mounted) return;
+
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Minh chứng không liên lạc được',
+                style: Theme.of(
+                  sheetContext,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.camera_alt_outlined),
+                title: const Text('Chụp ảnh'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Chọn ảnh lịch sử cuộc gọi'),
+                onTap: () => Navigator.pop(sheetContext, ImageSource.gallery),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    setState(() => _confirming = true);
+    try {
+      final image = await _imagePicker.pickImage(
+        source: source,
+        imageQuality: 82,
+        maxWidth: 1600,
+      );
+      if (image == null) return;
+      final position = await _evidencePosition();
+      final orderId = (widget.order['id'] as num).toInt();
+      final trackingCode = '${widget.order['ma_van_don']}';
+      final stampedImage = await _evidenceImageService.stamp(
+        sourceBytes: await image.readAsBytes(),
+        orderId: orderId,
+        trackingCode: trackingCode,
+        evidenceLabel: 'KHÔNG LIÊN LẠC ĐƯỢC NGƯỜI GỬI',
+        employeeName: _employeeName,
+        address: _address,
+        latitude: position.latitude,
+        longitude: position.longitude,
+        capturedAt: DateTime.now(),
+      );
+      final evidenceUrl = await _cloudinaryService.uploadEvidence(
+        imageBytes: stampedImage,
+        trackingCode: trackingCode,
+        evidenceType: 'pickup_sender_unreachable',
+        orderId: orderId,
+        address: _address,
+        latitude: position.latitude,
+        longitude: position.longitude,
+      );
+      await _service.reportPickupContactFailed(
+        orderId: orderId,
+        evidenceUrl: evidenceUrl,
+        note: note.isEmpty ? null : note,
+      );
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Đã ghi nhận không liên lạc được. Đơn vẫn chờ lấy hàng và không bị trừ ví.',
+          ),
+        ),
+      );
+      Navigator.pop(context, true);
+    } on CloudinaryUploadException catch (error) {
+      _showMessage(error.message);
+    } catch (error) {
+      _showMessage(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _confirming = false);
+    }
+  }
+
   Future<LatLng> _evidencePosition() async {
     if (_usingSimulatedPosition && _current != null) return _current!;
     final position = await Geolocator.getCurrentPosition(
@@ -630,6 +762,14 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
                                 ? 'Dừng giả lập'
                                 : 'Giả lập từ kho cấp 2',
                           ),
+                        ),
+                        const SizedBox(height: 6),
+                        OutlinedButton.icon(
+                          onPressed: _confirming
+                              ? null
+                              : _reportCannotContactSender,
+                          icon: const Icon(Icons.phone_disabled_outlined),
+                          label: const Text('Không liên lạc được'),
                         ),
                         const SizedBox(height: 6),
                         FilledButton.icon(

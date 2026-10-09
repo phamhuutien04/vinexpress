@@ -18,12 +18,42 @@ class EvidenceImageService {
     required double latitude,
     required double longitude,
     required DateTime capturedAt,
-  }) async {
-    // ImageDescriptor.width/height chưa được Flutter Web hỗ trợ ổn định.
-    // Trên web giữ nguyên ảnh; thông tin đơn, địa chỉ, GPS và thời gian vẫn
-    // được gửi riêng trong context của request tải minh chứng.
-    if (kIsWeb) return sourceBytes;
+  }) => _stampLines(
+    sourceBytes: sourceBytes,
+    lines: [
+      'VINEXPRESS - $evidenceLabel',
+      'Đơn #$orderId • $trackingCode',
+      'Nhân viên: $employeeName',
+      'Địa chỉ: $address',
+      'GPS: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
+      'Thời gian: ${_formatDateTime(capturedAt)}',
+    ],
+  );
 
+  Future<Uint8List> stampTransportIncident({
+    required Uint8List sourceBytes,
+    required int tripId,
+    required String tripCode,
+    required String incidentType,
+    required String driverName,
+    required String vehiclePlate,
+    required DateTime capturedAt,
+  }) => _stampLines(
+    sourceBytes: sourceBytes,
+    lines: [
+      'VINEXPRESS - MINH CHỨNG SỰ CỐ',
+      'Chuyến #$tripId • $tripCode',
+      'Loại sự cố: $incidentType',
+      'Tài xế: $driverName',
+      'Biển số xe: $vehiclePlate',
+      'Thời gian: ${_formatDateTime(capturedAt)}',
+    ],
+  );
+
+  Future<Uint8List> _stampLines({
+    required Uint8List sourceBytes,
+    required List<String> lines,
+  }) async {
     final source = await _decode(sourceBytes);
     final recorder = ui.PictureRecorder();
     final canvas = Canvas(recorder);
@@ -31,14 +61,7 @@ class EvidenceImageService {
     final height = source.height.toDouble();
     canvas.drawImage(source, Offset.zero, Paint());
 
-    final text = [
-      'VINEXPRESS - $evidenceLabel',
-      'Đơn #$orderId • $trackingCode',
-      'Nhân viên: $employeeName',
-      'Địa chỉ: $address',
-      'GPS: ${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}',
-      'Thời gian: ${_formatDateTime(capturedAt)}',
-    ].join('\n');
+    final text = lines.join('\n');
 
     // Co chữ theo cả chiều rộng và chiều cao để ảnh dọc, ngang hoặc ảnh nhỏ
     // đều hiển thị đủ phần thông tin mà không tràn khỏi khung.
@@ -91,19 +114,11 @@ class EvidenceImageService {
   }
 
   Future<ui.Image> _decode(Uint8List bytes) async {
-    final buffer = await ui.ImmutableBuffer.fromUint8List(bytes);
-    final descriptor = await ui.ImageDescriptor.encoded(buffer);
-    final sourceWidth = descriptor.width;
-    final sourceHeight = descriptor.height;
-    final largestSide = sourceWidth > sourceHeight ? sourceWidth : sourceHeight;
-    final scale = largestSide > _maximumImageDimension
-        ? _maximumImageDimension / largestSide
-        : 1.0;
-    final targetWidth = (sourceWidth * scale).round();
-    final targetHeight = (sourceHeight * scale).round();
-    final codec = await descriptor.instantiateCodec(
-      targetWidth: targetWidth,
-      targetHeight: targetHeight,
+    // instantiateImageCodec hoạt động trên cả mobile và web, không truy cập
+    // ImageDescriptor.width/height (API từng gây lỗi Unsupported trên web).
+    final codec = await ui.instantiateImageCodec(
+      bytes,
+      targetWidth: _maximumImageDimension,
     );
     final frame = await codec.getNextFrame();
     return frame.image;
