@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../services/payos_service.dart';
 import '../../services/wallet_service.dart';
 import '../../widgets/wallet_withdrawal_sheet.dart';
 import 'widgets/customer_design.dart';
@@ -14,6 +17,7 @@ class CustomerWalletScreen extends StatefulWidget {
 
 class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
   final _service = WalletService();
+  final _payosService = PayosService();
   Map<String, dynamic> _wallet = {};
   List<Map<String, dynamic>> _transactions = [];
   bool _loading = true;
@@ -73,6 +77,96 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
     }
   }
 
+  Future<void> _topUpWithPayos() async {
+    final controller = TextEditingController();
+    final amount = await showDialog<int>(
+      context: context,
+      builder: (dialogContext) {
+        var valid = false;
+        return StatefulBuilder(
+          builder: (context, setDialogState) => AlertDialog(
+            icon: const Icon(Icons.qr_code_2_rounded, color: AppColors.primary),
+            title: const Text('Nạp ví qua PayOS'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Bạn sẽ được chuyển đến PayOS để quét VietQR. Số dư được cộng tự động sau khi thanh toán thành công.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: controller,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.payments_outlined),
+                    labelText: 'Số tiền muốn nạp',
+                    suffixText: 'đ',
+                    helperText: 'Từ 10.000đ đến 50.000.000đ',
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (value) {
+                    final parsed = int.tryParse(value) ?? 0;
+                    final next = parsed >= 10000 && parsed <= 50000000;
+                    if (next != valid) setDialogState(() => valid = next);
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext),
+                child: const Text('Hủy'),
+              ),
+              FilledButton.icon(
+                onPressed: valid
+                    ? () => Navigator.pop(
+                        dialogContext,
+                        int.parse(controller.text),
+                      )
+                    : null,
+                icon: const Icon(Icons.open_in_new_rounded),
+                label: const Text('Đến PayOS'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    controller.dispose();
+    if (amount == null || !mounted) return;
+
+    try {
+      final checkout = await _payosService.createWalletTopUp(amount: amount);
+      if (!mounted) return;
+      final opened = await launchUrl(
+        Uri.parse(checkout.checkoutUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (!mounted) return;
+      if (!opened) {
+        _message('Không mở được PayOS. Vui lòng thử lại.');
+        return;
+      }
+      _message(
+        'Đã mở PayOS cho giao dịch #${checkout.orderCode}. Số dư sẽ tự cập nhật sau khi thanh toán.',
+      );
+    } on PayosServiceException catch (error) {
+      if (mounted) _message(error.message, error: true);
+    }
+  }
+
+  void _message(String text, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(text),
+        backgroundColor: error ? AppColors.error : null,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -104,6 +198,7 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
                       balance: _balance,
                       pendingWithdrawal: _pendingWithdrawal,
                       onWithdraw: _balance >= 50000 ? _withdraw : null,
+                      onTopUp: _loading ? null : _topUpWithPayos,
                     ),
                   const SizedBox(height: 28),
                   CustomerSectionHeader(
@@ -159,11 +254,13 @@ class _BalancePanel extends StatelessWidget {
     required this.balance,
     required this.pendingWithdrawal,
     required this.onWithdraw,
+    required this.onTopUp,
   });
 
   final double balance;
   final double pendingWithdrawal;
   final VoidCallback? onWithdraw;
+  final VoidCallback? onTopUp;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -229,6 +326,19 @@ class _BalancePanel extends StatelessWidget {
         final action = Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            SizedBox(
+              height: 48,
+              child: OutlinedButton.icon(
+                onPressed: onTopUp,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.white,
+                  side: const BorderSide(color: Color(0xFF5CDCD0)),
+                ),
+                icon: const Icon(Icons.qr_code_2_rounded),
+                label: const Text('Nạp tiền PayOS'),
+              ),
+            ),
+            const SizedBox(height: 8),
             SizedBox(
               height: 48,
               child: FilledButton.icon(
