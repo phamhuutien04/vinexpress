@@ -1,5 +1,8 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -92,7 +95,7 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Bạn sẽ được chuyển đến PayOS để quét VietQR. Số dư được cộng tự động sau khi thanh toán thành công.',
+                  'QR VietQR sẽ hiển thị ngay trong ứng dụng. Số dư được cộng tự động sau khi thanh toán thành công.',
                 ),
                 const SizedBox(height: 16),
                 TextField(
@@ -127,8 +130,8 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
                         int.parse(controller.text),
                       )
                     : null,
-                icon: const Icon(Icons.open_in_new_rounded),
-                label: const Text('Đến PayOS'),
+                icon: const Icon(Icons.qr_code_2_rounded),
+                label: const Text('Tạo mã QR'),
               ),
             ],
           ),
@@ -141,21 +144,20 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
     try {
       final checkout = await _payosService.createWalletTopUp(amount: amount);
       if (!mounted) return;
-      final opened = await launchUrl(
-        Uri.parse(checkout.checkoutUrl),
-        mode: LaunchMode.externalApplication,
-      );
-      if (!mounted) return;
-      if (!opened) {
-        _message('Không mở được PayOS. Vui lòng thử lại.');
-        return;
-      }
-      _message(
-        'Đã mở PayOS cho giao dịch #${checkout.orderCode}. Số dư sẽ tự cập nhật sau khi thanh toán.',
-      );
+      final paid = await _showPayosQr(checkout);
+      if (paid && mounted) await _load();
     } on PayosServiceException catch (error) {
       if (mounted) _message(error.message, error: true);
     }
+  }
+
+  Future<bool> _showPayosQr(PayosCheckout checkout) async {
+    final paid = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _CustomerPayosQrDialog(checkout: checkout),
+    );
+    return paid == true;
   }
 
   void _message(String text, {bool error = false}) {
@@ -247,6 +249,137 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
       ),
     ),
   );
+}
+
+class _CustomerPayosQrDialog extends StatefulWidget {
+  const _CustomerPayosQrDialog({required this.checkout});
+
+  final PayosCheckout checkout;
+
+  @override
+  State<_CustomerPayosQrDialog> createState() => _CustomerPayosQrDialogState();
+}
+
+class _CustomerPayosQrDialogState extends State<_CustomerPayosQrDialog> {
+  final _payosService = PayosService();
+  Timer? _timer;
+  bool _checking = false;
+  bool _cancelling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _checkPaid());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkPaid() async {
+    if (_checking) return;
+    _checking = true;
+    try {
+      final paid = await _payosService.isPaymentCompleted(
+        widget.checkout.orderCode,
+      );
+      if (paid && mounted) Navigator.pop(context, true);
+    } catch (_) {
+      // PayOS có thể mất vài giây để gửi webhook xác nhận giao dịch.
+    } finally {
+      _checking = false;
+    }
+  }
+
+  Future<void> _cancelPayment() async {
+    if (_cancelling) return;
+    setState(() => _cancelling = true);
+    try {
+      await _payosService.cancelWalletTopUp(widget.checkout.orderCode);
+      if (mounted) Navigator.pop(context, false);
+    } on PayosServiceException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cancelling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final qrCode = widget.checkout.qrCode;
+    return AlertDialog(
+      title: const Text('Quét QR để nạp ví'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Thanh toán ${_money(widget.checkout.amount)} qua ứng dụng ngân hàng.',
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 18),
+          if (qrCode != null && qrCode.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              color: Colors.white,
+              child: QrImageView(
+                data: qrCode,
+                version: QrVersions.auto,
+                size: 230,
+                errorCorrectionLevel: QrErrorCorrectLevel.M,
+              ),
+            )
+          else
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: Icon(Icons.qr_code_2_rounded, size: 96),
+            ),
+          const SizedBox(height: 14),
+          const Text(
+            'QR sẽ tự đóng khi PayOS xác nhận và ví được cộng tiền. Chọn “Hủy” sẽ hủy QR này.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 12),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _cancelling ? null : _cancelPayment,
+          child: _cancelling
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Hủy'),
+        ),
+        FilledButton.icon(
+          onPressed: _cancelling
+              ? null
+              : () async {
+                  final opened = await launchUrl(
+                    Uri.parse(widget.checkout.checkoutUrl),
+                    mode: LaunchMode.externalApplication,
+                  );
+                  if (!context.mounted || opened) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Không mở được trang PayOS.')),
+                  );
+                },
+          icon: const Icon(Icons.open_in_new_rounded),
+          label: const Text('Mở PayOS'),
+        ),
+      ],
+    );
+  }
 }
 
 class _BalancePanel extends StatelessWidget {
