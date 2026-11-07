@@ -102,7 +102,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _service.getOrders(),
         _service.getWarehouses(),
         _service.getRegions(),
-        _service.getWalletRequests(),
+        _service.getWalletRequests(type: 'RUT_TIEN'),
         _service.getTransportIncidents(),
         _service.getShippingFeeConfig(),
       ]);
@@ -2273,14 +2273,12 @@ class _WalletRequestList extends StatefulWidget {
 
 class _WalletRequestListState extends State<_WalletRequestList> {
   String? _status = 'CHO_DUYET';
-  String? _type;
 
   @override
   Widget build(BuildContext context) {
     final requests = widget.requests.where((item) {
       final statusMatches = _status == null || item['trang_thai'] == _status;
-      final typeMatches = _type == null || item['loai'] == _type;
-      return statusMatches && typeMatches;
+      return statusMatches;
     }).toList();
     final pending = widget.requests
         .where((item) => item['trang_thai'] == 'CHO_DUYET')
@@ -2323,7 +2321,7 @@ class _WalletRequestListState extends State<_WalletRequestList> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                'Kiểm soát giao dịch ví',
+                                'Duyệt yêu cầu rút tiền',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w800,
@@ -2350,19 +2348,10 @@ class _WalletRequestListState extends State<_WalletRequestList> {
                   Wrap(
                     spacing: 8,
                     children: [
-                      _filterChip('Chờ duyệt', 'CHO_DUYET', true),
-                      _filterChip('Đã duyệt', 'DA_DUYET', true),
-                      _filterChip('Từ chối', 'TU_CHOI', true),
-                      _filterChip('Tất cả', null, true),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      _filterChip('Nạp tiền', 'NAP_TIEN', false),
-                      _filterChip('Rút tiền', 'RUT_TIEN', false),
-                      _filterChip('Cả hai', null, false),
+                      _filterChip('Chờ duyệt', 'CHO_DUYET'),
+                      _filterChip('Đã duyệt', 'DA_DUYET'),
+                      _filterChip('Từ chối', 'TU_CHOI'),
+                      _filterChip('Tất cả', null),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -2391,17 +2380,13 @@ class _WalletRequestListState extends State<_WalletRequestList> {
     );
   }
 
-  Widget _filterChip(String label, String? value, bool statusFilter) {
-    final selected = statusFilter ? _status == value : _type == value;
+  Widget _filterChip(String label, String? value) {
+    final selected = _status == value;
     return ChoiceChip(
       label: Text(label),
       selected: selected,
       onSelected: (_) => setState(() {
-        if (statusFilter) {
-          _status = value;
-        } else {
-          _type = value;
-        }
+        _status = value;
       }),
     );
   }
@@ -2522,6 +2507,12 @@ class _WalletRequestCard extends StatelessWidget {
                 ),
                 const Spacer(),
                 if (isPending) ...[
+                  OutlinedButton.icon(
+                    onPressed: () => _showWithdrawalQr(context, request),
+                    icon: const Icon(Icons.qr_code_2_rounded, size: 18),
+                    label: const Text('Tạo QR'),
+                  ),
+                  const SizedBox(width: 8),
                   OutlinedButton(
                     onPressed: () => onProcess(request, 'TU_CHOI'),
                     style: OutlinedButton.styleFrom(
@@ -2550,6 +2541,150 @@ class _WalletRequestCard extends StatelessWidget {
       ),
     );
   }
+}
+
+void _showWithdrawalQr(BuildContext context, Map<String, dynamic> request) {
+  final amount = (request['so_tien'] as num?)?.round() ?? 0;
+  final bank = '${request['ngan_hang'] ?? ''}';
+  final account = '${request['so_tai_khoan'] ?? ''}'.replaceAll(' ', '');
+  final owner = '${request['chu_tai_khoan'] ?? ''}';
+  final reference = 'VEX RUT ${request['id']}';
+  final qrUrl = _withdrawalQrUrl(
+    bank: bank,
+    account: account,
+    amount: amount,
+    owner: owner,
+    reference: reference,
+  );
+  showDialog<void>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('QR chuyển tiền'),
+      content: SizedBox(
+        width: 370,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: .10),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                _money(amount),
+                style: const TextStyle(
+                  color: AppColors.primary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: Image.network(
+                qrUrl,
+                width: 260,
+                height: 260,
+                fit: BoxFit.cover,
+                // VietQR is an external image. Render it as a browser image on
+                // Flutter Web so the browser can display it without a canvas
+                // cross-origin fetch.
+                webHtmlElementStrategy: WebHtmlElementStrategy.prefer,
+                errorBuilder: (_, _, _) => Container(
+                  width: 260,
+                  height: 260,
+                  alignment: Alignment.center,
+                  color: const Color(0xFFF3F6F6),
+                  child: const Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text(
+                      'Không thể tạo mã QR. Hãy chuyển theo thông tin tài khoản bên dưới.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            _WithdrawalQrLine(label: 'Ngân hàng', value: bank),
+            _WithdrawalQrLine(label: 'Số tài khoản', value: account),
+            _WithdrawalQrLine(label: 'Chủ tài khoản', value: owner),
+            _WithdrawalQrLine(label: 'Nội dung', value: reference),
+            const SizedBox(height: 10),
+            const Text(
+              'Sau khi chuyển khoản thành công, quay lại yêu cầu này và bấm Duyệt.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF6B7A7B), fontSize: 12),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext),
+          child: const Text('Đóng'),
+        ),
+      ],
+    ),
+  );
+}
+
+class _WithdrawalQrLine extends StatelessWidget {
+  const _WithdrawalQrLine({required this.label, required this.value});
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(bottom: 5),
+    child: Row(
+      children: [
+        SizedBox(
+          width: 92,
+          child: Text(label, style: Theme.of(context).textTheme.bodySmall),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+String _withdrawalQrUrl({
+  required String bank,
+  required String account,
+  required int amount,
+  required String owner,
+  required String reference,
+}) {
+  final code = _vietQrBankCode(bank);
+  return Uri.https('img.vietqr.io', '/image/$code-$account-compact2.png', {
+    'amount': '$amount',
+    'addInfo': reference,
+    'accountName': owner,
+  }).toString();
+}
+
+String _vietQrBankCode(String bank) {
+  final normalized = bank.toUpperCase().replaceAll(RegExp(r'[^A-Z0-9]'), '');
+  return switch (normalized) {
+    // VietQR image endpoint needs the NAPAS bank BIN, not the display name.
+    'MBBANK' || 'MB' => '970422',
+    'VIETCOMBANK' || 'VCB' => '970436',
+    'TECHCOMBANK' || 'TCB' => '970407',
+    'ACB' => '970416',
+    'BIDV' => '970418',
+    'VPBANK' || 'VPB' => '970432',
+    'AGRIBANK' => '970405',
+    'SACOMBANK' || 'STB' => '970403',
+    _ => normalized,
+  };
 }
 
 class _WalletInfoLine extends StatelessWidget {
