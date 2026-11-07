@@ -55,6 +55,36 @@ class AdminService {
   Future<List<Map<String, dynamic>>> getTransportIncidents() =>
       _list('admin_danh_sach_su_co_van_chuyen');
 
+  Future<Map<String, dynamic>> getShippingFeeConfig() async {
+    try {
+      final data = await _client.rpc('admin_cau_hinh_phi_van_chuyen');
+      return Map<String, dynamic>.from(data as Map);
+    } on PostgrestException catch (error) {
+      throw AdminServiceException(_message(error));
+    }
+  }
+
+  Future<void> updateShippingFeeConfig({
+    required double motorcyclePerKm,
+    required double truckFee,
+    required double pricePerKg,
+    required double platformPercent,
+  }) async {
+    try {
+      await _client.rpc(
+        'admin_cap_nhat_cau_hinh_phi_van_chuyen',
+        params: {
+          'p_phi_xe_may_moi_km': motorcyclePerKm,
+          'p_phi_xe_tai': truckFee,
+          'p_phi_moi_kg': pricePerKg,
+          'p_phan_tram_san': platformPercent,
+        },
+      );
+    } on PostgrestException catch (error) {
+      throw AdminServiceException(_message(error));
+    }
+  }
+
   Future<void> processTransportIncident({
     required int incidentId,
     required String action,

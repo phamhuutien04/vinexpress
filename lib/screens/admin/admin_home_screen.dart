@@ -29,6 +29,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> _regions = [];
   List<Map<String, dynamic>> _walletRequests = [];
   List<Map<String, dynamic>> _transportIncidents = [];
+  Map<String, dynamic> _shippingFeeConfig = const {
+    'phi_xe_may_moi_km': 5000,
+    'phi_xe_tai': 30000,
+    'phi_moi_kg': 3000,
+    'phan_tram_san': 20,
+  };
 
   static const _titles = [
     'Tổng quan',
@@ -98,6 +104,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _service.getRegions(),
         _service.getWalletRequests(),
         _service.getTransportIncidents(),
+        _service.getShippingFeeConfig(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -109,6 +116,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _regions = result[5] as List<Map<String, dynamic>>;
         _walletRequests = result[6] as List<Map<String, dynamic>>;
         _transportIncidents = result[7] as List<Map<String, dynamic>>;
+        _shippingFeeConfig = result[8] as Map<String, dynamic>;
       });
     } on AdminServiceException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -122,44 +130,46 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final desktop = constraints.maxWidth >= 900;
-        final scaffold = Scaffold(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        final pageScaffold = Scaffold(
+          backgroundColor: const Color(0xFFF5F8F8),
           appBar: AppBar(
-            title: Text(
-              _selected == 0 ? 'Quản trị VinExpress' : _titles[_selected],
-            ),
-            actions: [
-              IconButton(
-                tooltip: 'Làm mới',
-                onPressed: _loading ? null : _loadAll,
-                icon: const Icon(Icons.refresh),
-              ),
-              if (desktop)
-                Padding(
-                  padding: const EdgeInsets.only(right: 12),
-                  child: TextButton.icon(
-                    onPressed: _confirmLogout,
-                    icon: const Icon(Icons.logout_rounded, size: 19),
-                    label: const Text('Đăng xuất'),
-                    style: TextButton.styleFrom(
-                      foregroundColor: Theme.of(context).colorScheme.error,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 14,
-                        vertical: 10,
-                      ),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
+            toolbarHeight: 76,
+            backgroundColor: Colors.white,
+            surfaceTintColor: Colors.transparent,
+            titleSpacing: desktop ? 28 : 20,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  _selected == 0 ? 'Bảng điều hành' : _titles[_selected],
+                  style: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+                if (desktop)
+                  const Text(
+                    'VinExpress · Quản trị vận hành',
+                    style: TextStyle(
+                      color: Color(0xFF6B7A7B),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
                     ),
                   ),
-                )
-              else
-                IconButton(
-                  tooltip: 'Đăng xuất',
-                  onPressed: _confirmLogout,
-                  icon: const Icon(Icons.logout_rounded),
-                ),
-            ],
+              ],
+            ),
+            actions: desktop
+                ? const []
+                : [
+                    IconButton(
+                      tooltip: 'Làm mới',
+                      onPressed: _loading ? null : _loadAll,
+                      icon: const Icon(Icons.refresh_rounded),
+                    ),
+                    IconButton(
+                      tooltip: 'Đăng xuất',
+                      onPressed: _confirmLogout,
+                      icon: const Icon(Icons.logout_rounded),
+                    ),
+                  ],
           ),
           body: _body(),
           floatingActionButton: switch (_selected) {
@@ -178,6 +188,8 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           bottomNavigationBar: desktop
               ? null
               : NavigationBar(
+                  backgroundColor: Colors.white,
+                  indicatorColor: AppColors.primary.withValues(alpha: .14),
                   labelBehavior:
                       NavigationDestinationLabelBehavior.onlyShowSelected,
                   selectedIndex: _selected,
@@ -187,40 +199,24 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   destinations: _destinations,
                 ),
         );
-        if (!desktop) return scaffold;
+        if (!desktop) return pageScaffold;
+        final expanded = constraints.maxWidth >= 1160;
         return Scaffold(
-          body: Row(
-            children: [
-              NavigationRail(
-                selectedIndex: _selected,
-                extended: constraints.maxWidth >= 1180,
-                onDestinationSelected: (value) {
-                  setState(() => _selected = value);
-                },
-                leading: const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 18),
-                  child: CircleAvatar(
-                    radius: 25,
-                    backgroundColor: AppColors.primary,
-                    child: Icon(
-                      Icons.admin_panel_settings,
-                      color: Colors.white,
-                    ),
-                  ),
+          backgroundColor: const Color(0xFFF5F8F8),
+          body: SafeArea(
+            child: Row(
+              children: [
+                _AdminSidebar(
+                  selectedIndex: _selected,
+                  expanded: expanded,
+                  destinations: _destinations,
+                  onDestinationSelected: (value) =>
+                      setState(() => _selected = value),
+                  onLogout: _confirmLogout,
                 ),
-                destinations: _destinations
-                    .map(
-                      (item) => NavigationRailDestination(
-                        icon: item.icon,
-                        selectedIcon: item.selectedIcon,
-                        label: Text(item.label),
-                      ),
-                    )
-                    .toList(),
-              ),
-              const VerticalDivider(width: 1),
-              Expanded(child: scaffold),
-            ],
+                Expanded(child: pageScaffold),
+              ],
+            ),
           ),
         );
       },
@@ -228,24 +224,33 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 
   Widget _body() {
-    if (_loading) return const Center(child: CircularProgressIndicator());
+    if (_loading) return const _AdminLoadingState();
     if (_error != null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.admin_panel_settings_outlined, size: 58),
-              const SizedBox(height: 12),
-              Text(_error!, textAlign: TextAlign.center),
-              const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _loadAll,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Thử lại'),
-              ),
-            ],
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 420),
+            padding: const EdgeInsets.all(28),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFE3E9E9)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.admin_panel_settings_outlined, size: 52),
+                const SizedBox(height: 14),
+                Text(_error!, textAlign: TextAlign.center),
+                const SizedBox(height: 18),
+                FilledButton.icon(
+                  onPressed: _loadAll,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Tải lại dữ liệu'),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -255,7 +260,9 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         data: _overview,
         orders: _orders,
         walletRequests: _walletRequests,
+        shippingFeeConfig: _shippingFeeConfig,
         onRefresh: _loadAll,
+        onEditCommission: _showShipperCommissionDialog,
       ),
       1 => _EmployeeList(employees: _employees, onAction: _updateEmployee),
       2 => _CustomerList(customers: _customers),
@@ -272,6 +279,134 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         onRefresh: _loadAll,
       ),
     };
+  }
+
+  Future<void> _showShipperCommissionDialog() async {
+    String initial(String key) {
+      final value = (_shippingFeeConfig[key] as num?)?.toDouble() ?? 0;
+      return value.toStringAsFixed(value == value.roundToDouble() ? 0 : 2);
+    }
+
+    final motorcycle = TextEditingController(
+      text: initial('phi_xe_may_moi_km'),
+    );
+    final truck = TextEditingController(text: initial('phi_xe_tai'));
+    final kilogram = TextEditingController(text: initial('phi_moi_kg'));
+    final commission = TextEditingController(text: initial('phan_tram_san'));
+    final result = await showDialog<Map<String, double>>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Cấu hình phí vận chuyển'),
+        content: SizedBox(
+          width: 380,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Dùng để tính giá đơn và thu nhập shipper cho các đơn mới.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: motorcycle,
+                autofocus: true,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Phí xe máy mỗi km',
+                  suffixText: 'đ',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: truck,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Phí xe tải',
+                  suffixText: 'đ',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: kilogram,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Phí mỗi kg',
+                  suffixText: 'đ/kg',
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: commission,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Phần trăm sàn',
+                  suffixText: '%',
+                  helperText:
+                      'Từ 0 đến 100, áp dụng khi ghi nhận lương shipper.',
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Hủy'),
+          ),
+          FilledButton(
+            onPressed: () {
+              double? parse(TextEditingController controller) =>
+                  double.tryParse(controller.text.trim().replaceAll(',', '.'));
+              final m = parse(motorcycle);
+              final t = parse(truck);
+              final k = parse(kilogram);
+              final c = parse(commission);
+              if (m != null &&
+                  m >= 0 &&
+                  t != null &&
+                  t >= 0 &&
+                  k != null &&
+                  k >= 0 &&
+                  c != null &&
+                  c >= 0 &&
+                  c <= 100) {
+                Navigator.pop(dialogContext, {'m': m, 't': t, 'k': k, 'c': c});
+              }
+            },
+            child: const Text('Lưu cấu hình'),
+          ),
+        ],
+      ),
+    );
+    motorcycle.dispose();
+    truck.dispose();
+    kilogram.dispose();
+    commission.dispose();
+    if (result == null) return;
+    try {
+      await _service.updateShippingFeeConfig(
+        motorcyclePerKm: result['m']!,
+        truckFee: result['t']!,
+        pricePerKg: result['k']!,
+        platformPercent: result['c']!,
+      );
+      await _loadAll();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã cập nhật cấu hình phí vận chuyển.')),
+        );
+      }
+    } on AdminServiceException catch (error) {
+      if (mounted) _showError(error.message);
+    }
   }
 
   Future<void> _processTransportIncident(
@@ -528,18 +663,240 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   }
 }
 
+class _AdminSidebar extends StatelessWidget {
+  const _AdminSidebar({
+    required this.selectedIndex,
+    required this.expanded,
+    required this.destinations,
+    required this.onDestinationSelected,
+    required this.onLogout,
+  });
+
+  final int selectedIndex;
+  final bool expanded;
+  final List<NavigationDestination> destinations;
+  final ValueChanged<int> onDestinationSelected;
+  final VoidCallback onLogout;
+
+  @override
+  Widget build(BuildContext context) {
+    final width = expanded ? 248.0 : 84.0;
+    return Container(
+      width: width,
+      color: const Color(0xFF102B2D),
+      child: Column(
+        children: [
+          Padding(
+            padding: EdgeInsets.fromLTRB(expanded ? 20 : 14, 22, 14, 20),
+            child: Row(
+              mainAxisAlignment: expanded
+                  ? MainAxisAlignment.start
+                  : MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(
+                    Icons.local_shipping_rounded,
+                    color: Colors.white,
+                  ),
+                ),
+                if (expanded) ...[
+                  const SizedBox(width: 11),
+                  const Expanded(
+                    child: Text(
+                      'VinExpress',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          if (expanded)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'QUẢN TRỊ VẬN HÀNH',
+                  style: TextStyle(
+                    color: Color(0xFF8FB2B1),
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+              ),
+            ),
+          Expanded(
+            child: ListView.separated(
+              padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 11),
+              itemCount: destinations.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 5),
+              itemBuilder: (context, index) {
+                final destination = destinations[index];
+                final selected = selectedIndex == index;
+                return Tooltip(
+                  message: expanded ? '' : destination.label,
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => onDestinationSelected(index),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 180),
+                        height: 48,
+                        padding: EdgeInsets.symmetric(
+                          horizontal: expanded ? 12 : 0,
+                        ),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? Colors.white.withValues(alpha: .14)
+                              : null,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: expanded
+                              ? MainAxisAlignment.start
+                              : MainAxisAlignment.center,
+                          children: [
+                            IconTheme(
+                              data: IconThemeData(
+                                color: selected
+                                    ? Colors.white
+                                    : const Color(0xFFC2D3D2),
+                                size: 22,
+                              ),
+                              child: selected
+                                  ? (destination.selectedIcon ??
+                                        destination.icon)
+                                  : destination.icon,
+                            ),
+                            if (expanded) ...[
+                              const SizedBox(width: 13),
+                              Expanded(
+                                child: Text(
+                                  destination.label,
+                                  style: TextStyle(
+                                    color: selected
+                                        ? Colors.white
+                                        : const Color(0xFFC2D3D2),
+                                    fontSize: 14,
+                                    fontWeight: selected
+                                        ? FontWeight.w800
+                                        : FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.all(expanded ? 12 : 10),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: BorderRadius.circular(12),
+              child: InkWell(
+                onTap: onLogout,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  height: 48,
+                  padding: EdgeInsets.symmetric(horizontal: expanded ? 12 : 0),
+                  decoration: BoxDecoration(
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .13),
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: expanded
+                        ? MainAxisAlignment.start
+                        : MainAxisAlignment.center,
+                    children: [
+                      const Icon(
+                        Icons.logout_rounded,
+                        color: Color(0xFFFFB5AA),
+                        size: 21,
+                      ),
+                      if (expanded) ...[
+                        const SizedBox(width: 12),
+                        const Text(
+                          'Đăng xuất',
+                          style: TextStyle(
+                            color: Color(0xFFFFCEC7),
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AdminLoadingState extends StatelessWidget {
+  const _AdminLoadingState();
+
+  @override
+  Widget build(BuildContext context) => ListView(
+    padding: const EdgeInsets.all(24),
+    children: [
+      const SizedBox(height: 4),
+      for (final height in [150.0, 112.0, 280.0]) ...[
+        Container(
+          height: height,
+          margin: const EdgeInsets.only(bottom: 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: const Color(0xFFE7EEEE)),
+          ),
+        ),
+      ],
+    ],
+  );
+}
+
 class _AdminOverview extends StatelessWidget {
   const _AdminOverview({
     required this.data,
     required this.orders,
     required this.walletRequests,
+    required this.shippingFeeConfig,
     required this.onRefresh,
+    required this.onEditCommission,
   });
 
   final Map<String, dynamic> data;
   final List<Map<String, dynamic>> orders;
   final List<Map<String, dynamic>> walletRequests;
+  final Map<String, dynamic> shippingFeeConfig;
   final Future<void> Function() onRefresh;
+  final VoidCallback onEditCommission;
 
   int _number(dynamic value) => (value as num?)?.toInt() ?? 0;
 
@@ -548,6 +905,7 @@ class _AdminOverview extends StatelessWidget {
     return List.generate(7, (index) {
       final day = DateTime(now.year, now.month, now.day - (6 - index));
       return orders.where((order) {
+        if (order['trang_thai'] == 'DA_HUY') return false;
         final createdAt = DateTime.tryParse(
           '${order['ngay_tao'] ?? ''}',
         )?.toLocal();
@@ -576,12 +934,15 @@ class _AdminOverview extends StatelessWidget {
     final waiting = _number(data['don_cho_lay']);
     final delivering = _number(data['don_dang_giao']);
     final delivered = _number(data['don_da_giao']);
+    final totalOrders = _number(data['tong_don_hang']);
+    final revenue =
+        (data['tong_doanh_thu_van_chuyen'] as num?)?.toDouble() ?? 0;
     final chartValues = _lastSevenDays;
     final colors = Theme.of(context).colorScheme;
     return RefreshIndicator(
       onRefresh: onRefresh,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 16, 16, 110),
+        padding: const EdgeInsets.fromLTRB(20, 24, 20, 110),
         children: [
           Center(
             child: ConstrainedBox(
@@ -593,13 +954,18 @@ class _AdminOverview extends StatelessWidget {
                     name: '$name',
                     revenue: data['tong_doanh_thu_van_chuyen'],
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 14),
+                  _CommissionControl(
+                    config: shippingFeeConfig,
+                    onEdit: onEditCommission,
+                  ),
+                  const SizedBox(height: 28),
                   const _SectionTitle(
                     title: 'Sức khỏe hệ thống',
                     subtitle:
                         'Các chỉ số quan trọng được cập nhật theo dữ liệu mới nhất',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final columns = constraints.maxWidth >= 900
@@ -611,8 +977,8 @@ class _AdminOverview extends StatelessWidget {
                         crossAxisCount: columns,
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 14,
+                        mainAxisSpacing: 14,
                         childAspectRatio: columns == 1 ? 3.15 : 1.8,
                         children: [
                           _SummaryCard(
@@ -644,12 +1010,12 @@ class _AdminOverview extends StatelessWidget {
                       );
                     },
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 30),
                   const _SectionTitle(
                     title: 'Phân tích vận hành',
                     subtitle: 'Xu hướng đơn mới và cơ cấu trạng thái giao hàng',
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 14),
                   LayoutBuilder(
                     builder: (context, constraints) {
                       final wide = constraints.maxWidth >= 820;
@@ -668,19 +1034,27 @@ class _AdminOverview extends StatelessWidget {
                         );
                       }
                       return SizedBox(
-                        height: 330,
+                        height: 320,
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
                             Expanded(flex: 3, child: trend),
-                            const SizedBox(width: 12),
+                            const SizedBox(width: 14),
                             Expanded(flex: 2, child: status),
                           ],
                         ),
                       );
                     },
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 30),
+                  _OperationalMetricsPanel(
+                    totalOrders: totalOrders,
+                    waiting: waiting,
+                    delivering: delivering,
+                    delivered: delivered,
+                    revenue: revenue,
+                  ),
+                  const SizedBox(height: 30),
                   _AttentionPanel(
                     pendingEmployees: _number(data['nhan_vien_cho_duyet']),
                     pendingWallets: pendingWallets,
@@ -707,7 +1081,7 @@ class _SectionTitle extends StatelessWidget {
     children: [
       Text(
         title,
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
       ),
       Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
     ],
@@ -730,9 +1104,13 @@ class _SummaryCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     margin: EdgeInsets.zero,
     elevation: 0,
-    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    color: Colors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: const BorderSide(color: Color(0xFFE3EAEA)),
+    ),
     child: Padding(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       child: Row(
         children: [
           Container(
@@ -740,7 +1118,7 @@ class _SummaryCard extends StatelessWidget {
             height: 42,
             decoration: BoxDecoration(
               color: color.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(13),
+              borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(icon, color: color, size: 23),
           ),
@@ -753,7 +1131,7 @@ class _SummaryCard extends StatelessWidget {
                 Text(
                   value,
                   style: const TextStyle(
-                    fontSize: 24,
+                    fontSize: 26,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -782,8 +1160,8 @@ class _OverviewHero extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.all(22),
     decoration: BoxDecoration(
-      gradient: AppColors.primaryGradient,
-      borderRadius: BorderRadius.circular(20),
+      color: const Color(0xFF113F40),
+      borderRadius: BorderRadius.circular(18),
     ),
     child: LayoutBuilder(
       builder: (context, constraints) {
@@ -794,7 +1172,7 @@ class _OverviewHero extends StatelessWidget {
             const Text(
               'TRUNG TÂM ĐIỀU HÀNH',
               style: TextStyle(
-                color: Colors.white70,
+                color: Color(0xFFB9D9D6),
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
                 letterSpacing: 1.1,
@@ -813,16 +1191,17 @@ class _OverviewHero extends StatelessWidget {
             ),
             const SizedBox(height: 5),
             const Text(
-              'Theo dõi toàn bộ hoạt động VinExpress tại một nơi.',
-              style: TextStyle(color: Colors.white),
+              'Theo dõi đơn hàng, nhân sự và các việc cần xử lý.',
+              style: TextStyle(color: Color(0xFFD3E9E7)),
             ),
           ],
         );
         final revenueBlock = Container(
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: .16),
+            color: const Color(0xFF0A5D5B),
             borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFF2B8B87)),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -861,6 +1240,87 @@ class _OverviewHero extends StatelessWidget {
   );
 }
 
+class _CommissionControl extends StatelessWidget {
+  const _CommissionControl({required this.config, required this.onEdit});
+
+  final Map<String, dynamic> config;
+  final VoidCallback onEdit;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(color: const Color(0xFFE3EAEA)),
+    ),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 560;
+        final info = Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.primary.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.percent_rounded,
+                color: AppColors.primary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Cấu hình phí & chiết khấu',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  Text(
+                    _feeSummary(config),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+        final action = OutlinedButton.icon(
+          onPressed: onEdit,
+          icon: const Icon(Icons.edit_outlined, size: 18),
+          label: const Text('Chỉnh phí'),
+        );
+        return compact
+            ? Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [info, const SizedBox(height: 12), action],
+              )
+            : Row(
+                children: [
+                  Expanded(child: info),
+                  const SizedBox(width: 18),
+                  action,
+                ],
+              );
+      },
+    ),
+  );
+}
+
+String _feeSummary(Map<String, dynamic> config) {
+  int amount(String key, int fallback) =>
+      (config[key] as num?)?.round() ?? fallback;
+  final percent = (config['phan_tram_san'] as num?)?.toDouble() ?? 20;
+  return '${_money(amount('phi_xe_may_moi_km', 5000))}/km · '
+      '${_money(amount('phi_xe_tai', 30000))} xe tải · '
+      '${_money(amount('phi_moi_kg', 3000))}/kg · '
+      '${percent.toStringAsFixed(percent == percent.roundToDouble() ? 0 : 2)}% sàn';
+}
+
 class _TrendChartCard extends StatelessWidget {
   const _TrendChartCard({required this.values, required this.labels});
 
@@ -872,23 +1332,87 @@ class _TrendChartCard extends StatelessWidget {
     final total = values.fold<int>(0, (sum, value) => sum + value);
     return _AnalyticsCard(
       title: 'Đơn hàng 7 ngày',
-      subtitle: '$total đơn mới trong tuần gần nhất',
+      subtitle: '$total đơn hợp lệ trong tuần gần nhất',
       child: SizedBox(
-        height: 210,
+        height: 190,
         child: Semantics(
           label:
               'Biểu đồ đơn hàng 7 ngày: ${List.generate(values.length, (index) => '${labels[index]} ${values[index]} đơn').join(', ')}',
-          child: CustomPaint(
-            painter: _BarChartPainter(
-              values: values,
-              labels: labels,
-              color: AppColors.primary,
-              gridColor: Theme.of(context).dividerColor,
-            ),
-            size: Size.infinite,
-          ),
+          child: _WeeklyBarChart(values: values, labels: labels),
         ),
       ),
+    );
+  }
+}
+
+class _WeeklyBarChart extends StatelessWidget {
+  const _WeeklyBarChart({required this.values, required this.labels});
+  final List<int> values;
+  final List<String> labels;
+
+  @override
+  Widget build(BuildContext context) {
+    final maxValue = math.max(1, values.fold<int>(0, math.max));
+    final ceiling = maxValue * 1.25;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: List.generate(values.length, (index) {
+        final value = values[index];
+        final selected = value == maxValue && value > 0;
+        return Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                SizedBox(
+                  height: 18,
+                  child: value == 0
+                      ? null
+                      : Text(
+                          '$value',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: selected
+                                ? AppColors.primary
+                                : const Color(0xFF6B7A7B),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                ),
+                const SizedBox(height: 7),
+                Expanded(
+                  child: Container(
+                    alignment: Alignment.bottomCenter,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF0F5F4),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: FractionallySizedBox(
+                      heightFactor: value == 0 ? .05 : value / ceiling,
+                      child: Container(
+                        width: 28,
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? AppColors.primary
+                              : AppColors.primary.withValues(alpha: .42),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  labels[index],
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
+          ),
+        );
+      }),
     );
   }
 }
@@ -913,12 +1437,12 @@ class _StatusChartCard extends StatelessWidget {
       title: 'Trạng thái đơn',
       subtitle: '$total đơn trong luồng vận hành',
       child: SizedBox(
-        height: 210,
+        height: 190,
         child: LayoutBuilder(
           builder: (context, constraints) {
             final chartSize = math.min(
-              180.0,
-              math.max(112.0, constraints.maxWidth - 132),
+              150.0,
+              math.max(106.0, constraints.maxWidth - 142),
             );
             return Row(
               children: [
@@ -926,18 +1450,41 @@ class _StatusChartCard extends StatelessWidget {
                   child: Center(
                     child: SizedBox.square(
                       dimension: chartSize,
-                      child: Semantics(
-                        label:
-                            'Chờ lấy $waiting, đang giao $delivering, đã giao $delivered',
-                        child: CustomPaint(
-                          painter: _DonutChartPainter(
-                            values: values,
-                            colors: chartColors,
-                            trackColor: Theme.of(
-                              context,
-                            ).colorScheme.surfaceContainerHighest,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Positioned.fill(
+                            child: Semantics(
+                              label:
+                                  'Chờ lấy $waiting, đang giao $delivering, đã giao $delivered',
+                              child: CustomPaint(
+                                painter: _DonutChartPainter(
+                                  values: values,
+                                  colors: chartColors,
+                                  trackColor: Theme.of(
+                                    context,
+                                  ).colorScheme.surfaceContainerHighest,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '$total',
+                                style: const TextStyle(
+                                  fontSize: 22,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                              Text(
+                                'đơn',
+                                style: Theme.of(context).textTheme.bodySmall,
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -975,6 +1522,153 @@ class _StatusChartCard extends StatelessWidget {
   }
 }
 
+class _OperationalMetricsPanel extends StatelessWidget {
+  const _OperationalMetricsPanel({
+    required this.totalOrders,
+    required this.waiting,
+    required this.delivering,
+    required this.delivered,
+    required this.revenue,
+  });
+
+  final int totalOrders;
+  final int waiting;
+  final int delivering;
+  final int delivered;
+  final double revenue;
+
+  @override
+  Widget build(BuildContext context) {
+    final completion = totalOrders == 0 ? 0 : delivered * 100 / totalOrders;
+    final averageFee = delivered == 0 ? 0 : revenue / delivered;
+    final values = [
+      (
+        'Đã hoàn thành',
+        '$delivered đơn',
+        Icons.task_alt_rounded,
+        AppColors.success,
+      ),
+      (
+        'Đang xử lý',
+        '${waiting + delivering} đơn',
+        Icons.timelapse_rounded,
+        AppColors.info,
+      ),
+      (
+        'Tỷ lệ hoàn thành',
+        '${completion.toStringAsFixed(1)}%',
+        Icons.insights_rounded,
+        AppColors.primary,
+      ),
+      (
+        'Phí TB mỗi đơn',
+        _money(averageFee),
+        Icons.receipt_long_outlined,
+        const Color(0xFF7165D8),
+      ),
+    ];
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE3EAEA)),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final columns = constraints.maxWidth >= 820
+              ? 4
+              : constraints.maxWidth >= 500
+              ? 2
+              : 1;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Chỉ số vận hành',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Không bao gồm đơn đã hủy',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 16),
+              GridView.count(
+                crossAxisCount: columns,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                childAspectRatio: columns == 1 ? 4.2 : 2.25,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                children: values
+                    .map(
+                      (item) => _OperationalMetricTile(
+                        label: item.$1,
+                        value: item.$2,
+                        icon: item.$3,
+                        color: item.$4,
+                      ),
+                    )
+                    .toList(),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _OperationalMetricTile extends StatelessWidget {
+  const _OperationalMetricTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    required this.color,
+  });
+  final String label;
+  final String value;
+  final IconData icon;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    padding: const EdgeInsets.all(13),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .06),
+      borderRadius: BorderRadius.circular(12),
+    ),
+    child: Row(
+      children: [
+        Icon(icon, color: color, size: 22),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 class _AnalyticsCard extends StatelessWidget {
   const _AnalyticsCard({
     required this.title,
@@ -989,9 +1683,13 @@ class _AnalyticsCard extends StatelessWidget {
   Widget build(BuildContext context) => Card(
     margin: EdgeInsets.zero,
     elevation: 0,
-    color: Theme.of(context).colorScheme.surfaceContainerLow,
+    color: Colors.white,
+    shape: RoundedRectangleBorder(
+      borderRadius: BorderRadius.circular(16),
+      side: const BorderSide(color: Color(0xFFE3EAEA)),
+    ),
     child: Padding(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1198,69 +1896,6 @@ class _DonutChartPainter extends CustomPainter {
       oldDelegate.values != values || oldDelegate.trackColor != trackColor;
 }
 
-class _BarChartPainter extends CustomPainter {
-  const _BarChartPainter({
-    required this.values,
-    required this.labels,
-    required this.color,
-    required this.gridColor,
-  });
-  final List<int> values;
-  final List<String> labels;
-  final Color color;
-  final Color gridColor;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const bottom = 26.0;
-    const top = 8.0;
-    final chartHeight = size.height - bottom - top;
-    final maxValue = math.max(1, values.fold<int>(0, math.max));
-    final slot = size.width / values.length;
-    final barWidth = math.min(34.0, slot * .54);
-    final gridPaint = Paint()
-      ..color = gridColor.withValues(alpha: .6)
-      ..strokeWidth = 1;
-    for (var i = 0; i <= 3; i++) {
-      final y = top + chartHeight * i / 3;
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
-    }
-    for (var i = 0; i < values.length; i++) {
-      final x = slot * i + (slot - barWidth) / 2;
-      final height = chartHeight * values[i] / maxValue;
-      final rect = RRect.fromRectAndRadius(
-        Rect.fromLTWH(x, top + chartHeight - height, barWidth, height),
-        const Radius.circular(7),
-      );
-      canvas.drawRRect(
-        rect,
-        Paint()
-          ..color = color.withValues(
-            alpha: values[i] == maxValue && maxValue > 0 ? 1 : .58,
-          ),
-      );
-      final painter = TextPainter(
-        text: TextSpan(
-          text: labels[i],
-          style: TextStyle(color: gridColor.withValues(alpha: 1), fontSize: 10),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout();
-      painter.paint(
-        canvas,
-        Offset(
-          slot * i + (slot - painter.width) / 2,
-          size.height - painter.height,
-        ),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _BarChartPainter oldDelegate) =>
-      oldDelegate.values != values || oldDelegate.gridColor != gridColor;
-}
-
 class _EmployeeList extends StatelessWidget {
   const _EmployeeList({required this.employees, required this.onAction});
   final List<Map<String, dynamic>> employees;
@@ -1287,7 +1922,7 @@ class _EmployeeList extends StatelessWidget {
           ),
           subtitle: Text(
             '${_role(item['vai_tro'])} • ${item['email']}\n'
-            '${item['so_dien_thoai']} • ${item['trang_thai_duyet']}'
+            '${item['so_dien_thoai']} • ${_approvalStatusLabel('${item['trang_thai_duyet'] ?? ''}')}'
             '${item['ten_kho'] == null ? '' : '\nKho: ${item['ten_kho']}'}',
           ),
           isThreeLine: true,
@@ -1313,6 +1948,14 @@ class _EmployeeList extends StatelessWidget {
   );
 }
 
+String _approvalStatusLabel(String status) => switch (status) {
+  'DA_DUYET' => 'Đã duyệt',
+  'CHO_DUYET' => 'Chờ duyệt',
+  'TU_CHOI' => 'Đã từ chối',
+  'KHOA' => 'Đã khóa',
+  _ => status.isEmpty ? 'Chưa xác định' : status.replaceAll('_', ' '),
+};
+
 class _CustomerList extends StatelessWidget {
   const _CustomerList({required this.customers});
   final List<Map<String, dynamic>> customers;
@@ -1325,6 +1968,7 @@ class _CustomerList extends StatelessWidget {
       final item = customers[index];
       return Card(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
+        margin: const EdgeInsets.only(bottom: 10),
         child: ListTile(
           leading: const CircleAvatar(child: Icon(Icons.person_outline)),
           title: Text(
@@ -1359,8 +2003,27 @@ class _OrderList extends StatelessWidget {
             '${item['ma_van_don']}',
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
-          subtitle: Text(
-            '${item['khach_hang_ten']} → ${item['nguoi_nhan_ten']}\n${item['trang_thai']} • ${item['shipper_ten'] ?? 'Chưa có shipper'}',
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 3),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('${item['khach_hang_ten']} → ${item['nguoi_nhan_ten']}'),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 7,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    _OrderStatusBadge(status: '${item['trang_thai'] ?? ''}'),
+                    Text(
+                      '${item['shipper_ten'] ?? 'Chưa có shipper'}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
           isThreeLine: true,
           trailing: Text(
@@ -1375,6 +2038,51 @@ class _OrderList extends StatelessWidget {
     },
   );
 }
+
+class _OrderStatusBadge extends StatelessWidget {
+  const _OrderStatusBadge({required this.status});
+
+  final String status;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = switch (status) {
+      'DA_GIAO_HANG' || 'HOAN_THANH' => AppColors.success,
+      'DA_HUY' => AppColors.error,
+      'DANG_GIAO_HANG' || 'DANG_VAN_CHUYEN' => AppColors.info,
+      'CHO_LAY_HANG' || 'DA_LAY_HANG' => AppColors.warning,
+      'DEN_KHO_TRUNG_CHUYEN' || 'DEN_KHO_DICH' => const Color(0xFF7165D8),
+      _ => const Color(0xFF6B7A7B),
+    };
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: .12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        _orderStatusLabel(status),
+        style: TextStyle(
+          color: color,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+String _orderStatusLabel(String status) => switch (status) {
+  'CHO_XAC_NHAN' => 'Chờ xác nhận',
+  'CHO_LAY_HANG' => 'Chờ lấy hàng',
+  'DA_LAY_HANG' => 'Đã lấy hàng',
+  'DANG_GIAO_HANG' || 'DANG_VAN_CHUYEN' => 'Đang giao',
+  'DEN_KHO_TRUNG_CHUYEN' => 'Đến kho trung chuyển',
+  'DEN_KHO_DICH' => 'Đến kho đích',
+  'DA_GIAO_HANG' || 'HOAN_THANH' => 'Đã giao hàng',
+  'DA_HUY' => 'Đã hủy',
+  _ => status.isEmpty ? 'Chưa xác định' : status.replaceAll('_', ' '),
+};
 
 class _TransportIncidentList extends StatelessWidget {
   const _TransportIncidentList({
