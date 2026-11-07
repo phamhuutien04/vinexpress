@@ -89,7 +89,7 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) => AlertDialog(
             icon: const Icon(Icons.qr_code_2_rounded, color: AppColors.primary),
-            title: const Text('Nạp ví qua PayOS'),
+            title: const Text('Nạp tiền vào ví'),
             content: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -344,7 +344,7 @@ class _CustomerPayosQrDialogState extends State<_CustomerPayosQrDialog> {
             ),
           const SizedBox(height: 14),
           const Text(
-            'QR sẽ tự đóng khi PayOS xác nhận và ví được cộng tiền. Chọn “Hủy” sẽ hủy QR này.',
+            'QR sẽ tự đóng khi thanh toán thành công và ví được cộng tiền. Chọn “Hủy” sẽ hủy QR này.',
             textAlign: TextAlign.center,
             style: TextStyle(fontSize: 12),
           ),
@@ -371,11 +371,11 @@ class _CustomerPayosQrDialogState extends State<_CustomerPayosQrDialog> {
                   );
                   if (!context.mounted || opened) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Không mở được trang PayOS.')),
+                    const SnackBar(content: Text('Không mở được trang thanh toán.')),
                   );
                 },
           icon: const Icon(Icons.open_in_new_rounded),
-          label: const Text('Mở PayOS'),
+          label: const Text('Mở thanh toán'),
         ),
       ],
     );
@@ -468,7 +468,7 @@ class _BalancePanel extends StatelessWidget {
                   side: const BorderSide(color: Color(0xFF5CDCD0)),
                 ),
                 icon: const Icon(Icons.qr_code_2_rounded),
-                label: const Text('Nạp tiền PayOS'),
+                label: const Text('Nạp tiền'),
               ),
             ),
             const SizedBox(height: 8),

@@ -36,7 +36,7 @@ class PayosService {
       final data = Map<String, dynamic>.from(result.data as Map);
       if (data['error'] != null || data['checkout_url'] == null) {
         throw PayosServiceException(
-          '${data['error'] ?? 'Không tạo được liên kết thanh toán PayOS'}',
+          '${data['error'] ?? 'Không tạo được liên kết thanh toán'}',
         );
       }
       return PayosCheckout(
@@ -48,11 +48,11 @@ class PayosService {
     } on FunctionException catch (error) {
       final details = error.details;
       final message = details is Map ? details['error'] : null;
-      throw PayosServiceException('${message ?? 'Không kết nối được PayOS'}');
+      throw PayosServiceException('${message ?? 'Không kết nối được dịch vụ thanh toán'}');
     } catch (error) {
       if (error is PayosServiceException) rethrow;
       throw const PayosServiceException(
-        'Không kết nối được PayOS. Vui lòng thử lại.',
+        'Không kết nối được dịch vụ thanh toán. Vui lòng thử lại.',
       );
     }
   }
@@ -79,14 +79,14 @@ class PayosService {
       final data = Map<String, dynamic>.from(result.data as Map);
       if (data['error'] != null || data['ok'] != true) {
         throw PayosServiceException(
-          '${data['error'] ?? 'Không thể hủy giao dịch PayOS'}',
+          '${data['error'] ?? 'Không thể hủy giao dịch thanh toán'}',
         );
       }
     } on FunctionException catch (error) {
       final details = error.details;
       final message = details is Map ? details['error'] : null;
       throw PayosServiceException(
-        '${message ?? 'Không thể hủy giao dịch PayOS'}',
+        '${message ?? 'Không thể hủy giao dịch thanh toán'}',
       );
     }
   }

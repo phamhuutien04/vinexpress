@@ -67,6 +67,13 @@ deno.serve(async (request) => {
     const paymentRows = await paymentResponse.json()
     const payment = Array.isArray(paymentRows) ? paymentRows[0] : paymentRows
     if (!paymentResponse.ok || !payment?.ma_don_payos) {
+      // Nếu không tạo được mã đơn PayOS thì yêu cầu vừa tạo không phải là
+      // khoản đang chờ thanh toán thực tế; đóng nó để không làm lệch số dư chờ.
+      await fetch(`${supabaseUrl}/rest/v1/yeu_cau_nap_rut_vi?id=eq.${topUpRequestId}`, {
+        method: 'PATCH',
+        headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trang_thai: 'TU_CHOI', ly_do_tu_choi: 'Không tạo được mã thanh toán PayOS', ngay_xu_ly: new Date().toISOString() }),
+      })
       throw new Error(paymentRows?.message ?? 'Không tạo được giao dịch PayOS')
     }
 
@@ -87,19 +94,13 @@ deno.serve(async (request) => {
     const payosResult = await payosResponse.json()
     const payosData = payosResult?.data
     if (!payosResponse.ok || payosResult?.code !== '00' || !payosData?.checkoutUrl) {
-      await fetch(`${supabaseUrl}/rest/v1/giao_dich_payos?ma_don_payos=eq.${orderCode}`, {
+      await fetch(`${supabaseUrl}/rest/v1/yeu_cau_nap_rut_vi?ma_don_payos=eq.${orderCode}`, {
         method: 'PATCH',
         headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trang_thai: 'LOI', ngay_cap_nhat: new Date().toISOString() }),
+        body: JSON.stringify({ trang_thai: 'TU_CHOI', ly_do_tu_choi: 'PayOS không tạo được liên kết thanh toán', ngay_xu_ly: new Date().toISOString() }),
       })
       throw new Error(payosResult?.desc ?? 'PayOS không tạo được liên kết thanh toán')
     }
-
-    await fetch(`${supabaseUrl}/rest/v1/giao_dich_payos?ma_don_payos=eq.${orderCode}`, {
-      method: 'PATCH',
-      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ payment_link_id: payosData.paymentLinkId, checkout_url: payosData.checkoutUrl, ngay_cap_nhat: new Date().toISOString() }),
-    })
     return json({
       checkout_url: payosData.checkoutUrl,
       qr_code: payosData.qrCode,

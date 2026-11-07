@@ -43,7 +43,7 @@ deno.serve(async (request) => {
     // Chữ ký đã hợp lệ nên phản hồi 2xx để PayOS hoàn tất kiểm tra, nhưng tuyệt
     // đối không tạo hay cộng tiền cho một mã đơn không tồn tại trong VinExpress.
     const existingPayment = await fetch(
-      `${supabaseUrl}/rest/v1/giao_dich_payos?ma_don_payos=eq.${Number(data.orderCode)}&select=id&limit=1`,
+      `${supabaseUrl}/rest/v1/yeu_cau_nap_rut_vi?ma_don_payos=eq.${Number(data.orderCode)}&loai=eq.NAP_TIEN&phuong_thuc=eq.PAYOS&select=id&limit=1`,
       { headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` } },
     )
     const existingRows = await existingPayment.json()

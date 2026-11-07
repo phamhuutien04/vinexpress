@@ -7613,4 +7613,97 @@ WHERE dh.trang_thai = 'DA_LAY_HANG'
   AND nv.vai_tro = 'NHAN_VIEN_LAY_HANG'
   AND dh.kho_hien_tai_id = dh.kho_gui_id;
 
+-- ============================================================
+-- BỔ SUNG BẢN KHỞI TẠO: PHÍ, BÁO CÁO & DUYỆT VÍ
+-- ============================================================
+-- Các lệnh dưới đây nằm cuối file để toàn bộ bảng/cột đã được tạo.
+ALTER TABLE public.phi_van_chuyen
+  ADD COLUMN IF NOT EXISTS phi_xe_tai NUMERIC(14,2) NOT NULL DEFAULT 30000
+    CHECK (phi_xe_tai >= 0),
+  ADD COLUMN IF NOT EXISTS phi_moi_kg NUMERIC(14,2) NOT NULL DEFAULT 3000
+    CHECK (phi_moi_kg >= 0);
+
+UPDATE public.phi_van_chuyen
+SET phi_xe_tai = COALESCE(phi_xe_tai, 30000),
+    phi_moi_kg = COALESCE(phi_moi_kg, 3000),
+    phan_tram_san = COALESCE(phan_tram_san, 20)
+WHERE id = 1;
+
+CREATE OR REPLACE FUNCTION public.admin_cau_hinh_phi_van_chuyen()
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public AS $$
+BEGIN
+  IF NOT public.la_admin() THEN RAISE EXCEPTION 'Chỉ ADMIN mới được xem cấu hình phí vận chuyển'; END IF;
+  RETURN (SELECT jsonb_build_object(
+    'phi_xe_may_moi_km', COALESCE(phi_van_chuyen, 5000),
+    'phi_xe_tai', COALESCE(phi_xe_tai, 30000),
+    'phi_moi_kg', COALESCE(phi_moi_kg, 3000),
+    'phan_tram_san', COALESCE(phan_tram_san, 20)
+  ) FROM public.phi_van_chuyen WHERE id = 1);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_cap_nhat_cau_hinh_phi_van_chuyen(
+  p_phi_xe_may_moi_km NUMERIC, p_phi_xe_tai NUMERIC,
+  p_phi_moi_kg NUMERIC, p_phan_tram_san NUMERIC
+)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+  IF NOT public.la_admin() THEN RAISE EXCEPTION 'Chỉ ADMIN mới được cập nhật cấu hình phí vận chuyển'; END IF;
+  IF p_phi_xe_may_moi_km < 0 OR p_phi_xe_tai < 0 OR p_phi_moi_kg < 0 OR p_phan_tram_san < 0 OR p_phan_tram_san > 100 THEN
+    RAISE EXCEPTION 'Mức phí phải từ 0 trở lên và phần trăm sàn từ 0 đến 100';
+  END IF;
+  UPDATE public.phi_van_chuyen SET
+    phi_van_chuyen = ROUND(p_phi_xe_may_moi_km, 2), phi_xe_tai = ROUND(p_phi_xe_tai, 2),
+    phi_moi_kg = ROUND(p_phi_moi_kg, 2), phan_tram_san = ROUND(p_phan_tram_san, 2), ngay_cap_nhat = NOW()
+  WHERE id = 1;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Chưa có cấu hình phí vận chuyển'; END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_tong_quan()
+RETURNS JSONB LANGUAGE plpgsql SECURITY DEFINER STABLE SET search_path = public AS $$
+DECLARE v_ket_qua JSONB;
+BEGIN
+  IF NOT public.la_admin() THEN RAISE EXCEPTION 'Chỉ ADMIN mới được truy cập chức năng này'; END IF;
+  SELECT jsonb_build_object(
+    'tong_nhan_vien', (SELECT COUNT(*) FROM public.nhan_vien WHERE auth_user_id IS DISTINCT FROM auth.uid()),
+    'nhan_vien_cho_duyet', (SELECT COUNT(*) FROM public.nhan_vien WHERE trang_thai_duyet = 'CHO_DUYET' AND auth_user_id IS DISTINCT FROM auth.uid()),
+    'tong_khach_hang', (SELECT COUNT(*) FROM public.khach_hang),
+    'tong_don_hang', (SELECT COUNT(*) FROM public.don_hang WHERE trang_thai <> 'DA_HUY'),
+    'don_cho_lay', (SELECT COUNT(*) FROM public.don_hang WHERE trang_thai = 'CHO_LAY_HANG'),
+    'don_dang_giao', (SELECT COUNT(*) FROM public.don_hang WHERE trang_thai IN ('DA_LAY_HANG', 'DANG_VAN_CHUYEN', 'GIAO_CHO_SHIPPER', 'DANG_GIAO_HANG')),
+    'don_da_giao', (SELECT COUNT(*) FROM public.don_hang WHERE trang_thai = 'DA_GIAO_HANG'),
+    'tong_doanh_thu_van_chuyen', (SELECT COALESCE(SUM(phi_van_chuyen), 0) FROM public.don_hang WHERE trang_thai = 'DA_GIAO_HANG')
+  ) INTO v_ket_qua;
+  RETURN v_ket_qua;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.admin_xu_ly_yeu_cau_vi(
+  p_yeu_cau_id BIGINT, p_hanh_dong TEXT, p_ly_do TEXT DEFAULT NULL
+)
+RETURNS VOID LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_yeu_cau public.yeu_cau_nap_rut_vi%ROWTYPE; v_hanh_dong TEXT := UPPER(BTRIM(p_hanh_dong));
+BEGIN
+  IF NOT public.la_admin() THEN RAISE EXCEPTION 'Chỉ ADMIN mới được xử lý yêu cầu rút tiền'; END IF;
+  IF v_hanh_dong NOT IN ('DUYET', 'TU_CHOI') THEN RAISE EXCEPTION 'Hành động xử lý không hợp lệ'; END IF;
+  SELECT * INTO v_yeu_cau FROM public.yeu_cau_nap_rut_vi WHERE id = p_yeu_cau_id FOR UPDATE;
+  IF NOT FOUND THEN RAISE EXCEPTION 'Không tìm thấy yêu cầu ví #%', p_yeu_cau_id; END IF;
+  IF v_yeu_cau.loai <> 'RUT_TIEN' THEN RAISE EXCEPTION 'Nạp tiền được PayOS xác nhận tự động, không cần Admin duyệt'; END IF;
+  IF v_yeu_cau.trang_thai <> 'CHO_DUYET' THEN RAISE EXCEPTION 'Yêu cầu này đã được xử lý trước đó'; END IF;
+  IF v_hanh_dong = 'TU_CHOI' AND NULLIF(BTRIM(COALESCE(p_ly_do, '')), '') IS NULL THEN RAISE EXCEPTION 'Vui lòng nhập lý do từ chối'; END IF;
+  IF v_hanh_dong = 'DUYET' THEN PERFORM public.duyet_yeu_cau_rut_vi(p_yeu_cau_id);
+  ELSE PERFORM public.tu_choi_yeu_cau_rut_vi(p_yeu_cau_id, BTRIM(p_ly_do)); END IF;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.admin_cau_hinh_phi_van_chuyen() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_cap_nhat_cau_hinh_phi_van_chuyen(NUMERIC, NUMERIC, NUMERIC, NUMERIC) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_tong_quan() FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.admin_xu_ly_yeu_cau_vi(BIGINT, TEXT, TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.admin_cau_hinh_phi_van_chuyen() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_cap_nhat_cau_hinh_phi_van_chuyen(NUMERIC, NUMERIC, NUMERIC, NUMERIC) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_tong_quan() TO authenticated;
+GRANT EXECUTE ON FUNCTION public.admin_xu_ly_yeu_cau_vi(BIGINT, TEXT, TEXT) TO authenticated;
+
 NOTIFY pgrst, 'reload schema';

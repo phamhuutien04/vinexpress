@@ -32,8 +32,6 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   Timer? _walletPollingTimer;
 
   double get _balance => (_wallet['so_du'] as num?)?.toDouble() ?? 0;
-  double get _pendingTopUp =>
-      (_wallet['tong_cho_nap'] as num?)?.toDouble() ?? 0;
   double get _pendingWithdrawal =>
       (_wallet['tong_cho_rut'] as num?)?.toDouble() ?? 0;
   double get _pendingIncome => _sumIncome(paid: false);
@@ -232,7 +230,6 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
                     children: [
                       _WalletHero(
                         balance: _balance,
-                        pendingTopUp: _pendingTopUp,
                         pendingWithdrawal: _pendingWithdrawal,
                         onTopUp: _showTopUpSheet,
                         onWithdraw: _showWithdrawalSheet,
@@ -302,14 +299,12 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
 class _WalletHero extends StatelessWidget {
   const _WalletHero({
     required this.balance,
-    required this.pendingTopUp,
     required this.pendingWithdrawal,
     required this.onTopUp,
     required this.onWithdraw,
   });
 
   final double balance;
-  final double pendingTopUp;
   final double pendingWithdrawal;
   final VoidCallback onTopUp;
   final VoidCallback onWithdraw;
@@ -385,21 +380,6 @@ class _WalletHero extends StatelessWidget {
                 icon: const Icon(Icons.account_balance_rounded),
                 label: const Text('Rút tiền'),
               ),
-              if (pendingTopUp > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12,
-                    vertical: 8,
-                  ),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: .16),
-                    borderRadius: BorderRadius.circular(30),
-                  ),
-                  child: Text(
-                    '${_money(pendingTopUp)} chờ thanh toán',
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                ),
               if (pendingWithdrawal > 0)
                 Text(
                   '${_money(pendingWithdrawal)} đang chờ rút',
@@ -640,72 +620,89 @@ class _PayosQrDialogState extends State<_PayosQrDialog> {
   @override
   Widget build(BuildContext context) {
     final qrCode = widget.checkout.qrCode;
-    return AlertDialog(
-      title: const Text('Quét QR để nạp ví'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'Thanh toán ${_money(widget.checkout.amount)} qua ứng dụng ngân hàng.',
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 18),
-          if (qrCode != null && qrCode.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(12),
-              color: Colors.white,
-              child: QrImageView(
-                data: qrCode,
-                version: QrVersions.auto,
-                size: 230,
-                errorCorrectionLevel: QrErrorCorrectLevel.M,
+    final compact = MediaQuery.sizeOf(context).width < 420;
+    final qrSize = compact ? 190.0 : 240.0;
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 430, maxHeight: 680),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Quét QR để nạp ví',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.w800),
               ),
-            )
-          else
-            const Padding(
-              padding: EdgeInsets.all(32),
-              child: Icon(Icons.qr_code_2_rounded, size: 96),
-            ),
-          const SizedBox(height: 14),
-          const Text(
-            'QR sẽ tự đóng khi PayOS xác nhận và ví được cộng tiền. Chọn “Hủy” sẽ hủy QR này.',
-            textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 12),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: _cancelling ? null : _cancelPayment,
-          child: _cancelling
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              const SizedBox(height: 8),
+              Text(
+                'Thanh toán ${_money(widget.checkout.amount)} qua ứng dụng ngân hàng.',
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 18),
+              if (qrCode != null && qrCode.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  color: Colors.white,
+                  child: QrImageView(
+                    data: qrCode,
+                    version: QrVersions.auto,
+                    size: qrSize,
+                    errorCorrectionLevel: QrErrorCorrectLevel.M,
+                  ),
                 )
-              : const Text('Hủy'),
+              else
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Icon(Icons.qr_code_2_rounded, size: 96),
+                ),
+              const SizedBox(height: 14),
+              const Text(
+                'QR sẽ tự đóng khi thanh toán thành công và ví được cộng tiền. Chọn “Hủy” sẽ hủy QR này.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _cancelling ? null : _cancelPayment,
+                      child: _cancelling
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Text('Hủy'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _cancelling
+                          ? null
+                          : () async {
+                              final opened = await launchUrl(
+                                Uri.parse(widget.checkout.checkoutUrl),
+                                mode: LaunchMode.externalApplication,
+                              );
+                              if (!context.mounted || opened) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('Không mở được trang thanh toán.')),
+                              );
+                            },
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Mở thanh toán'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
-        FilledButton.icon(
-          onPressed: _cancelling
-              ? null
-              : () async {
-                  final opened = await launchUrl(
-                    Uri.parse(widget.checkout.checkoutUrl),
-                    mode: LaunchMode.externalApplication,
-                  );
-                  if (!context.mounted) return;
-                  if (!opened) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Không mở được trang PayOS.'),
-                      ),
-                    );
-                  }
-                },
-          icon: const Icon(Icons.open_in_new_rounded),
-          label: const Text('Mở PayOS'),
-        ),
-      ],
+      ),
     );
   }
 }
@@ -751,7 +748,7 @@ class _TopUpSheetState extends State<_TopUpSheet> {
             ),
             const SizedBox(height: 6),
             Text(
-              'Bạn sẽ quét VietQR trên PayOS. Ví tự cộng tiền sau khi thanh toán thành công.',
+              'Quét VietQR bằng ứng dụng ngân hàng. Ví tự cộng tiền sau khi thanh toán thành công.',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
             const SizedBox(height: 18),
@@ -794,8 +791,8 @@ class _TopUpSheetState extends State<_TopUpSheet> {
               icon: const Icon(Icons.send_rounded),
               label: Text(
                 (_amount ?? 0) >= 10000
-                    ? 'Thanh toán ${_money(_amount)} qua PayOS'
-                    : 'Thanh toán qua PayOS',
+                    ? 'Thanh toán ${_money(_amount)}'
+                    : 'Thanh toán',
               ),
             ),
           ],
