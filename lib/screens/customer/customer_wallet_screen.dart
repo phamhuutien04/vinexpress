@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -24,7 +25,11 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
   Map<String, dynamic> _wallet = {};
   List<Map<String, dynamic>> _transactions = [];
   bool _loading = true;
+  bool _refreshing = false;
   String? _error;
+  RealtimeChannel? _walletChannel;
+  Timer? _realtimeDebounce;
+  Timer? _walletPollingTimer;
 
   double get _balance => (_wallet['so_du'] as num?)?.toDouble() ?? 0;
   double get _pendingWithdrawal =>
@@ -34,6 +39,72 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
   void initState() {
     super.initState();
     _load();
+    _subscribeWalletRealtime();
+    // Dự phòng cho trường hợp thiết bị bị ngắt kênh Realtime tạm thời.
+    _walletPollingTimer = Timer.periodic(
+      const Duration(seconds: 4),
+      (_) => _refreshSilently(),
+    );
+  }
+
+  void _subscribeWalletRealtime() {
+    _walletChannel = Supabase.instance.client
+        .channel(
+          'customer-wallet-${Supabase.instance.client.auth.currentUser?.id}',
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'vi',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'giao_dich_vi',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleRealtimeRefresh() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = Timer(
+      const Duration(milliseconds: 250),
+      _refreshSilently,
+    );
+  }
+
+  Future<void> _refreshSilently() async {
+    if (!mounted || _refreshing || _loading) return;
+    _refreshing = true;
+    try {
+      final results = await Future.wait([
+        _service.getWalletInfo(),
+        _service.getTransactions(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _wallet = results[0] as Map<String, dynamic>;
+        _transactions = results[1] as List<Map<String, dynamic>>;
+        _error = null;
+      });
+    } on WalletServiceException {
+      // Giữ dữ liệu đang thấy và lần sau sẽ thử lại.
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _realtimeDebounce?.cancel();
+    _walletPollingTimer?.cancel();
+    final channel = _walletChannel;
+    if (channel != null) {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -650,6 +721,7 @@ class _Transaction extends StatelessWidget {
       'NHAN_COD',
       'HOAN_COD',
       'HOAN_RUT',
+      'HOAN_THANH_TOAN_DON_HANG',
       'THU_NHAP_GIAO_HANG',
     }.contains(item['loai']);
     final color = credit ? const Color(0xFF287A4B) : AppColors.error;
@@ -699,6 +771,7 @@ String _title(dynamic type) => switch (type) {
   'RUT_TIEN' => 'Rút tiền',
   'YEU_CAU_RUT' => 'Yêu cầu rút tiền',
   'HOAN_RUT' => 'Hoàn tiền rút bị từ chối',
+  'HOAN_THANH_TOAN_DON_HANG' => 'Hoàn phí đơn hàng đã hủy',
   'TRU_COD' => 'Khấu trừ COD',
   'HOAN_COD' => 'Hoàn tiền COD',
   'THU_NHAP_GIAO_HANG' => 'Thu nhập giao hàng',

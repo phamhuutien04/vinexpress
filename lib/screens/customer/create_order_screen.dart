@@ -53,7 +53,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     final customer = CustomerAuthService.currentCustomer;
     _senderName.text = customer?['ho_ten'] as String? ?? '';
     _senderPhone.text = customer?['so_dien_thoai'] as String? ?? '';
-    _senderAddress.text = customer?['dia_chi'] as String? ?? '';
+    final savedAddress = (customer?['dia_chi'] as String? ?? '').trim();
+    // Không dùng các giá trị thử như "aa" làm địa chỉ lấy hàng mặc định.
+    _senderAddress.text =
+        RegExp(r'^a{1,4}$', caseSensitive: false).hasMatch(savedAddress)
+        ? ''
+        : savedAddress;
   }
 
   @override

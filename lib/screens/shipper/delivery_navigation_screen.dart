@@ -351,6 +351,13 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   }
 
   Future<void> _switchToDelivery() async {
+    if (!_isWithinActionRange(
+      target: _pickup,
+      targetName: 'điểm lấy hàng',
+      actionName: 'xác nhận đã lấy hàng',
+    )) {
+      return;
+    }
     _stopSimulation();
     setState(() => _updatingStatus = true);
     try {
@@ -565,6 +572,13 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   }
 
   Future<void> _completeDelivery() async {
+    if (!_isWithinActionRange(
+      target: _delivery,
+      targetName: 'địa chỉ người nhận',
+      actionName: 'xác nhận đã giao hàng',
+    )) {
+      return;
+    }
     setState(() => _updatingStatus = true);
     try {
       if (!await _hasEnoughWalletForCod()) return;
@@ -626,6 +640,29 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     } finally {
       if (mounted) setState(() => _updatingStatus = false);
     }
+  }
+
+  bool _isWithinActionRange({
+    required LatLng? target,
+    required String targetName,
+    required String actionName,
+  }) {
+    final shipper = _shipper;
+    if (shipper == null || target == null) {
+      _showError('Chưa xác định được vị trí hiện tại để $actionName.');
+      return false;
+    }
+    final distanceMeters = const Distance().as(
+      LengthUnit.Meter,
+      shipper,
+      target,
+    );
+    if (distanceMeters <= 500) return true;
+    _showError(
+      'Bạn còn cách $targetName ${distanceMeters.round()} m. '
+      'Chỉ được $actionName trong phạm vi 500 m.',
+    );
+    return false;
   }
 
   Future<void> _reportDeliveryFailure() async {

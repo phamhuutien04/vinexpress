@@ -104,6 +104,7 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   @override
   void dispose() {
     _realtimeDebounce?.cancel();
+    _walletPollingTimer?.cancel();
     final channel = _walletChannel;
     if (channel != null) {
       unawaited(Supabase.instance.client.removeChannel(channel));
@@ -690,7 +691,11 @@ class _PayosQrDialogState extends State<_PayosQrDialog> {
                               );
                               if (!context.mounted || opened) return;
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Không mở được trang thanh toán.')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Không mở được trang thanh toán.',
+                                  ),
+                                ),
                               );
                             },
                       icon: const Icon(Icons.open_in_new_rounded),
