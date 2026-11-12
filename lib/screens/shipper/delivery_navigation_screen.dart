@@ -1279,6 +1279,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   );
 
   Widget _deliveryCard() {
+    final cod = (widget.order['cod'] as num?)?.toDouble() ?? 0;
     final address = _toReceiver
         ? '${widget.order['nguoi_nhan_dia_chi'] ?? ''}'
         : '${widget.order['nguoi_gui_dia_chi'] ?? ''}';
@@ -1324,6 +1325,16 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
             ),
             if (!_detailsExpanded) ...[
               Text(address, maxLines: 1, overflow: TextOverflow.ellipsis),
+              if (_toReceiver && !_returning && cod > 0) ...[
+                const SizedBox(height: 7),
+                Text(
+                  'THU COD: ${_money(cod)}',
+                  style: const TextStyle(
+                    color: AppColors.warning,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
               if (_distanceKm != null && _durationMinutes != null)
                 Text(
                   '${_distanceKm!.toStringAsFixed(1)} km • '
@@ -1390,6 +1401,43 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
                   style: const TextStyle(
                     color: AppColors.primary,
                     fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+              if (_toReceiver && !_returning && cod > 0) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.warning.withValues(alpha: .12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.warning.withValues(alpha: .45),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.payments_outlined,
+                        color: AppColors.warning,
+                      ),
+                      const SizedBox(width: 10),
+                      const Expanded(
+                        child: Text(
+                          'Tiền COD cần thu từ người nhận',
+                          style: TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                      Text(
+                        _money(cod),
+                        style: const TextStyle(
+                          color: AppColors.warning,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 17,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],

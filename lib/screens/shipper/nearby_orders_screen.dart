@@ -757,6 +757,7 @@ class _NearbyOrderCard extends StatelessWidget {
     // Đổi màu đỏ nếu thời gian sắp hết (dưới 10 giây)
     final isUrgent = secondsLeft <= 10;
     final timerColor = isUrgent ? colors.error : AppColors.primary;
+    final cod = (order['cod'] as num?)?.toDouble() ?? 0;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -862,6 +863,44 @@ class _NearbyOrderCard extends StatelessWidget {
               title: 'Người nhận', // Hoặc tên người nhận nếu có trong map
               subtitle: order['nguoi_nhan_dia_chi'] as String,
             ),
+
+            if (cod > 0) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.warning.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.warning.withValues(alpha: .45),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.payments_outlined,
+                      color: AppColors.warning,
+                    ),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'Tiền COD cần thu từ người nhận',
+                        style: TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Text(
+                      _formatMoney(cod),
+                      style: const TextStyle(
+                        color: AppColors.warning,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
 
             const SizedBox(height: 16),
 
