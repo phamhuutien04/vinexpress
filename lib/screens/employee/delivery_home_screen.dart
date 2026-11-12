@@ -270,79 +270,260 @@ class _ProfilePage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final employee = CustomerAuthService.currentEmployee ?? const {};
-    return Padding(
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+    final colors = Theme.of(context).colorScheme;
+    final role = employee['vai_tro'] == 'VAN_CHUYEN'
+        ? 'Nhân viên vận chuyển'
+        : 'Shipper giao chặng ngắn';
+    final initials = name
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((part) => part.isNotEmpty)
+        .take(2)
+        .map((part) => part[0].toUpperCase())
+        .join();
+
+    return SafeArea(
+      top: false,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
         children: [
-          const SizedBox(height: 28),
-          const CircleAvatar(
-            radius: 44,
-            backgroundColor: AppColors.primary,
-            child: Icon(
-              Icons.delivery_dining_rounded,
-              size: 48,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            name,
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.titleLarge,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            employee['vai_tro'] == 'VAN_CHUYEN'
-                ? 'Nhân viên vận chuyển'
-                : 'Shipper',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium,
-          ),
-          const SizedBox(height: 24),
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _row(
-                    Icons.phone_outlined,
-                    '${employee['so_dien_thoai'] ?? ''}',
-                  ),
-                  const Divider(height: 24),
-                  _row(Icons.email_outlined, '${employee['email'] ?? ''}'),
-                  const Divider(height: 24),
-                  _row(Icons.verified_outlined, 'Đã duyệt hoạt động'),
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.primary,
+                  AppColors.primary.withValues(alpha: .78),
                 ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: .2),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 64,
+                  height: 64,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .18),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: Colors.white.withValues(alpha: .32),
+                    ),
+                  ),
+                  child: Text(
+                    initials.isEmpty ? 'S' : initials,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 23,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'TÀI KHOẢN SHIPPER',
+                        style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 11,
+                          letterSpacing: 1.1,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        role,
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-          const Spacer(),
-          OutlinedButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const BankAccountScreen()),
-            ),
-            icon: const Icon(Icons.account_balance_outlined),
-            label: const Text('Tài khoản ngân hàng'),
+          const SizedBox(height: 26),
+          Text(
+            'Thông tin cá nhân',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
           ),
           const SizedBox(height: 10),
+          _InfoPanel(
+            children: [
+              _ProfileItem(
+                icon: Icons.phone_outlined,
+                label: 'Số điện thoại',
+                value: '${employee['so_dien_thoai'] ?? 'Chưa cập nhật'}',
+              ),
+              const Divider(height: 1),
+              _ProfileItem(
+                icon: Icons.alternate_email_rounded,
+                label: 'Email',
+                value: '${employee['email'] ?? 'Chưa cập nhật'}',
+              ),
+              const Divider(height: 1),
+              const _ProfileItem(
+                icon: Icons.verified_rounded,
+                label: 'Trạng thái tài khoản',
+                value: 'Đã xác thực',
+                valueColor: AppColors.primary,
+              ),
+            ],
+          ),
+          const SizedBox(height: 26),
+          Text(
+            'Thanh toán',
+            style: Theme.of(
+              context,
+            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 10),
+          _InfoPanel(
+            children: [
+              InkWell(
+                borderRadius: BorderRadius.circular(18),
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const BankAccountScreen()),
+                ),
+                child: const _ProfileItem(
+                  icon: Icons.account_balance_outlined,
+                  label: 'Tài khoản ngân hàng',
+                  value: 'Quản lý tài khoản nhận tiền',
+                  showArrow: true,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 28),
           OutlinedButton.icon(
             onPressed: onLogout,
             icon: const Icon(Icons.logout_rounded),
-            label: const Text('Đăng xuất'),
+            label: const Text('Đăng xuất khỏi tài khoản'),
+            style: OutlinedButton.styleFrom(
+              minimumSize: const Size.fromHeight(52),
+              foregroundColor: colors.error,
+              side: BorderSide(color: colors.error.withValues(alpha: .55)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+            ),
           ),
         ],
       ),
     );
   }
+}
 
-  Widget _row(IconData icon, String text) {
-    return Row(
-      children: [
-        Icon(icon, color: AppColors.primary),
-        const SizedBox(width: 12),
-        Expanded(child: Text(text)),
-      ],
+class _InfoPanel extends StatelessWidget {
+  const _InfoPanel({required this.children});
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: colors.outlineVariant.withValues(alpha: .65)),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Column(children: children),
+      ),
+    );
+  }
+}
+
+class _ProfileItem extends StatelessWidget {
+  const _ProfileItem({
+    required this.icon,
+    required this.label,
+    required this.value,
+    this.valueColor,
+    this.showArrow = false,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+  final bool showArrow;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      child: Row(
+        children: [
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: .1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, size: 20, color: AppColors.primary),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: valueColor ?? colors.onSurface,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (showArrow)
+            Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant),
+        ],
+      ),
     );
   }
 }

@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:geocoding/geocoding.dart' as native_geocoding;
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/config/supabase_config.dart';
@@ -136,6 +138,7 @@ class OrderService {
     required double itemValue,
     required double shippingFee,
     required double cod,
+    required String paymentMethod,
     double? senderLatitude,
     double? senderLongitude,
     String? note,
@@ -166,6 +169,7 @@ class OrderService {
               'p_gia_tri_hang': itemValue,
               'p_phi_van_chuyen': calculatedShippingFee,
               'p_cod': cod,
+              'p_phuong_thuc_thanh_toan': paymentMethod,
               'p_khoang_cach_km': route.distanceKm,
               'p_nguoi_gui_vi_do': route.sender.latitude,
               'p_nguoi_gui_kinh_do': route.sender.longitude,
@@ -189,6 +193,7 @@ class OrderService {
             (order['phi_van_chuyen'] as num?)?.toDouble() ??
             calculatedShippingFee,
         'cod': cod,
+        'phuong_thuc_thanh_toan': paymentMethod,
         'ghi_chu': note?.trim(),
       });
       return order;
@@ -289,6 +294,11 @@ class OrderService {
     ].where((value) => value.isNotEmpty).toSet();
 
     for (final query in queries) {
+      // Android/iOS dùng geocoder của thiết bị trước. Dịch vụ này thường có
+      // dữ liệu địa chỉ Việt Nam mới hơn nguồn OpenStreetMap.
+      final deviceCoordinates = await _coordinatesFromDeviceGeocoder(query);
+      if (deviceCoordinates != null) return deviceCoordinates;
+
       try {
         final uri = Uri.https('photon.komoot.io', '/api/', {
           'q': '$query, Việt Nam',
@@ -316,12 +326,69 @@ class OrderService {
       } catch (_) {
         // Thử truy vấn địa chỉ rút gọn tiếp theo.
       }
+
+      // Nominatim được dùng làm dự phòng trên ứng dụng Android/iOS. Photon đôi
+      // khi không có dữ liệu cho địa chỉ phường/xã mới, còn Nominatim thường
+      // trả kết quả tốt hơn cho địa chỉ tiếng Việt. Web không gọi endpoint này
+      // vì chính sách CORS của Nominatim.
+      final fallback = await _coordinatesFromNominatim(query);
+      if (fallback != null) return fallback;
     }
 
     throw OrderServiceException(
       'Không tìm thấy tọa độ của địa chỉ: $address. '
       'Vui lòng chọn lại Tỉnh/Thành và Phường/Xã.',
     );
+  }
+
+  Future<_Coordinates?> _coordinatesFromDeviceGeocoder(String query) async {
+    if (kIsWeb) return null;
+    try {
+      final results = await native_geocoding
+          .locationFromAddress('$query, Việt Nam')
+          .timeout(const Duration(seconds: 10));
+      if (results.isEmpty) return null;
+      return _Coordinates(
+        latitude: results.first.latitude,
+        longitude: results.first.longitude,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<_Coordinates?> _coordinatesFromNominatim(String query) async {
+    if (kIsWeb) return null;
+    try {
+      final uri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': '$query, Việt Nam',
+        'format': 'jsonv2',
+        'limit': '1',
+        'countrycodes': 'vn',
+        'addressdetails': '0',
+      });
+      final response = await http
+          .get(
+            uri,
+            headers: const {
+              'User-Agent': 'VinExpress/1.0 (address lookup)',
+              'Accept-Language': 'vi',
+            },
+          )
+          .timeout(const Duration(seconds: 12));
+      if (response.statusCode != 200) return null;
+      final decoded = jsonDecode(utf8.decode(response.bodyBytes));
+      if (decoded is! List || decoded.isEmpty || decoded.first is! Map) {
+        return null;
+      }
+      final result = Map<String, dynamic>.from(decoded.first as Map);
+      final latitude = double.tryParse('${result['lat'] ?? ''}');
+      final longitude = double.tryParse('${result['lon'] ?? ''}');
+      if (latitude == null || longitude == null) return null;
+      return _Coordinates(latitude: latitude, longitude: longitude);
+    } catch (_) {
+      return null;
+    }
   }
 
   String _administrativeAddress(String address) {

@@ -32,9 +32,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
   final _note = TextEditingController();
 
   bool _cod = false;
+  String _paymentMethod = 'TIEN_MAT';
   bool _isLoading = false;
   bool _calculatingFee = false;
   bool _feeCalculated = false;
+  String? _feeError;
   bool _truckDelivery = false;
   double? _quotedDistanceKm;
   double? _senderLatitude;
@@ -96,6 +98,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
         itemValue: double.tryParse(_itemValue.text) ?? 0,
         shippingFee: _shippingFee.toDouble(),
         cod: _cod ? (double.tryParse(_codAmount.text) ?? 0) : 0,
+        paymentMethod: _paymentMethod,
         note: _note.text,
         senderLatitude: _senderLatitude,
         senderLongitude: _senderLongitude,
@@ -109,7 +112,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
     }
   }
 
-  Future<bool> _calculateFee() async {
+  Future<bool> _calculateFee({bool showError = true}) async {
     if (_senderAddress.text.trim().isEmpty ||
         _receiverAddress.text.trim().isEmpty) {
       _showError('Vui lòng nhập đầy đủ địa chỉ gửi và nhận trước.');
@@ -129,12 +132,16 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       setState(() {
         _shippingFee = quote.shippingFee.round();
         _feeCalculated = true;
+        _feeError = null;
         _truckDelivery = quote.vehicle == 'XE_TAI';
         _quotedDistanceKm = quote.distanceKm;
       });
       return true;
     } on OrderServiceException catch (error) {
-      if (mounted) _showError(error.message);
+      if (mounted) {
+        setState(() => _feeError = error.message);
+        if (showError) _showError(error.message);
+      }
       return false;
     } finally {
       if (mounted && requestVersion == _feeRequestVersion) {
@@ -152,6 +159,7 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       _truckDelivery = false;
       _quotedDistanceKm = null;
       _calculatingFee = false;
+      _feeError = null;
     });
   }
 
@@ -163,9 +171,12 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
       return;
     }
     if (immediately) {
-      _calculateFee();
+      _calculateFee(showError: false);
     } else {
-      _feeDebounce = Timer(const Duration(milliseconds: 900), _calculateFee);
+      _feeDebounce = Timer(
+        const Duration(milliseconds: 900),
+        () => _calculateFee(showError: false),
+      );
     }
   }
 
@@ -505,6 +516,47 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
+                    _SectionCard(
+                      icon: Icons.payments_outlined,
+                      title: 'Thanh toán phí vận chuyển',
+                      subtitle: 'Chọn cách thanh toán cho đơn hàng này',
+                      child: RadioGroup<String>(
+                        groupValue: _paymentMethod,
+                        onChanged: (value) {
+                          if (value != null) {
+                            setState(() => _paymentMethod = value);
+                          }
+                        },
+                        child: Column(
+                          children: [
+                            RadioListTile<String>(
+                              value: 'TIEN_MAT',
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: AppColors.primary,
+                              title: const Text('Tiền mặt'),
+                              subtitle: const Text(
+                                'Thanh toán phí vận chuyển khi shipper đến lấy hàng',
+                              ),
+                              secondary: const Icon(Icons.payments_outlined),
+                            ),
+                            const Divider(height: 1),
+                            RadioListTile<String>(
+                              value: 'VI',
+                              contentPadding: EdgeInsets.zero,
+                              activeColor: AppColors.primary,
+                              title: const Text('Thanh toán bằng ví'),
+                              subtitle: const Text(
+                                'Trừ phí vận chuyển ngay khi tạo đơn',
+                              ),
+                              secondary: const Icon(
+                                Icons.account_balance_wallet_outlined,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
                     _SummaryCard(
                       shippingFee: _shippingFee,
                       codFee: 0,
@@ -514,6 +566,11 @@ class _CreateOrderScreenState extends State<CreateOrderScreen> {
                       truckDelivery: _truckDelivery,
                       distanceKm: _quotedDistanceKm,
                       weight: double.tryParse(_weight.text) ?? 0,
+                      paymentMethod: _paymentMethod,
+                      feeError: _feeError,
+                      onRetry: _calculatingFee
+                          ? null
+                          : () => _calculateFee(showError: true),
                     ),
                   ],
                 ),
@@ -746,6 +803,9 @@ class _SummaryCard extends StatelessWidget {
     required this.truckDelivery,
     required this.distanceKm,
     required this.weight,
+    required this.paymentMethod,
+    required this.feeError,
+    required this.onRetry,
   });
   final int shippingFee;
   final int codFee;
@@ -755,6 +815,9 @@ class _SummaryCard extends StatelessWidget {
   final bool truckDelivery;
   final double? distanceKm;
   final double weight;
+  final String paymentMethod;
+  final String? feeError;
+  final VoidCallback? onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -809,6 +872,11 @@ class _SummaryCard extends StatelessWidget {
             feeCalculated ? money(shippingFee + codFee) : 'Chưa tính',
             strong: true,
           ),
+          const SizedBox(height: 8),
+          _priceRow(
+            'Thanh toán',
+            paymentMethod == 'VI' ? 'Trừ ví ngay' : 'Tiền mặt khi lấy hàng',
+          ),
           if (calculating) ...[
             const SizedBox(height: 12),
             const LinearProgressIndicator(),
@@ -816,6 +884,33 @@ class _SummaryCard extends StatelessWidget {
             const Text(
               'Đang tự động tính quãng đường và phí...',
               style: TextStyle(fontSize: 11),
+            ),
+          ],
+          if (!calculating && !feeCalculated && feeError != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.surface,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.location_searching_rounded,
+                    size: 19,
+                    color: AppColors.primary,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Chưa tính được phí. Chọn Tỉnh/Thành, Phường/Xã rồi thử lại.',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  TextButton(onPressed: onRetry, child: const Text('Tính lại')),
+                ],
+              ),
             ),
           ],
           const SizedBox(height: 10),

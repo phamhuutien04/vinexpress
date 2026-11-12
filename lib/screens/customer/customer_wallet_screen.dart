@@ -81,64 +81,15 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
   }
 
   Future<void> _topUpWithPayos() async {
-    final controller = TextEditingController();
-    final amount = await showDialog<int>(
+    final amount = await showModalBottomSheet<int>(
       context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
       builder: (dialogContext) {
-        var valid = false;
-        return StatefulBuilder(
-          builder: (context, setDialogState) => AlertDialog(
-            icon: const Icon(Icons.qr_code_2_rounded, color: AppColors.primary),
-            title: const Text('Nạp tiền vào ví'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'QR VietQR sẽ hiển thị ngay trong ứng dụng. Số dư được cộng tự động sau khi thanh toán thành công.',
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.payments_outlined),
-                    labelText: 'Số tiền muốn nạp',
-                    suffixText: 'đ',
-                    helperText: 'Từ 10.000đ đến 50.000.000đ',
-                    border: OutlineInputBorder(),
-                  ),
-                  onChanged: (value) {
-                    final parsed = int.tryParse(value) ?? 0;
-                    final next = parsed >= 10000 && parsed <= 50000000;
-                    if (next != valid) setDialogState(() => valid = next);
-                  },
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(dialogContext),
-                child: const Text('Hủy'),
-              ),
-              FilledButton.icon(
-                onPressed: valid
-                    ? () => Navigator.pop(
-                        dialogContext,
-                        int.parse(controller.text),
-                      )
-                    : null,
-                icon: const Icon(Icons.qr_code_2_rounded),
-                label: const Text('Tạo mã QR'),
-              ),
-            ],
-          ),
-        );
+        return const _CustomerTopUpAmountSheet();
       },
     );
-    controller.dispose();
     if (amount == null || !mounted) return;
 
     try {
@@ -249,6 +200,155 @@ class _CustomerWalletScreenState extends State<CustomerWalletScreen> {
       ),
     ),
   );
+}
+
+class _CustomerTopUpAmountSheet extends StatefulWidget {
+  const _CustomerTopUpAmountSheet();
+
+  @override
+  State<_CustomerTopUpAmountSheet> createState() =>
+      _CustomerTopUpAmountSheetState();
+}
+
+class _CustomerTopUpAmountSheetState extends State<_CustomerTopUpAmountSheet> {
+  final _controller = TextEditingController();
+  int _amount = 0;
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _setAmount(int amount) {
+    _controller.value = TextEditingValue(
+      text: '$amount',
+      selection: TextSelection.collapsed(offset: '$amount'.length),
+    );
+    setState(() => _amount = amount);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final valid = _amount >= 10000 && _amount <= 50000000;
+    final bottom = MediaQuery.viewInsetsOf(context).bottom;
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SafeArea(
+          top: false,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: colors.outlineVariant,
+                    borderRadius: BorderRadius.circular(99),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 22),
+              Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      color: AppColors.primary.withValues(alpha: .12),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.account_balance_wallet_outlined,
+                      color: AppColors.primary,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Nạp tiền vào ví',
+                          style: TextStyle(
+                            fontSize: 19,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        SizedBox(height: 3),
+                        Text(
+                          'Quét QR ngân hàng ngay trong ứng dụng',
+                          style: TextStyle(fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 22),
+              TextField(
+                controller: _controller,
+                autofocus: true,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                onChanged: (value) =>
+                    setState(() => _amount = int.tryParse(value) ?? 0),
+                decoration: const InputDecoration(
+                  prefixIcon: Icon(Icons.payments_outlined),
+                  labelText: 'Số tiền muốn nạp',
+                  suffixText: 'đ',
+                  helperText: 'Từ 10.000đ đến 50.000.000đ',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [50000, 100000, 200000, 500000].map((amount) {
+                  final selected = _amount == amount;
+                  return ChoiceChip(
+                    label: Text(_money(amount.toDouble())),
+                    selected: selected,
+                    onSelected: (_) => _setAmount(amount),
+                    selectedColor: AppColors.primary.withValues(alpha: .16),
+                    side: BorderSide(
+                      color: selected
+                          ? AppColors.primary
+                          : colors.outlineVariant,
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 20),
+              FilledButton.icon(
+                onPressed: valid ? () => Navigator.pop(context, _amount) : null,
+                style: FilledButton.styleFrom(
+                  minimumSize: const Size.fromHeight(52),
+                ),
+                icon: const Icon(Icons.qr_code_2_rounded),
+                label: const Text('Tạo mã QR'),
+              ),
+              const SizedBox(height: 6),
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Hủy'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CustomerPayosQrDialog extends StatefulWidget {
@@ -371,7 +471,9 @@ class _CustomerPayosQrDialogState extends State<_CustomerPayosQrDialog> {
                   );
                   if (!context.mounted || opened) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Không mở được trang thanh toán.')),
+                    const SnackBar(
+                      content: Text('Không mở được trang thanh toán.'),
+                    ),
                   );
                 },
           icon: const Icon(Icons.open_in_new_rounded),

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/config/supabase_config.dart';
@@ -54,57 +55,94 @@ class ShipperService {
   }
 
   Future<Position> updateCurrentLocation() async {
-    if (!await Geolocator.isLocationServiceEnabled()) {
-      throw const ShipperServiceException('Vui lòng bật GPS trên điện thoại.');
-    }
-
-    var permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-    }
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.deniedForever) {
-      throw const ShipperServiceException(
-        'Bạn cần cấp quyền vị trí để nhận đơn gần mình.',
-      );
-    }
-
-    // Dùng vị trí gần nhất làm phương án dự phòng để màn nhận đơn không phải
-    // chờ GPS độ chính xác cao quá lâu (đặc biệt trên trình duyệt).
-    final cachedPosition = await Geolocator.getLastKnownPosition();
-    final cachedIsFresh = cachedPosition != null &&
-        DateTime.now().difference(cachedPosition.timestamp).abs() <
-            const Duration(minutes: 2);
-    late final Position position;
-    if (cachedIsFresh) {
-      position = cachedPosition;
-    } else {
-      try {
-        position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.medium,
-            timeLimit: Duration(seconds: 6),
-          ),
-        );
-      } on TimeoutException {
-        if (cachedPosition == null) {
-          throw const ShipperServiceException(
-            'Chưa lấy được vị trí. Hãy kiểm tra GPS rồi thử lại.',
-          );
-        }
-        position = cachedPosition;
-      }
-    }
-
     try {
+      if (!await Geolocator.isLocationServiceEnabled()) {
+        throw const ShipperServiceException(
+          'Vui lòng bật GPS trên điện thoại.',
+        );
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        throw const ShipperServiceException(
+          'Edge chưa được cấp quyền vị trí. Hãy chọn Cho phép rồi bấm cập nhật vị trí.',
+        );
+      }
+
+      // Trình duyệt không hỗ trợ getLastKnownPosition. Nếu gọi trước trên web,
+      // luồng sẽ lỗi ngay và không bao giờ kịp yêu cầu GPS hiện tại.
+      // Trên ứng dụng điện thoại vẫn tận dụng vị trí gần nhất làm dự phòng.
+      final Position? cachedPosition = kIsWeb
+          ? null
+          : await Geolocator.getLastKnownPosition();
+      final cachedIsFresh =
+          cachedPosition != null &&
+          DateTime.now().difference(cachedPosition.timestamp).abs() <
+              const Duration(minutes: 2);
+      late final Position position;
+      if (cachedIsFresh) {
+        position = cachedPosition;
+      } else {
+        try {
+          position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.medium,
+              // GPS trên Edge di động thường cần lâu hơn lần đầu lấy tín hiệu.
+              timeLimit: Duration(seconds: 15),
+            ),
+          ).timeout(const Duration(seconds: 18));
+        } on TimeoutException {
+          if (cachedPosition == null) {
+            throw const ShipperServiceException(
+              'Chưa lấy được tín hiệu GPS. Hãy ra nơi thoáng rồi bấm cập nhật vị trí.',
+            );
+          }
+          position = cachedPosition;
+        }
+      }
+
       await updateTrackingLocation(
         latitude: position.latitude,
         longitude: position.longitude,
         accuracyMeters: position.accuracy,
-      );
+      ).timeout(const Duration(seconds: 12));
       return position;
+    } on ShipperServiceException {
+      rethrow;
     } on PostgrestException catch (error) {
       throw ShipperServiceException(error.message);
+    } catch (error) {
+      final detail = '$error'.toLowerCase();
+      if (detail.contains('permission') || detail.contains('denied')) {
+        throw const ShipperServiceException(
+          'Edge chưa được cấp quyền vị trí. Hãy chọn Cho phép rồi bấm cập nhật vị trí.',
+        );
+      }
+      if (detail.contains('secure context') ||
+          detail.contains('secure origin') ||
+          detail.contains('only secure origins') ||
+          detail.contains('not secure')) {
+        throw const ShipperServiceException(
+          'Edge chưa lấy được GPS. Nếu đang mở app bằng địa chỉ IP http, hãy dùng bản ứng dụng điện thoại hoặc mở web qua HTTPS.',
+        );
+      }
+      if (detail.contains('timeout')) {
+        throw const ShipperServiceException(
+          'GPS đang mất nhiều thời gian hơn bình thường. Hãy thử lại ở nơi thoáng hơn.',
+        );
+      }
+      if (kIsWeb) {
+        throw const ShipperServiceException(
+          'Edge chưa trả về vị trí hiện tại. Hãy bấm cập nhật vị trí một lần nữa.',
+        );
+      }
+      throw const ShipperServiceException(
+        'Chưa lấy được vị trí. Hãy bật GPS, bật độ chính xác cao rồi thử lại.',
+      );
     }
   }
 

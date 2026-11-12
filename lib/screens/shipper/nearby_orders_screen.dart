@@ -23,6 +23,7 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
   bool? _receivingOrders;
   bool _updatingStatus = false;
   String? _statusError;
+  String? _locationError;
   Timer? _offerTimer;
   bool _refreshingExpiredOffer = false;
   int _offerTicks = 0;
@@ -93,6 +94,8 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
       }
     } on ShipperServiceException catch (error) {
       if (mounted) _showError(error.message);
+    } on TimeoutException {
+      // Tác vụ nền tự thử lại ở lần làm mới tiếp theo, không để lỗi tràn ra UI.
     }
   }
 
@@ -105,9 +108,10 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
         _statusError = null;
         if (!enabled) _orders = [];
       });
-      if (enabled && widget.embedded && !_locationReady) {
-        unawaited(_updateLocationAndLoad());
-      } else if (enabled && _locationReady) {
+      // Không tự hỏi quyền GPS ngay khi vừa mở trang. Chrome/Edge/Firefox có
+      // thể chặn yêu cầu không xuất phát từ thao tác người dùng. Shipper sẽ
+      // bấm nút vị trí ở thẻ trạng thái để trình duyệt hiển thị hộp Cho phép.
+      if (enabled && _locationReady) {
         unawaited(_refreshOrdersFromSavedLocation());
       }
     } on ShipperServiceException catch (error) {
@@ -140,7 +144,7 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
           _service.getNearbyOrders()
         else
           Future.value(<Map<String, dynamic>>[]),
-      ]);
+      ]).timeout(const Duration(seconds: 15));
       final active = results[0];
       final nearby = active.isEmpty ? results[1] : <Map<String, dynamic>>[];
       if (!mounted) return;
@@ -157,24 +161,45 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
     if (_loading) return;
     setState(() => _loading = true);
     try {
-      await _service.updateCurrentLocation();
+      // Lớp bảo vệ ở UI: kể cả khi API định vị của trình duyệt không phản hồi,
+      // màn hình vẫn phải tự mở lại nút cập nhật thay vì quay vô hạn.
+      await _service.updateCurrentLocation().timeout(
+        const Duration(seconds: 20),
+      );
       final results = await Future.wait([
         _service.getActiveOrders(),
         if (_receivingOrders == true)
           _service.getNearbyOrders()
         else
           Future.value(<Map<String, dynamic>>[]),
-      ]);
+      ]).timeout(const Duration(seconds: 15));
       final active = results[0];
       final nearby = active.isEmpty ? results[1] : <Map<String, dynamic>>[];
       if (!mounted) return;
       setState(() {
         _locationReady = true;
+        _locationError = null;
         _activeOrders = active;
         _orders = _receivingOrders == true ? nearby : [];
       });
     } on ShipperServiceException catch (error) {
-      if (mounted) _showError(error.message);
+      if (mounted) {
+        setState(() => _locationError = error.message);
+      }
+    } on TimeoutException {
+      if (mounted) {
+        setState(
+          () => _locationError =
+              'Kết nối đang chậm. Nút cập nhật vị trí đã sẵn sàng để thử lại.',
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(
+          () => _locationError =
+              'Chưa thể cập nhật vị trí lúc này. Bạn có thể bấm thử lại.',
+        );
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -239,8 +264,13 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
   }
 
   void _showError(String message) {
+    final colors = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: AppColors.error),
+      SnackBar(
+        content: Text(message),
+        backgroundColor: colors.surfaceContainerHighest,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -428,7 +458,9 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
                       Text(
                         _locationReady
                             ? 'Đang quét đơn trong bán kính 10km'
-                            : 'Bật vị trí để xem đơn gần bạn',
+                            : _locationError ?? 'Bật vị trí để xem đơn gần bạn',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: colors.onSurfaceVariant,
                           fontSize: 12,
@@ -445,11 +477,7 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
                   ),
                   tooltip: _locationReady ? 'Cập nhật vị trí' : 'Bật vị trí',
                   icon: _loading
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
+                      ? const Icon(Icons.location_searching_rounded)
                       : const Icon(Icons.sync_rounded),
                 ),
               ],
@@ -492,11 +520,10 @@ class _NearbyOrdersScreenState extends State<NearbyOrdersScreen> {
           text: 'Bật Trạng thái hoạt động để bắt đầu nhận đơn',
         )
       else if (_loading)
-        const Center(
-          child: Padding(
-            padding: EdgeInsets.all(40),
-            child: CircularProgressIndicator(color: AppColors.primary),
-          ),
+        const _EmptyState(
+          icon: Icons.location_searching_rounded,
+          title: 'Đang cập nhật vị trí',
+          text: 'Ứng dụng đang lấy GPS; bạn không cần tải lại trang.',
         )
       else if (!_locationReady)
         const _EmptyState(
