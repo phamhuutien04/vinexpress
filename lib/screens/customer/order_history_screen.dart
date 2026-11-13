@@ -196,6 +196,10 @@ class _OrderFilters extends StatelessWidget {
   static const _delivering = {
     'DA_LAY_HANG',
     'DANG_VAN_CHUYEN',
+    // Đơn đang nằm tại kho trung chuyển/kho đích vẫn là đơn trong luồng giao,
+    // nên phải xuất hiện ở tab “Đang giao”.
+    'DEN_KHO_TRUNG_CHUYEN',
+    'DEN_KHO_DICH',
     'GIAO_CHO_SHIPPER',
     'DANG_GIAO_HANG',
   };

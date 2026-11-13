@@ -440,7 +440,9 @@ class _Overview extends StatelessWidget {
         crossAxisCount: MediaQuery.sizeOf(context).width >= 700 ? 4 : 2,
         shrinkWrap: true,
         physics: const NeverScrollableScrollPhysics(),
-        childAspectRatio: 1.35,
+        // Thẻ điện thoại cần đủ chiều cao cho icon, số liệu và nhãn 2 dòng.
+        // Tỉ lệ cũ làm tràn 11px ở màn hình hẹp.
+        childAspectRatio: MediaQuery.sizeOf(context).width >= 700 ? 1.35 : 1.12,
         crossAxisSpacing: 12,
         mainAxisSpacing: 12,
         children: [
@@ -481,23 +483,39 @@ class _Metric extends StatelessWidget {
   final IconData icon;
   final Color color;
   @override
-  Widget build(BuildContext context) => Card(
-    child: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(height: 8),
-          Text(
-            '${value ?? 0}',
-            style: const TextStyle(fontSize: 25, fontWeight: FontWeight.w800),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxHeight < 130;
+      return Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: EdgeInsets.all(compact ? 12 : 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: color, size: compact ? 21 : 24),
+              SizedBox(height: compact ? 5 : 8),
+              Text(
+                '${value ?? 0}',
+                style: TextStyle(
+                  fontSize: compact ? 22 : 25,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: compact ? 4 : 6),
+              Text(
+                label,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: compact ? 12 : 14, height: 1.15),
+              ),
+            ],
           ),
-          Text(label),
-        ],
-      ),
-    ),
+        ),
+      );
+    },
   );
 }
 
