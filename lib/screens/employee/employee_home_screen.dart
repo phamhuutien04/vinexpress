@@ -373,6 +373,27 @@ class _TripScannerState extends State<_TripScanner> {
     }
   }
 
+  Future<String?> _askForSealCode({
+    required String title,
+    required Map<String, dynamic> trip,
+    required String helperText,
+    required String label,
+    required String hint,
+    required String confirmLabel,
+    required IconData icon,
+  }) => showDialog<String>(
+    context: context,
+    builder: (_) => _SealCodeDialog(
+      title: title,
+      tripLabel: '${trip['ma_chuyen']} • ${trip['bien_so_xe']}',
+      helperText: helperText,
+      label: label,
+      hint: hint,
+      confirmLabel: confirmLabel,
+      icon: icon,
+    ),
+  );
+
   Future<void> _sealTrip() async {
     final trip = _selectedTrip;
     if (trip == null) {
@@ -390,82 +411,16 @@ class _TripScannerState extends State<_TripScanner> {
       return;
     }
 
-    final controller = TextEditingController();
-    final sealCode = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Niêm phong xe'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${trip['ma_chuyen']} • ${trip['bien_so_xe']}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Xác nhận đã quét đủ kiện, đóng cửa xe và nhập mã trên dây niêm phong.',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              style: TextStyle(
-                color: Theme.of(dialogContext).colorScheme.onSurface,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-              ),
-              cursorColor: AppColors.primary,
-              keyboardType: TextInputType.visiblePassword,
-              autocorrect: false,
-              enableSuggestions: false,
-              textCapitalization: TextCapitalization.characters,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(
-                labelText: 'Mã niêm phong',
-                hintText: 'Nhập mã trên dây niêm phong',
-                prefixIcon: const Icon(Icons.lock_outline_rounded),
-                filled: true,
-                fillColor: Theme.of(
-                  dialogContext,
-                ).colorScheme.surfaceContainerHighest,
-                labelStyle: TextStyle(
-                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
-                ),
-                hintStyle: TextStyle(
-                  color: Theme.of(
-                    dialogContext,
-                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
-              ),
-              onSubmitted: (value) {
-                if (value.trim().isNotEmpty) {
-                  Navigator.pop(dialogContext, value.trim());
-                }
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Hủy'),
-          ),
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (context, value, _) => FilledButton.icon(
-              onPressed: value.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(dialogContext, value.text.trim()),
-              icon: const Icon(Icons.lock_rounded),
-              label: const Text('Xác nhận niêm phong'),
-            ),
-          ),
-        ],
-      ),
+    final sealCode = await _askForSealCode(
+      title: 'Niêm phong xe',
+      trip: trip,
+      helperText:
+          'Xác nhận đã quét đủ kiện, đóng cửa xe và nhập mã trên dây niêm phong.',
+      label: 'Mã niêm phong',
+      hint: 'Nhập mã trên dây niêm phong',
+      confirmLabel: 'Xác nhận niêm phong',
+      icon: Icons.lock_rounded,
     );
-    controller.dispose();
     if (sealCode == null || !mounted) return;
 
     setState(() => _saving = true);
@@ -511,82 +466,16 @@ class _TripScannerState extends State<_TripScanner> {
       return;
     }
 
-    final controller = TextEditingController();
-    final sealCode = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Mở niêm phong xe'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '${trip['ma_chuyen']} • ${trip['bien_so_xe']}',
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Kiểm tra dây niêm phong còn nguyên vẹn rồi nhập đúng mã đang gắn trên cửa xe.',
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: controller,
-              autofocus: true,
-              style: TextStyle(
-                color: Theme.of(dialogContext).colorScheme.onSurface,
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-              ),
-              cursorColor: AppColors.primary,
-              keyboardType: TextInputType.visiblePassword,
-              autocorrect: false,
-              enableSuggestions: false,
-              textCapitalization: TextCapitalization.characters,
-              textInputAction: TextInputAction.done,
-              decoration: InputDecoration(
-                labelText: 'Mã niêm phong trên xe',
-                hintText: 'Nhập mã để đối chiếu',
-                prefixIcon: const Icon(Icons.lock_open_rounded),
-                filled: true,
-                fillColor: Theme.of(
-                  dialogContext,
-                ).colorScheme.surfaceContainerHighest,
-                labelStyle: TextStyle(
-                  color: Theme.of(dialogContext).colorScheme.onSurfaceVariant,
-                ),
-                hintStyle: TextStyle(
-                  color: Theme.of(
-                    dialogContext,
-                  ).colorScheme.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
-              ),
-              onSubmitted: (value) {
-                if (value.trim().isNotEmpty) {
-                  Navigator.pop(dialogContext, value.trim());
-                }
-              },
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Hủy'),
-          ),
-          ValueListenableBuilder<TextEditingValue>(
-            valueListenable: controller,
-            builder: (context, value, _) => FilledButton.icon(
-              onPressed: value.text.trim().isEmpty
-                  ? null
-                  : () => Navigator.pop(dialogContext, value.text.trim()),
-              icon: const Icon(Icons.lock_open_rounded),
-              label: const Text('Xác nhận mở'),
-            ),
-          ),
-        ],
-      ),
+    final sealCode = await _askForSealCode(
+      title: 'Mở niêm phong xe',
+      trip: trip,
+      helperText:
+          'Kiểm tra dây niêm phong còn nguyên vẹn rồi nhập đúng mã đang gắn trên cửa xe.',
+      label: 'Mã niêm phong trên xe',
+      hint: 'Nhập mã để đối chiếu',
+      confirmLabel: 'Xác nhận mở',
+      icon: Icons.lock_open_rounded,
     );
-    controller.dispose();
     if (sealCode == null || !mounted) return;
 
     setState(() => _saving = true);
@@ -1880,5 +1769,92 @@ class _ErrorState extends StatelessWidget {
         ],
       ),
     ),
+  );
+}
+
+class _SealCodeDialog extends StatefulWidget {
+  const _SealCodeDialog({
+    required this.title,
+    required this.tripLabel,
+    required this.helperText,
+    required this.label,
+    required this.hint,
+    required this.confirmLabel,
+    required this.icon,
+  });
+
+  final String title;
+  final String tripLabel;
+  final String helperText;
+  final String label;
+  final String hint;
+  final String confirmLabel;
+  final IconData icon;
+
+  @override
+  State<_SealCodeDialog> createState() => _SealCodeDialogState();
+}
+
+class _SealCodeDialogState extends State<_SealCodeDialog> {
+  final _controller = TextEditingController();
+  String get _code => _controller.text.trim();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_code.isEmpty) return;
+    Navigator.of(context).pop(_code);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: Text(widget.title),
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.tripLabel,
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 8),
+        Text(widget.helperText),
+        const SizedBox(height: 16),
+        TextField(
+          controller: _controller,
+          autofocus: true,
+          cursorColor: AppColors.primary,
+          keyboardType: TextInputType.visiblePassword,
+          autocorrect: false,
+          enableSuggestions: false,
+          textCapitalization: TextCapitalization.characters,
+          textInputAction: TextInputAction.done,
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+          decoration: InputDecoration(
+            labelText: widget.label,
+            hintText: widget.hint,
+            prefixIcon: Icon(widget.icon),
+            filled: true,
+          ),
+          onChanged: (_) => setState(() {}),
+          onSubmitted: (_) => _submit(),
+        ),
+      ],
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Hủy'),
+      ),
+      FilledButton.icon(
+        onPressed: _code.isEmpty ? null : _submit,
+        icon: Icon(widget.icon),
+        label: Text(widget.confirmLabel),
+      ),
+    ],
   );
 }

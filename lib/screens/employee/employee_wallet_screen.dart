@@ -1,6 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../../services/payos_service.dart';
 import '../../services/wallet_service.dart';
 import '../../widgets/wallet_withdrawal_sheet.dart';
 
@@ -13,6 +18,7 @@ class EmployeeWalletScreen extends StatefulWidget {
 
 class _EmployeeWalletScreenState extends State<EmployeeWalletScreen> {
   final _service = WalletService();
+  final _payosService = PayosService();
   Map<String, dynamic> _wallet = {};
   List<Map<String, dynamic>> _transactions = [];
   bool _loading = true;
@@ -49,48 +55,23 @@ class _EmployeeWalletScreenState extends State<EmployeeWalletScreen> {
   }
 
   Future<void> _topUp() async {
-    final controller = TextEditingController();
     final amount = await showDialog<double>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Yêu cầu nạp ví'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          keyboardType: TextInputType.number,
-          decoration: const InputDecoration(
-            labelText: 'Số tiền nạp',
-            suffixText: 'đ',
-            helperText: 'Tối thiểu 10.000đ',
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final value = double.tryParse(
-                controller.text.replaceAll(RegExp(r'[^0-9]'), ''),
-              );
-              if (value != null && value >= 10000) {
-                Navigator.pop(context, value);
-              }
-            },
-            child: const Text('Gửi yêu cầu'),
-          ),
-        ],
-      ),
+      builder: (_) => const _EmployeeTopUpDialog(),
     );
-    controller.dispose();
     if (amount == null) return;
     try {
-      final id = await _service.requestTopUp(amount);
+      final checkout = await _payosService.createWalletTopUp(
+        amount: amount.round(),
+      );
       if (!mounted) return;
-      _message('Yêu cầu nạp #$id đang chờ admin duyệt');
-      await _load();
-    } on WalletServiceException catch (error) {
+      final paid = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => _EmployeePayosQrDialog(checkout: checkout),
+      );
+      if (paid == true && mounted) await _load();
+    } on PayosServiceException catch (error) {
       _message(error.message, error: true);
     }
   }
@@ -285,4 +266,210 @@ class _EmployeeWalletScreenState extends State<EmployeeWalletScreen> {
     );
     return '$formatted\u0111';
   }
+}
+
+class _EmployeeTopUpDialog extends StatefulWidget {
+  const _EmployeeTopUpDialog();
+
+  @override
+  State<_EmployeeTopUpDialog> createState() => _EmployeeTopUpDialogState();
+}
+
+class _EmployeeTopUpDialogState extends State<_EmployeeTopUpDialog> {
+  final _controller = TextEditingController();
+
+  double? get _amount =>
+      double.tryParse(_controller.text.replaceAll(RegExp(r'[^0-9]'), ''));
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final amount = _amount;
+    if (amount == null || amount < 10000) return;
+    Navigator.of(context).pop(amount);
+  }
+
+  @override
+  Widget build(BuildContext context) => AlertDialog(
+    title: const Text('Yêu cầu nạp ví'),
+    content: TextField(
+      controller: _controller,
+      autofocus: true,
+      keyboardType: TextInputType.number,
+      textInputAction: TextInputAction.done,
+      decoration: const InputDecoration(
+        labelText: 'Số tiền nạp',
+        suffixText: 'đ',
+        helperText: 'Tối thiểu 10.000đ',
+      ),
+      onChanged: (_) => setState(() {}),
+      onSubmitted: (_) => _submit(),
+    ),
+    actions: [
+      TextButton(
+        onPressed: () => Navigator.of(context).pop(),
+        child: const Text('Hủy'),
+      ),
+      FilledButton(
+        onPressed: (_amount ?? 0) >= 10000 ? _submit : null,
+        child: const Text('Gửi yêu cầu'),
+      ),
+    ],
+  );
+}
+
+class _EmployeePayosQrDialog extends StatefulWidget {
+  const _EmployeePayosQrDialog({required this.checkout});
+
+  final PayosCheckout checkout;
+
+  @override
+  State<_EmployeePayosQrDialog> createState() => _EmployeePayosQrDialogState();
+}
+
+class _EmployeePayosQrDialogState extends State<_EmployeePayosQrDialog> {
+  final _payosService = PayosService();
+  Timer? _timer;
+  bool _checking = false;
+  bool _cancelling = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _checkPaid());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _checkPaid() async {
+    if (_checking) return;
+    _checking = true;
+    try {
+      if (await _payosService.isPaymentCompleted(widget.checkout.orderCode) &&
+          mounted) {
+        Navigator.of(context).pop(true);
+      }
+    } catch (_) {
+      // Webhook ngân hàng có thể đến chậm; tiếp tục kiểm tra ở lần sau.
+    } finally {
+      _checking = false;
+    }
+  }
+
+  Future<void> _cancel() async {
+    if (_cancelling) return;
+    setState(() => _cancelling = true);
+    try {
+      await _payosService.cancelWalletTopUp(widget.checkout.orderCode);
+      if (mounted) Navigator.of(context).pop(false);
+    } on PayosServiceException catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(error.message),
+            backgroundColor: AppColors.error,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _cancelling = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final qrCode = widget.checkout.qrCode;
+    return Dialog(
+      insetPadding: const EdgeInsets.all(20),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 400),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 24, 24, 18),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Quét QR để nạp ví',
+                style: TextStyle(fontSize: 21, fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 8),
+              Text('Thanh toán ${_employeeMoney(widget.checkout.amount)}'),
+              const SizedBox(height: 18),
+              if (qrCode != null && qrCode.isNotEmpty)
+                Container(
+                  color: Colors.white,
+                  padding: const EdgeInsets.all(12),
+                  child: QrImageView(
+                    data: qrCode,
+                    version: QrVersions.auto,
+                    size: 220,
+                  ),
+                )
+              else
+                const Padding(
+                  padding: EdgeInsets.all(32),
+                  child: Icon(Icons.qr_code_2_rounded, size: 96),
+                ),
+              const SizedBox(height: 14),
+              const Text(
+                'QR sẽ tự đóng khi thanh toán thành công và ví được cộng tiền.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: _cancelling ? null : _cancel,
+                      child: const Text('Hủy'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: _cancelling
+                          ? null
+                          : () async {
+                              final opened = await launchUrl(
+                                Uri.parse(widget.checkout.checkoutUrl),
+                                mode: LaunchMode.externalApplication,
+                              );
+                              if (!context.mounted || opened) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                    'Không mở được trang thanh toán.',
+                                  ),
+                                ),
+                              );
+                            },
+                      icon: const Icon(Icons.open_in_new_rounded),
+                      label: const Text('Mở thanh toán'),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+String _employeeMoney(num value) {
+  final formatted = value.round().toString().replaceAllMapped(
+    RegExp(r'(\d)(?=(\d{3})+(?!\d))'),
+    (match) => '${match[1]}.',
+  );
+  return '$formattedđ';
 }

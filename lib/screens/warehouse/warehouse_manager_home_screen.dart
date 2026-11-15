@@ -265,7 +265,11 @@ class _WarehouseManagerHomeScreenState
                   children: [
                     _Overview(data: _overviewForDisplay()),
                     _Orders(items: _orders),
-                    _Employees(items: _employees),
+                    _Employees(
+                      items: _employees,
+                      warehouseLevel: (_overviewForDisplay()['cap_kho'] as num?)
+                          ?.toInt(),
+                    ),
                     _WarehouseTrips(items: _trips, warehouseId: _warehouseId),
                     _Account(data: _overview, onLogout: _logout),
                   ],
@@ -551,8 +555,9 @@ class _Orders extends StatelessWidget {
 }
 
 class _Employees extends StatelessWidget {
-  const _Employees({required this.items});
+  const _Employees({required this.items, this.warehouseLevel});
   final List<Map<String, dynamic>> items;
+  final int? warehouseLevel;
   @override
   Widget build(BuildContext context) => items.isEmpty
       ? const Center(child: Text('Kho chưa có nhân viên'))
@@ -586,7 +591,9 @@ class _Employees extends StatelessWidget {
                 ),
                 subtitle: Text(
                   '${manager
-                      ? 'Quản lý kho cấp 2'
+                      ? warehouseLevel == null
+                            ? 'Quản lý kho'
+                            : 'Quản lý kho cấp $warehouseLevel'
                       : driver
                       ? 'Tài xế xe tải'
                       : pickup
