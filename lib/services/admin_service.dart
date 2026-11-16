@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/config/supabase_config.dart';
@@ -30,6 +32,25 @@ class AdminService {
 
   Future<List<Map<String, dynamic>>> getOrders() =>
       _list('admin_danh_sach_don_hang');
+
+  /// Nhật ký chi tiết của một đơn: thao tác quét, người thực hiện, kho và ảnh.
+  Future<List<Map<String, dynamic>>> getOrderTimeline(int orderId) async {
+    try {
+      final data = await _client
+          .rpc(
+            'admin_chi_tiet_lich_su_don_hang',
+            params: {'p_don_hang_id': orderId},
+          )
+          .timeout(const Duration(seconds: 12));
+      return List<Map<String, dynamic>>.from(data as List);
+    } on PostgrestException catch (error) {
+      throw AdminServiceException(_message(error));
+    } on TimeoutException {
+      throw const AdminServiceException(
+        'Không thể tải nhật ký đơn hàng. Vui lòng thử lại.',
+      );
+    }
+  }
 
   Future<List<Map<String, dynamic>>> getWarehouses() =>
       _list('admin_danh_sach_kho');

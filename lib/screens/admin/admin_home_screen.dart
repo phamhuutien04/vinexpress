@@ -130,11 +130,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final desktop = constraints.maxWidth >= 900;
+        final colors = Theme.of(context).colorScheme;
         final pageScaffold = Scaffold(
-          backgroundColor: const Color(0xFFF5F8F8),
+          backgroundColor: colors.surface,
           appBar: AppBar(
             toolbarHeight: 76,
-            backgroundColor: Colors.white,
+            backgroundColor: colors.surface,
             surfaceTintColor: Colors.transparent,
             titleSpacing: desktop ? 28 : 20,
             title: Column(
@@ -146,10 +147,10 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
                   style: const TextStyle(fontWeight: FontWeight.w800),
                 ),
                 if (desktop)
-                  const Text(
+                  Text(
                     'VinExpress · Quản trị vận hành',
                     style: TextStyle(
-                      color: Color(0xFF6B7A7B),
+                      color: colors.onSurfaceVariant,
                       fontSize: 12,
                       fontWeight: FontWeight.w500,
                     ),
@@ -188,7 +189,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
           bottomNavigationBar: desktop
               ? null
               : NavigationBar(
-                  backgroundColor: Colors.white,
+                  backgroundColor: colors.surface,
                   indicatorColor: AppColors.primary.withValues(alpha: .14),
                   labelBehavior:
                       NavigationDestinationLabelBehavior.onlyShowSelected,
@@ -202,7 +203,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         if (!desktop) return pageScaffold;
         final expanded = constraints.maxWidth >= 1160;
         return Scaffold(
-          backgroundColor: const Color(0xFFF5F8F8),
+          backgroundColor: colors.surface,
           body: SafeArea(
             child: Row(
               children: [
@@ -266,7 +267,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       ),
       1 => _EmployeeList(employees: _employees, onAction: _updateEmployee),
       2 => _CustomerList(customers: _customers),
-      3 => _OrderList(orders: _orders),
+      3 => _OrderList(orders: _orders, service: _service),
       4 => _WarehouseList(warehouses: _warehouses, employees: _employees),
       5 => _WalletRequestList(
         requests: _walletRequests,
@@ -1101,17 +1102,19 @@ class _SummaryCard extends StatelessWidget {
   final Color color;
 
   @override
-  Widget build(BuildContext context) => Card(
-    margin: EdgeInsets.zero,
-    elevation: 0,
-    color: Colors.white,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: Color(0xFFE3EAEA)),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(18),
-      child: Row(
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Row(
         children: [
           Container(
             width: 42,
@@ -1145,9 +1148,10 @@ class _SummaryCard extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _OverviewHero extends StatelessWidget {
@@ -1247,14 +1251,16 @@ class _CommissionControl extends StatelessWidget {
   final VoidCallback onEdit;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-    decoration: BoxDecoration(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFE3EAEA)),
-    ),
-    child: LayoutBuilder(
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+      decoration: BoxDecoration(
+        color: colors.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: LayoutBuilder(
       builder: (context, constraints) {
         final compact = constraints.maxWidth < 560;
         final info = Row(
@@ -1307,8 +1313,9 @@ class _CommissionControl extends StatelessWidget {
                 ],
               );
       },
-    ),
-  );
+      ),
+    );
+  }
 }
 
 String _feeSummary(Map<String, dynamic> config) {
@@ -1352,6 +1359,7 @@ class _WeeklyBarChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final maxValue = math.max(1, values.fold<int>(0, math.max));
     final ceiling = maxValue * 1.25;
     return Row(
@@ -1375,7 +1383,7 @@ class _WeeklyBarChart extends StatelessWidget {
                           style: TextStyle(
                             color: selected
                                 ? AppColors.primary
-                                : const Color(0xFF6B7A7B),
+                                : colors.onSurfaceVariant,
                             fontSize: 11,
                             fontWeight: FontWeight.w800,
                           ),
@@ -1386,7 +1394,7 @@ class _WeeklyBarChart extends StatelessWidget {
                   child: Container(
                     alignment: Alignment.bottomCenter,
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF0F5F4),
+                      color: colors.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: FractionallySizedBox(
@@ -1539,6 +1547,7 @@ class _OperationalMetricsPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final completion = totalOrders == 0 ? 0 : delivered * 100 / totalOrders;
     final averageFee = delivered == 0 ? 0 : revenue / delivered;
     final values = [
@@ -1570,9 +1579,9 @@ class _OperationalMetricsPanel extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: colors.surfaceContainerLow,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE3EAEA)),
+        border: Border.all(color: colors.outlineVariant),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -1680,17 +1689,19 @@ class _AnalyticsCard extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Card(
-    margin: EdgeInsets.zero,
-    elevation: 0,
-    color: Colors.white,
-    shape: RoundedRectangleBorder(
-      borderRadius: BorderRadius.circular(16),
-      side: const BorderSide(color: Color(0xFFE3EAEA)),
-    ),
-    child: Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      elevation: 0,
+      color: colors.surfaceContainerLow,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
@@ -1702,9 +1713,10 @@ class _AnalyticsCard extends StatelessWidget {
           const SizedBox(height: 16),
           child,
         ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _ChartLegend extends StatelessWidget {
@@ -1896,55 +1908,212 @@ class _DonutChartPainter extends CustomPainter {
       oldDelegate.values != values || oldDelegate.trackColor != trackColor;
 }
 
-class _EmployeeList extends StatelessWidget {
+class _EmployeeList extends StatefulWidget {
   const _EmployeeList({required this.employees, required this.onAction});
   final List<Map<String, dynamic>> employees;
   final void Function(Map<String, dynamic>, String) onAction;
 
   @override
-  Widget build(BuildContext context) => ListView.builder(
-    padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-    itemCount: employees.length,
-    itemBuilder: (_, index) {
-      final item = employees[index];
-      final pending = item['trang_thai_duyet'] == 'CHO_DUYET';
-      final locked = item['trang_thai'] != 'HOAT_DONG';
-      return Card(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        margin: const EdgeInsets.only(bottom: 10),
-        child: ListTile(
-          leading: CircleAvatar(
-            child: Text('${item['ho_ten']}'.substring(0, 1).toUpperCase()),
-          ),
-          title: Text(
-            '${item['ho_ten']}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Text(
-            '${_role(item['vai_tro'])} • ${item['email']}\n'
-            '${item['so_dien_thoai']} • ${_approvalStatusLabel('${item['trang_thai_duyet'] ?? ''}')}'
-            '${item['ten_kho'] == null ? '' : '\nKho: ${item['ten_kho']}'}',
-          ),
-          isThreeLine: true,
-          trailing: PopupMenuButton<String>(
-            onSelected: (value) => onAction(item, value),
-            itemBuilder: (_) => [
-              if (pending)
-                const PopupMenuItem(
-                  value: 'approve',
-                  child: Text('Duyệt tài khoản'),
-                ),
-              if (pending)
-                const PopupMenuItem(value: 'reject', child: Text('Từ chối')),
-              PopupMenuItem(
-                value: locked ? 'unlock' : 'lock',
-                child: Text(locked ? 'Mở khóa' : 'Khóa tài khoản'),
+  State<_EmployeeList> createState() => _EmployeeListState();
+}
+
+class _EmployeeListState extends State<_EmployeeList> {
+  final _searchController = TextEditingController();
+  String _query = '';
+  String? _roleFilter;
+
+  static const _roles = [
+    'ADMIN',
+    'QUAN_LY_KHO',
+    'NHAN_VIEN_KHO',
+    'VAN_CHUYEN',
+    'NHAN_VIEN_LAY_HANG',
+    'NHAN_VIEN_GIAO_HANG',
+    'SHIPPER',
+  ];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final needle = _query.trim().toLowerCase();
+    final filtered = widget.employees.where((item) {
+      final matchesText = needle.isEmpty || [
+        item['ho_ten'],
+        item['email'],
+        item['so_dien_thoai'],
+        item['ten_kho'],
+      ].join(' ').toLowerCase().contains(needle);
+      final matchesRole = _roleFilter == null || item['vai_tro'] == _roleFilter;
+      return matchesText && matchesRole;
+    }).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _query = value),
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Tìm tên, email, số điện thoại hoặc kho...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Xóa tìm kiếm',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+              filled: true,
+              fillColor: colors.surfaceContainerLow,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: colors.outlineVariant),
               ),
-            ],
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: colors.outlineVariant),
+              ),
+            ),
           ),
         ),
-      );
-    },
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Tất cả'),
+                  selected: _roleFilter == null,
+                  onSelected: (_) => setState(() => _roleFilter = null),
+                ),
+                ..._roles.map(
+                  (role) => ChoiceChip(
+                    label: Text(_role(role)),
+                    selected: _roleFilter == role,
+                    selectedColor: AppColors.primary.withValues(alpha: .18),
+                    onSelected: (_) => setState(
+                      () => _roleFilter = _roleFilter == role ? null : role,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              needle.isEmpty && _roleFilter == null
+                  ? '${filtered.length} nhân viên'
+                  : 'Tìm thấy ${filtered.length} nhân viên',
+              style: TextStyle(
+                color: colors.onSurfaceVariant,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? _EmployeeSearchEmpty(onClear: () {
+                  _searchController.clear();
+                  setState(() {
+                    _query = '';
+                    _roleFilter = null;
+                  });
+                })
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 100),
+                  itemCount: filtered.length,
+                  itemBuilder: (_, index) {
+                    final item = filtered[index];
+                    final pending = item['trang_thai_duyet'] == 'CHO_DUYET';
+                    final locked = item['trang_thai'] != 'HOAT_DONG';
+                    final name = '${item['ho_ten'] ?? ''}'.trim();
+                    return Card(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      margin: const EdgeInsets.only(bottom: 10),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          child: Text(
+                            name.isEmpty ? '?' : name.substring(0, 1).toUpperCase(),
+                          ),
+                        ),
+                        title: Text(
+                          name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(
+                          '${_role(item['vai_tro'])} • ${item['email']}\n'
+                          '${item['so_dien_thoai']} • ${_approvalStatusLabel('${item['trang_thai_duyet'] ?? ''}')}'
+                          '${item['ten_kho'] == null ? '' : '\nKho: ${item['ten_kho']}'}',
+                        ),
+                        isThreeLine: true,
+                        trailing: PopupMenuButton<String>(
+                          onSelected: (value) => widget.onAction(item, value),
+                          itemBuilder: (_) => [
+                            if (pending)
+                              const PopupMenuItem(
+                                value: 'approve',
+                                child: Text('Duyệt tài khoản'),
+                              ),
+                            if (pending)
+                              const PopupMenuItem(
+                                value: 'reject',
+                                child: Text('Từ chối'),
+                              ),
+                            PopupMenuItem(
+                              value: locked ? 'unlock' : 'lock',
+                              child: Text(locked ? 'Mở khóa' : 'Khóa tài khoản'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmployeeSearchEmpty extends StatelessWidget {
+  const _EmployeeSearchEmpty({required this.onClear});
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.person_search_outlined,
+          size: 52,
+          color: Theme.of(context).colorScheme.onSurfaceVariant,
+        ),
+        const SizedBox(height: 12),
+        const Text('Không tìm thấy nhân viên phù hợp.'),
+        TextButton(onPressed: onClear, child: const Text('Xóa bộ lọc')),
+      ],
+    ),
   );
 }
 
@@ -1983,59 +2152,567 @@ class _CustomerList extends StatelessWidget {
   );
 }
 
-class _OrderList extends StatelessWidget {
-  const _OrderList({required this.orders});
+class _OrderList extends StatefulWidget {
+  const _OrderList({required this.orders, required this.service});
   final List<Map<String, dynamic>> orders;
+  final AdminService service;
 
   @override
-  Widget build(BuildContext context) => ListView.builder(
-    padding: const EdgeInsets.all(16),
-    itemCount: orders.length,
-    itemBuilder: (_, index) {
-      final item = orders[index];
-      return Card(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        child: ListTile(
-          leading: const CircleAvatar(
-            child: Icon(Icons.local_shipping_outlined),
-          ),
-          title: Text(
-            '${item['ma_van_don']}',
-            style: const TextStyle(fontWeight: FontWeight.bold),
-          ),
-          subtitle: Padding(
-            padding: const EdgeInsets.only(top: 3),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('${item['khach_hang_ten']} → ${item['nguoi_nhan_ten']}'),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 7,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _OrderStatusBadge(status: '${item['trang_thai'] ?? ''}'),
-                    Text(
-                      '${item['shipper_ten'] ?? 'Chưa có shipper'}',
-                      style: Theme.of(context).textTheme.bodySmall,
+  State<_OrderList> createState() => _OrderListState();
+}
+
+class _OrderListState extends State<_OrderList> {
+  final _searchController = TextEditingController();
+  String _query = '';
+  String? _statusFilter;
+
+  static const _statuses = [
+    'CHO_XAC_NHAN',
+    'CHO_LAY_HANG',
+    'DA_LAY_HANG',
+    'DA_XEP_HANG',
+    'DANG_VAN_CHUYEN',
+    'DEN_KHO_TRUNG_CHUYEN',
+    'DEN_KHO_DICH',
+    'GIAO_CHO_SHIPPER',
+    'DANG_GIAO_HANG',
+    'DA_GIAO_HANG',
+    'GIAO_HANG_THAT_BAI',
+    'HOAN_HANG',
+    'DA_HUY',
+  ];
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final needle = _query.trim().toLowerCase();
+    final filtered = widget.orders.where((item) {
+      if (needle.isEmpty) return true;
+      final searchable = [
+        item['ma_van_don'],
+        item['khach_hang_ten'],
+        item['nguoi_gui_dia_chi'],
+        item['nguoi_nhan_ten'],
+        item['nguoi_nhan_dia_chi'],
+        item['shipper_ten'],
+        item['trang_thai'],
+      ].join(' ').toLowerCase();
+      return searchable.contains(needle);
+    }).where((item) {
+      return _statusFilter == null || item['trang_thai'] == _statusFilter;
+    }).toList();
+
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _query = value),
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Tìm mã vận đơn, khách hàng, người nhận, shipper...',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: _query.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Xóa tìm kiếm',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _query = '');
+                      },
+                      icon: const Icon(Icons.close_rounded),
                     ),
-                  ],
+              filled: true,
+              fillColor: colors.surfaceContainerLow,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: colors.outlineVariant),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: colors.outlineVariant),
+              ),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              needle.isEmpty && _statusFilter == null
+                  ? '${filtered.length} đơn hàng'
+                  : 'Tìm thấy ${filtered.length} đơn hàng',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ).copyWith(color: colors.onSurfaceVariant),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 10),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                ChoiceChip(
+                  label: const Text('Tất cả'),
+                  selected: _statusFilter == null,
+                  onSelected: (_) => setState(() => _statusFilter = null),
+                ),
+                ..._statuses.map(
+                  (status) => ChoiceChip(
+                    label: Text(_orderStatusLabel(status)),
+                    selected: _statusFilter == status,
+                    selectedColor: _orderStatusColor(status).withValues(
+                      alpha: .18,
+                    ),
+                    onSelected: (_) => setState(
+                      () => _statusFilter =
+                          _statusFilter == status ? null : status,
+                    ),
+                  ),
                 ),
               ],
             ),
           ),
-          isThreeLine: true,
-          trailing: Text(
-            _money(item['phi_van_chuyen']),
-            style: const TextStyle(
-              color: AppColors.primary,
-              fontWeight: FontWeight.bold,
-            ),
+        ),
+        Expanded(
+          child: filtered.isEmpty
+              ? _OrderSearchEmpty(onClear: () {
+                  _searchController.clear();
+                  setState(() {
+                    _query = '';
+                    _statusFilter = null;
+                  });
+                })
+              : ListView.builder(
+                  padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
+                  itemCount: filtered.length,
+                  itemBuilder: (_, index) {
+                    final item = filtered[index];
+                    return Card(
+                      color: Theme.of(context).colorScheme.surfaceContainerLow,
+                      child: ListTile(
+                        onTap: () => _showOrderTimeline(context, item),
+                        leading: const CircleAvatar(
+                          child: Icon(Icons.local_shipping_outlined),
+                        ),
+                        title: Text(
+                          '${item['ma_van_don']}',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 3),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                '${item['khach_hang_ten']} → ${item['nguoi_nhan_ten']}',
+                              ),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 7,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                children: [
+                                  _OrderStatusBadge(
+                                    status: '${item['trang_thai'] ?? ''}',
+                                  ),
+                                  Text(
+                                    '${item['shipper_ten'] ?? 'Chưa có shipper'}',
+                                    style: Theme.of(context).textTheme.bodySmall,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        isThreeLine: true,
+                        trailing: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            Text(
+                              _money(item['phi_van_chuyen']),
+                              style: const TextStyle(
+                                color: AppColors.primary,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: AppColors.primary,
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  void _showOrderTimeline(BuildContext context, Map<String, dynamic> order) {
+    final id = (order['id'] as num?)?.toInt();
+    if (id == null) return;
+    showDialog<void>(
+      context: context,
+      builder: (_) => _AdminOrderTimelineDialog(
+        order: order,
+        service: widget.service,
+      ),
+    );
+  }
+}
+
+class _OrderSearchEmpty extends StatelessWidget {
+  const _OrderSearchEmpty({required this.onClear});
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(28),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            size: 52,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
+          const SizedBox(height: 12),
+          const Text('Không tìm thấy đơn hàng phù hợp.'),
+          const SizedBox(height: 12),
+          TextButton(onPressed: onClear, child: const Text('Xóa bộ lọc')),
+        ],
+      ),
+    ),
+  );
+}
+
+class _AdminOrderTimelineDialog extends StatefulWidget {
+  const _AdminOrderTimelineDialog({required this.order, required this.service});
+
+  final Map<String, dynamic> order;
+  final AdminService service;
+
+  @override
+  State<_AdminOrderTimelineDialog> createState() =>
+      _AdminOrderTimelineDialogState();
+}
+
+class _AdminOrderTimelineDialogState extends State<_AdminOrderTimelineDialog> {
+  List<Map<String, dynamic>> _events = const [];
+  bool _loading = true;
+  String? _loadError;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+    try {
+      final events = await widget.service.getOrderTimeline(
+        (widget.order['id'] as num).toInt(),
+      );
+      if (!mounted) return;
+      setState(() => _events = events);
+    } on AdminServiceException catch (error) {
+      if (!mounted) return;
+      setState(() => _loadError = error.message);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadError = 'Không thể tải nhật ký đơn hàng.');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Dialog(
+      insetPadding: const EdgeInsets.all(18),
+      clipBehavior: Clip.antiAlias,
+      backgroundColor: colors.surface,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 760),
+        child: Column(
+          children: [
+            _header(context),
+            Divider(height: 1, color: colors.outlineVariant),
+            Expanded(child: _body()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _body() {
+    if (_loading) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(height: 16),
+            Text('Đang tải nhật ký đơn hàng...'),
+          ],
         ),
       );
-    },
+    }
+    if (_loadError != null) {
+      return _TimelineError(message: _loadError!, onRetry: _load);
+    }
+    if (_events.isEmpty) return const _TimelineEmpty();
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
+      itemCount: _events.length,
+      separatorBuilder: (_, _) => const SizedBox(height: 4),
+      itemBuilder: (context, index) => _OrderTimelineEvent(
+        event: _events[index],
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(22, 18, 12, 16),
+    child: Row(
+      children: [
+        const CircleAvatar(
+          backgroundColor: AppColors.primary,
+          foregroundColor: Colors.white,
+          child: Icon(Icons.manage_search_rounded),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Nhật ký đơn ${widget.order['ma_van_don']}',
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                '${widget.order['khach_hang_ten']} → ${widget.order['nguoi_nhan_ten']}',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+              ),
+            ],
+          ),
+        ),
+        IconButton(
+          tooltip: 'Tải lại nhật ký',
+          onPressed: _loading ? null : _load,
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+        IconButton(
+          tooltip: 'Đóng',
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close_rounded),
+        ),
+      ],
+    ),
+  );
+}
+
+class _OrderTimelineEvent extends StatelessWidget {
+  const _OrderTimelineEvent({required this.event});
+
+  final Map<String, dynamic> event;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final evidence = '${event['minh_chung'] ?? ''}'.trim();
+    final actor = '${event['ten_nhan_vien'] ?? ''}'.trim();
+    final role = '${event['vai_tro'] ?? ''}'.trim();
+    final warehouse = '${event['ten_kho'] ?? ''}'.trim();
+    final warehouseCode = '${event['ma_kho'] ?? ''}'.trim();
+    final note = '${event['ghi_chu'] ?? ''}'.trim();
+    final from = '${event['trang_thai_cu'] ?? ''}'.trim();
+    final to = '${event['trang_thai_moi'] ?? ''}'.trim();
+    final trip = '${event['ma_chuyen'] ?? ''}'.trim();
+    final plate = '${event['bien_so_xe'] ?? ''}'.trim();
+    final details = <Widget>[
+      _TimelineInfo(
+        icon: Icons.person_outline_rounded,
+        label: actor.isEmpty
+            ? 'Thực hiện bởi hệ thống'
+            : '$actor${role.isEmpty ? '' : ' · ${_role(role)}'}',
+      ),
+      if (warehouse.isNotEmpty)
+        _TimelineInfo(
+          icon: Icons.warehouse_outlined,
+          label: '$warehouse${warehouseCode.isEmpty ? '' : ' · $warehouseCode'}',
+        ),
+      if (trip.isNotEmpty)
+        _TimelineInfo(
+          icon: Icons.local_shipping_outlined,
+          label: '$trip${plate.isEmpty ? '' : ' · $plate'}',
+        ),
+      if (from.isNotEmpty || to.isNotEmpty)
+        _TimelineInfo(
+          icon: Icons.sync_alt_rounded,
+          label:
+              '${from.isEmpty ? 'Khởi tạo' : _orderStatusLabel(from)} → ${to.isEmpty ? 'Cập nhật' : _orderStatusLabel(to)}',
+        ),
+      if (note.isNotEmpty)
+        _TimelineInfo(icon: Icons.notes_rounded, label: note),
+    ];
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: colors.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: colors.outlineVariant),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const CircleAvatar(
+                  radius: 16,
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  child: Icon(Icons.check_rounded, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${event['hanh_dong'] ?? 'Cập nhật đơn hàng'}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              _dateTime(event['thoi_gian']),
+              style: TextStyle(
+                color: colors.onSurfaceVariant,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            if (details.isNotEmpty) const Divider(height: 22),
+            ...details,
+            if (evidence.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              OutlinedButton.icon(
+                onPressed: () => showEvidenceImageDialog(
+                  context,
+                  imageUrl: evidence,
+                  title: 'Minh chứng · ${event['hanh_dong'] ?? 'đơn hàng'}',
+                ),
+                icon: const Icon(Icons.photo_outlined),
+                label: const Text('Xem ảnh minh chứng'),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TimelineInfo extends StatelessWidget {
+  const _TimelineInfo({required this.icon, required this.label});
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 5),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: colors.onSurfaceVariant),
+          const SizedBox(width: 7),
+          Expanded(child: Text(label, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
+    );
+  }
+}
+
+class _TimelineEmpty extends StatelessWidget {
+  const _TimelineEmpty();
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.history_toggle_off_outlined,
+            size: 52,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(height: 12),
+          const Text('Đơn này chưa có nhật ký thao tác.'),
+        ],
+      ),
+    ),
+  );
+}
+
+class _TimelineError extends StatelessWidget {
+  const _TimelineError({required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(30),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 48),
+          const SizedBox(height: 12),
+          Text(message, textAlign: TextAlign.center),
+          const SizedBox(height: 16),
+          OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh_rounded),
+            label: const Text('Thử lại'),
+          ),
+        ],
+      ),
+    ),
   );
 }
 
@@ -2046,14 +2723,7 @@ class _OrderStatusBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = switch (status) {
-      'DA_GIAO_HANG' || 'HOAN_THANH' => AppColors.success,
-      'DA_HUY' => AppColors.error,
-      'DANG_GIAO_HANG' || 'DANG_VAN_CHUYEN' => AppColors.info,
-      'CHO_LAY_HANG' || 'DA_LAY_HANG' => AppColors.warning,
-      'DEN_KHO_TRUNG_CHUYEN' || 'DEN_KHO_DICH' => const Color(0xFF7165D8),
-      _ => const Color(0xFF6B7A7B),
-    };
+    final color = _orderStatusColor(status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
@@ -2072,14 +2742,29 @@ class _OrderStatusBadge extends StatelessWidget {
   }
 }
 
+Color _orderStatusColor(String status) => switch (status) {
+  'DA_GIAO_HANG' || 'HOAN_THANH' => AppColors.success,
+  'DA_HUY' || 'GIAO_HANG_THAT_BAI' || 'HOAN_HANG' => AppColors.error,
+  'DANG_GIAO_HANG' || 'DANG_VAN_CHUYEN' || 'GIAO_CHO_SHIPPER' => AppColors.info,
+  'CHO_XAC_NHAN' || 'CHO_LAY_HANG' || 'DA_LAY_HANG' || 'DA_XEP_HANG' =>
+    AppColors.warning,
+  'DEN_KHO_TRUNG_CHUYEN' || 'DEN_KHO_DICH' => const Color(0xFF7165D8),
+  _ => const Color(0xFF6B7A7B),
+};
+
 String _orderStatusLabel(String status) => switch (status) {
   'CHO_XAC_NHAN' => 'Chờ xác nhận',
   'CHO_LAY_HANG' => 'Chờ lấy hàng',
   'DA_LAY_HANG' => 'Đã lấy hàng',
-  'DANG_GIAO_HANG' || 'DANG_VAN_CHUYEN' => 'Đang giao',
+  'DA_XEP_HANG' => 'Đã xếp hàng',
+  'DANG_VAN_CHUYEN' => 'Đang vận chuyển',
+  'DANG_GIAO_HANG' => 'Đang giao hàng',
   'DEN_KHO_TRUNG_CHUYEN' => 'Đến kho trung chuyển',
   'DEN_KHO_DICH' => 'Đến kho đích',
+  'GIAO_CHO_SHIPPER' => 'Đã giao shipper',
   'DA_GIAO_HANG' || 'HOAN_THANH' => 'Đã giao hàng',
+  'GIAO_HANG_THAT_BAI' => 'Giao thất bại',
+  'HOAN_HANG' => 'Hoàn hàng',
   'DA_HUY' => 'Đã hủy',
   _ => status.isEmpty ? 'Chưa xác định' : status.replaceAll('_', ' '),
 };
@@ -3414,6 +4099,7 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
 
 String _role(dynamic value) => switch ('$value') {
   'ADMIN' => 'Quản trị viên',
+  'KHACH_HANG' => 'Khách hàng',
   'QUAN_LY_KHO' => 'Quản lý kho',
   'NHAN_VIEN_KHO' => 'Nhân viên kho',
   'VAN_CHUYEN' => 'Vận chuyển',
