@@ -76,6 +76,10 @@ class AdminService {
   Future<List<Map<String, dynamic>>> getTransportIncidents() =>
       _list('admin_danh_sach_su_co_van_chuyen');
 
+  /// Đánh giá shipper do khách hàng gửi sau khi giao hàng thành công.
+  Future<List<Map<String, dynamic>>> getRatings() =>
+      _list('admin_danh_sach_danh_gia');
+
   Future<Map<String, dynamic>> getShippingFeeConfig() async {
     try {
       final data = await _client.rpc('admin_cau_hinh_phi_van_chuyen');

@@ -29,6 +29,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
   List<Map<String, dynamic>> _regions = [];
   List<Map<String, dynamic>> _walletRequests = [];
   List<Map<String, dynamic>> _transportIncidents = [];
+  List<Map<String, dynamic>> _ratings = [];
   Map<String, dynamic> _shippingFeeConfig = const {
     'phi_xe_may_moi_km': 5000,
     'phi_xe_tai': 30000,
@@ -44,6 +45,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
     'Kho hàng',
     'Duyệt ví',
     'Sự cố',
+    'Đánh giá',
   ];
   static const _destinations = [
     NavigationDestination(
@@ -81,6 +83,11 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
       selectedIcon: Icon(Icons.report_problem_rounded),
       label: 'Sự cố',
     ),
+    NavigationDestination(
+      icon: Icon(Icons.star_outline_rounded),
+      selectedIcon: Icon(Icons.star_rounded),
+      label: 'Đánh giá',
+    ),
   ];
 
   @override
@@ -105,6 +112,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _service.getWalletRequests(type: 'RUT_TIEN'),
         _service.getTransportIncidents(),
         _service.getShippingFeeConfig(),
+        _service.getRatings(),
       ]);
       if (!mounted) return;
       setState(() {
@@ -117,6 +125,7 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         _walletRequests = result[6] as List<Map<String, dynamic>>;
         _transportIncidents = result[7] as List<Map<String, dynamic>>;
         _shippingFeeConfig = result[8] as Map<String, dynamic>;
+        _ratings = result[9] as List<Map<String, dynamic>>;
       });
     } on AdminServiceException catch (error) {
       if (mounted) setState(() => _error = error.message);
@@ -274,11 +283,12 @@ class _AdminHomeScreenState extends State<AdminHomeScreen> {
         onProcess: _processWalletRequest,
         onRefresh: _loadAll,
       ),
-      _ => _TransportIncidentList(
+      6 => _TransportIncidentList(
         incidents: _transportIncidents,
         onProcess: _processTransportIncident,
         onRefresh: _loadAll,
       ),
+      _ => _AdminRatingList(ratings: _ratings),
     };
   }
 
@@ -1115,39 +1125,39 @@ class _SummaryCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: .12),
-              borderRadius: BorderRadius.circular(12),
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: .12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 23),
             ),
-            child: Icon(icon, color: color, size: 23),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.w900,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    value,
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
-                ),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -1261,58 +1271,58 @@ class _CommissionControl extends StatelessWidget {
         border: Border.all(color: colors.outlineVariant),
       ),
       child: LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 560;
-        final info = Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: .12),
-                borderRadius: BorderRadius.circular(12),
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 560;
+          final info = Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: .12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.percent_rounded,
+                  color: AppColors.primary,
+                ),
               ),
-              child: const Icon(
-                Icons.percent_rounded,
-                color: AppColors.primary,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Cấu hình phí & chiết khấu',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    Text(
+                      _feeSummary(config),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Cấu hình phí & chiết khấu',
-                    style: TextStyle(fontWeight: FontWeight.w800),
-                  ),
-                  Text(
-                    _feeSummary(config),
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        );
-        final action = OutlinedButton.icon(
-          onPressed: onEdit,
-          icon: const Icon(Icons.edit_outlined, size: 18),
-          label: const Text('Chỉnh phí'),
-        );
-        return compact
-            ? Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [info, const SizedBox(height: 12), action],
-              )
-            : Row(
-                children: [
-                  Expanded(child: info),
-                  const SizedBox(width: 18),
-                  action,
-                ],
-              );
-      },
+            ],
+          );
+          final action = OutlinedButton.icon(
+            onPressed: onEdit,
+            icon: const Icon(Icons.edit_outlined, size: 18),
+            label: const Text('Chỉnh phí'),
+          );
+          return compact
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [info, const SizedBox(height: 12), action],
+                )
+              : Row(
+                  children: [
+                    Expanded(child: info),
+                    const SizedBox(width: 18),
+                    action,
+                  ],
+                );
+        },
       ),
     );
   }
@@ -1702,17 +1712,17 @@ class _AnalyticsCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 2),
-          Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 16),
-          child,
-        ],
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 2),
+            Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            child,
+          ],
         ),
       ),
     );
@@ -1943,12 +1953,14 @@ class _EmployeeListState extends State<_EmployeeList> {
     final colors = Theme.of(context).colorScheme;
     final needle = _query.trim().toLowerCase();
     final filtered = widget.employees.where((item) {
-      final matchesText = needle.isEmpty || [
-        item['ho_ten'],
-        item['email'],
-        item['so_dien_thoai'],
-        item['ten_kho'],
-      ].join(' ').toLowerCase().contains(needle);
+      final matchesText =
+          needle.isEmpty ||
+          [
+            item['ho_ten'],
+            item['email'],
+            item['so_dien_thoai'],
+            item['ten_kho'],
+          ].join(' ').toLowerCase().contains(needle);
       final matchesRole = _roleFilter == null || item['vai_tro'] == _roleFilter;
       return matchesText && matchesRole;
     }).toList();
@@ -2032,18 +2044,19 @@ class _EmployeeListState extends State<_EmployeeList> {
         ),
         Expanded(
           child: filtered.isEmpty
-              ? _EmployeeSearchEmpty(onClear: () {
-                  _searchController.clear();
-                  setState(() {
-                    _query = '';
-                    _roleFilter = null;
-                  });
-                })
-              : ListView.builder(
+              ? _EmployeeSearchEmpty(
+                  onClear: () {
+                    _searchController.clear();
+                    setState(() {
+                      _query = '';
+                      _roleFilter = null;
+                    });
+                  },
+                )
+              : _AdminPagedList(
+                  items: filtered,
                   padding: const EdgeInsets.fromLTRB(16, 2, 16, 100),
-                  itemCount: filtered.length,
-                  itemBuilder: (_, index) {
-                    final item = filtered[index];
+                  itemBuilder: (_, item) {
                     final pending = item['trang_thai_duyet'] == 'CHO_DUYET';
                     final locked = item['trang_thai'] != 'HOAT_DONG';
                     final name = '${item['ho_ten'] ?? ''}'.trim();
@@ -2053,7 +2066,9 @@ class _EmployeeListState extends State<_EmployeeList> {
                       child: ListTile(
                         leading: CircleAvatar(
                           child: Text(
-                            name.isEmpty ? '?' : name.substring(0, 1).toUpperCase(),
+                            name.isEmpty
+                                ? '?'
+                                : name.substring(0, 1).toUpperCase(),
                           ),
                         ),
                         title: Text(
@@ -2081,7 +2096,9 @@ class _EmployeeListState extends State<_EmployeeList> {
                               ),
                             PopupMenuItem(
                               value: locked ? 'unlock' : 'lock',
-                              child: Text(locked ? 'Mở khóa' : 'Khóa tài khoản'),
+                              child: Text(
+                                locked ? 'Mở khóa' : 'Khóa tài khoản',
+                              ),
                             ),
                           ],
                         ),
@@ -2130,11 +2147,10 @@ class _CustomerList extends StatelessWidget {
   final List<Map<String, dynamic>> customers;
 
   @override
-  Widget build(BuildContext context) => ListView.builder(
+  Widget build(BuildContext context) => _AdminPagedList(
+    items: customers,
     padding: const EdgeInsets.all(16),
-    itemCount: customers.length,
-    itemBuilder: (_, index) {
-      final item = customers[index];
+    itemBuilder: (_, item) {
       return Card(
         color: Theme.of(context).colorScheme.surfaceContainerLow,
         margin: const EdgeInsets.only(bottom: 10),
@@ -2192,21 +2208,24 @@ class _OrderListState extends State<_OrderList> {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final needle = _query.trim().toLowerCase();
-    final filtered = widget.orders.where((item) {
-      if (needle.isEmpty) return true;
-      final searchable = [
-        item['ma_van_don'],
-        item['khach_hang_ten'],
-        item['nguoi_gui_dia_chi'],
-        item['nguoi_nhan_ten'],
-        item['nguoi_nhan_dia_chi'],
-        item['shipper_ten'],
-        item['trang_thai'],
-      ].join(' ').toLowerCase();
-      return searchable.contains(needle);
-    }).where((item) {
-      return _statusFilter == null || item['trang_thai'] == _statusFilter;
-    }).toList();
+    final filtered = widget.orders
+        .where((item) {
+          if (needle.isEmpty) return true;
+          final searchable = [
+            item['ma_van_don'],
+            item['khach_hang_ten'],
+            item['nguoi_gui_dia_chi'],
+            item['nguoi_nhan_ten'],
+            item['nguoi_nhan_dia_chi'],
+            item['shipper_ten'],
+            item['trang_thai'],
+          ].join(' ').toLowerCase();
+          return searchable.contains(needle);
+        })
+        .where((item) {
+          return _statusFilter == null || item['trang_thai'] == _statusFilter;
+        })
+        .toList();
 
     return Column(
       children: [
@@ -2274,12 +2293,13 @@ class _OrderListState extends State<_OrderList> {
                   (status) => ChoiceChip(
                     label: Text(_orderStatusLabel(status)),
                     selected: _statusFilter == status,
-                    selectedColor: _orderStatusColor(status).withValues(
-                      alpha: .18,
-                    ),
+                    selectedColor: _orderStatusColor(
+                      status,
+                    ).withValues(alpha: .18),
                     onSelected: (_) => setState(
-                      () => _statusFilter =
-                          _statusFilter == status ? null : status,
+                      () => _statusFilter = _statusFilter == status
+                          ? null
+                          : status,
                     ),
                   ),
                 ),
@@ -2289,18 +2309,19 @@ class _OrderListState extends State<_OrderList> {
         ),
         Expanded(
           child: filtered.isEmpty
-              ? _OrderSearchEmpty(onClear: () {
-                  _searchController.clear();
-                  setState(() {
-                    _query = '';
-                    _statusFilter = null;
-                  });
-                })
-              : ListView.builder(
+              ? _OrderSearchEmpty(
+                  onClear: () {
+                    _searchController.clear();
+                    setState(() {
+                      _query = '';
+                      _statusFilter = null;
+                    });
+                  },
+                )
+              : _AdminPagedList(
+                  items: filtered,
                   padding: const EdgeInsets.fromLTRB(16, 2, 16, 16),
-                  itemCount: filtered.length,
-                  itemBuilder: (_, index) {
-                    final item = filtered[index];
+                  itemBuilder: (_, item) {
                     return Card(
                       color: Theme.of(context).colorScheme.surfaceContainerLow,
                       child: ListTile(
@@ -2331,7 +2352,9 @@ class _OrderListState extends State<_OrderList> {
                                   ),
                                   Text(
                                     '${item['shipper_ten'] ?? 'Chưa có shipper'}',
-                                    style: Theme.of(context).textTheme.bodySmall,
+                                    style: Theme.of(
+                                      context,
+                                    ).textTheme.bodySmall,
                                   ),
                                 ],
                               ),
@@ -2371,10 +2394,8 @@ class _OrderListState extends State<_OrderList> {
     if (id == null) return;
     showDialog<void>(
       context: context,
-      builder: (_) => _AdminOrderTimelineDialog(
-        order: order,
-        service: widget.service,
-      ),
+      builder: (_) =>
+          _AdminOrderTimelineDialog(order: order, service: widget.service),
     );
   }
 }
@@ -2490,9 +2511,8 @@ class _AdminOrderTimelineDialogState extends State<_AdminOrderTimelineDialog> {
       padding: const EdgeInsets.fromLTRB(22, 20, 22, 24),
       itemCount: _events.length,
       separatorBuilder: (_, _) => const SizedBox(height: 4),
-      itemBuilder: (context, index) => _OrderTimelineEvent(
-        event: _events[index],
-      ),
+      itemBuilder: (context, index) =>
+          _OrderTimelineEvent(event: _events[index]),
     );
   }
 
@@ -2512,9 +2532,9 @@ class _AdminOrderTimelineDialogState extends State<_AdminOrderTimelineDialog> {
             children: [
               Text(
                 'Nhật ký đơn ${widget.order['ma_van_don']}',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 3),
               Text(
@@ -2569,7 +2589,8 @@ class _OrderTimelineEvent extends StatelessWidget {
       if (warehouse.isNotEmpty)
         _TimelineInfo(
           icon: Icons.warehouse_outlined,
-          label: '$warehouse${warehouseCode.isEmpty ? '' : ' · $warehouseCode'}',
+          label:
+              '$warehouse${warehouseCode.isEmpty ? '' : ' · $warehouseCode'}',
         ),
       if (trip.isNotEmpty)
         _TimelineInfo(
@@ -2701,7 +2722,11 @@ class _TimelineError extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.error_outline_rounded, color: AppColors.error, size: 48),
+          const Icon(
+            Icons.error_outline_rounded,
+            color: AppColors.error,
+            size: 48,
+          ),
           const SizedBox(height: 12),
           Text(message, textAlign: TextAlign.center),
           const SizedBox(height: 16),
@@ -2746,8 +2771,10 @@ Color _orderStatusColor(String status) => switch (status) {
   'DA_GIAO_HANG' || 'HOAN_THANH' => AppColors.success,
   'DA_HUY' || 'GIAO_HANG_THAT_BAI' || 'HOAN_HANG' => AppColors.error,
   'DANG_GIAO_HANG' || 'DANG_VAN_CHUYEN' || 'GIAO_CHO_SHIPPER' => AppColors.info,
-  'CHO_XAC_NHAN' || 'CHO_LAY_HANG' || 'DA_LAY_HANG' || 'DA_XEP_HANG' =>
-    AppColors.warning,
+  'CHO_XAC_NHAN' ||
+  'CHO_LAY_HANG' ||
+  'DA_LAY_HANG' ||
+  'DA_XEP_HANG' => AppColors.warning,
   'DEN_KHO_TRUNG_CHUYEN' || 'DEN_KHO_DICH' => const Color(0xFF7165D8),
   _ => const Color(0xFF6B7A7B),
 };
@@ -2792,11 +2819,11 @@ class _TransportIncidentList extends StatelessWidget {
               Center(child: Text('Chưa có báo cáo sự cố vận chuyển')),
             ],
           )
-        : ListView.builder(
+        : _AdminPagedList(
+            items: incidents,
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-            itemCount: incidents.length,
-            itemBuilder: (context, index) => _TransportIncidentCard(
-              incident: incidents[index],
+            itemBuilder: (context, incident) => _TransportIncidentCard(
+              incident: incident,
               onProcess: onProcess,
             ),
           ),
@@ -2957,7 +2984,9 @@ class _WalletRequestList extends StatefulWidget {
 }
 
 class _WalletRequestListState extends State<_WalletRequestList> {
+  static const _pageSize = 10;
   String? _status = 'CHO_DUYET';
+  int _page = 0;
 
   @override
   Widget build(BuildContext context) {
@@ -2968,6 +2997,14 @@ class _WalletRequestListState extends State<_WalletRequestList> {
     final pending = widget.requests
         .where((item) => item['trang_thai'] == 'CHO_DUYET')
         .length;
+    final totalPages = requests.isEmpty
+        ? 1
+        : (requests.length / _pageSize).ceil();
+    final page = _page.clamp(0, totalPages - 1);
+    final pageRequests = requests
+        .skip(page * _pageSize)
+        .take(_pageSize)
+        .toList();
 
     return RefreshIndicator(
       onRefresh: widget.onRefresh,
@@ -3053,10 +3090,26 @@ class _WalletRequestListState extends State<_WalletRequestList> {
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
               sliver: SliverList.builder(
-                itemCount: requests.length,
+                itemCount: pageRequests.length,
                 itemBuilder: (_, index) => _WalletRequestCard(
-                  request: requests[index],
+                  request: pageRequests[index],
                   onProcess: widget.onProcess,
+                ),
+              ),
+            ),
+          if (totalPages > 1)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 100),
+                child: _AdminPaginationControls(
+                  page: page,
+                  totalPages: totalPages,
+                  onPrevious: page == 0
+                      ? null
+                      : () => setState(() => _page = page - 1),
+                  onNext: page >= totalPages - 1
+                      ? null
+                      : () => setState(() => _page = page + 1),
                 ),
               ),
             ),
@@ -3072,6 +3125,7 @@ class _WalletRequestListState extends State<_WalletRequestList> {
       selected: selected,
       onSelected: (_) => setState(() {
         _status = value;
+        _page = 0;
       }),
     );
   }
@@ -3524,11 +3578,10 @@ class _WarehouseList extends StatelessWidget {
         ),
       );
     }
-    return ListView.builder(
+    return _AdminPagedList(
+      items: warehouses,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-      itemCount: warehouses.length,
-      itemBuilder: (_, index) {
-        final item = warehouses[index];
+      itemBuilder: (_, item) {
         final level = (item['cap_kho'] as num?)?.toInt() ?? 1;
         final color = level == 1 ? AppColors.primary : Colors.blue;
         return Card(
@@ -4094,6 +4147,318 @@ class _CreateEmployeeDialogState extends State<_CreateEmployeeDialog> {
       (item) => (item['id'] as num).toInt() == _warehouseId,
     );
     return '${warehouse['phuong_xa'] ?? ''}, ${warehouse['tinh_thanh'] ?? ''}';
+  }
+}
+
+class _AdminPaginationControls extends StatelessWidget {
+  const _AdminPaginationControls({
+    required this.page,
+    required this.totalPages,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int page;
+  final int totalPages;
+  final VoidCallback? onPrevious;
+  final VoidCallback? onNext;
+
+  @override
+  Widget build(BuildContext context) => Row(
+    mainAxisAlignment: MainAxisAlignment.center,
+    children: [
+      OutlinedButton.icon(
+        onPressed: onPrevious,
+        icon: const Icon(Icons.chevron_left_rounded),
+        label: const Text('Trước'),
+      ),
+      Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Text('Trang ${page + 1}/$totalPages'),
+      ),
+      FilledButton.icon(
+        onPressed: onNext,
+        icon: const Icon(Icons.chevron_right_rounded),
+        label: const Text('Sau'),
+      ),
+    ],
+  );
+}
+
+class _AdminPagedList extends StatefulWidget {
+  const _AdminPagedList({
+    required this.items,
+    required this.itemBuilder,
+    required this.padding,
+  });
+
+  final List<Map<String, dynamic>> items;
+  final Widget Function(BuildContext context, Map<String, dynamic> item)
+  itemBuilder;
+  final EdgeInsets padding;
+
+  @override
+  State<_AdminPagedList> createState() => _AdminPagedListState();
+}
+
+class _AdminPagedListState extends State<_AdminPagedList> {
+  static const _pageSize = 15;
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final pages = widget.items.isEmpty
+        ? 1
+        : (widget.items.length / _pageSize).ceil();
+    final page = _page.clamp(0, pages - 1);
+    final visible = widget.items
+        .skip(page * _pageSize)
+        .take(_pageSize)
+        .toList();
+    return ListView.builder(
+      padding: widget.padding,
+      itemCount: visible.length + (pages > 1 ? 1 : 0),
+      itemBuilder: (context, index) {
+        if (index < visible.length) {
+          return widget.itemBuilder(context, visible[index]);
+        }
+        return Padding(
+          padding: const EdgeInsets.only(top: 8, bottom: 12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: page == 0
+                    ? null
+                    : () => setState(() => _page = page - 1),
+                icon: const Icon(Icons.chevron_left_rounded),
+                label: const Text('Trước'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Text('Trang ${page + 1}/$pages'),
+              ),
+              FilledButton.icon(
+                onPressed: page >= pages - 1
+                    ? null
+                    : () => setState(() => _page = page + 1),
+                icon: const Icon(Icons.chevron_right_rounded),
+                label: const Text('Sau'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AdminRatingList extends StatefulWidget {
+  const _AdminRatingList({required this.ratings});
+
+  final List<Map<String, dynamic>> ratings;
+
+  @override
+  State<_AdminRatingList> createState() => _AdminRatingListState();
+}
+
+class _AdminRatingListState extends State<_AdminRatingList> {
+  static const _pageSize = 10;
+  String _query = '';
+  int? _score;
+  int _page = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    final normalized = _query.trim().toLowerCase();
+    final items = widget.ratings.where((rating) {
+      final matchesScore = _score == null || rating['diem_danh_gia'] == _score;
+      final haystack = [
+        rating['ma_van_don'],
+        rating['khach_hang_ten'],
+        rating['shipper_ten'],
+        rating['binh_luan'],
+      ].join(' ').toLowerCase();
+      return matchesScore &&
+          (normalized.isEmpty || haystack.contains(normalized));
+    }).toList();
+    final average = widget.ratings.isEmpty
+        ? 0.0
+        : widget.ratings.fold<num>(
+                0,
+                (sum, item) => sum + ((item['diem_danh_gia'] as num?) ?? 0),
+              ) /
+              widget.ratings.length;
+    final totalPages = items.isEmpty ? 1 : (items.length / _pageSize).ceil();
+    final page = _page.clamp(0, totalPages - 1);
+    final pageItems = items.skip(page * _pageSize).take(_pageSize).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 110),
+      children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: AppColors.primary10,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.star_rounded,
+                color: Color(0xFFFFA000),
+                size: 42,
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      average.toStringAsFixed(1),
+                      style: const TextStyle(
+                        fontSize: 30,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    Text(
+                      '${widget.ratings.length} lượt đánh giá từ khách hàng',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 18),
+        TextField(
+          onChanged: (value) => setState(() {
+            _query = value;
+            _page = 0;
+          }),
+          decoration: const InputDecoration(
+            prefixIcon: Icon(Icons.search_rounded),
+            hintText: 'Tìm mã đơn, khách hàng, shipper hoặc nhận xét...',
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ChoiceChip(
+              label: const Text('Tất cả'),
+              selected: _score == null,
+              onSelected: (_) => setState(() {
+                _score = null;
+                _page = 0;
+              }),
+            ),
+            for (var score = 5; score >= 1; score--)
+              ChoiceChip(
+                label: Text('$score sao'),
+                selected: _score == score,
+                onSelected: (_) => setState(() {
+                  _score = score;
+                  _page = 0;
+                }),
+              ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        Text(
+          '${items.length} đánh giá',
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 10),
+        if (items.isEmpty)
+          const Padding(
+            padding: EdgeInsets.all(48),
+            child: Center(child: Text('Chưa có đánh giá phù hợp.')),
+          )
+        else
+          ...pageItems.map((rating) => _RatingCard(rating: rating)),
+        if (items.length > _pageSize) ...[
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              OutlinedButton.icon(
+                onPressed: page == 0
+                    ? null
+                    : () => setState(() => _page = page - 1),
+                icon: const Icon(Icons.chevron_left_rounded),
+                label: const Text('Trước'),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Text('Trang ${page + 1}/$totalPages'),
+              ),
+              FilledButton.icon(
+                onPressed: page >= totalPages - 1
+                    ? null
+                    : () => setState(() => _page = page + 1),
+                icon: const Icon(Icons.chevron_right_rounded),
+                label: const Text('Sau'),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _RatingCard extends StatelessWidget {
+  const _RatingCard({required this.rating});
+  final Map<String, dynamic> rating;
+
+  @override
+  Widget build(BuildContext context) {
+    final score = (rating['diem_danh_gia'] as num?)?.toInt() ?? 0;
+    final note = '${rating['binh_luan'] ?? ''}'.trim();
+    return Card(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    '${rating['shipper_ten'] ?? 'Chưa xác định shipper'}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                ),
+                ...List.generate(
+                  5,
+                  (index) => Icon(
+                    index < score
+                        ? Icons.star_rounded
+                        : Icons.star_border_rounded,
+                    color: const Color(0xFFFFA000),
+                    size: 19,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 5),
+            Text(
+              '${rating['khach_hang_ten'] ?? 'Khách hàng'} · ${rating['ma_van_don'] ?? ''}',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            if (note.isNotEmpty) ...[const SizedBox(height: 12), Text(note)],
+            const SizedBox(height: 10),
+            Text(
+              _dateTime(rating['ngay_tao']),
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

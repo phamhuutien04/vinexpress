@@ -202,14 +202,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                         ),
                       ),
                     const SizedBox(height: 30),
-                    const CustomerSectionHeader(title: 'Truy cập nhanh'),
-                    const SizedBox(height: 12),
-                    _QuickActions(
-                      onOrders: () => _openHistory(context),
-                      onWallet: () => _openWallet(context),
-                      onAccount: () => _openAccount(context),
-                    ),
-                    const SizedBox(height: 30),
                     CustomerSectionHeader(
                       title: 'Đơn gần đây',
                       actionLabel: _recentOrders.isEmpty ? null : 'Xem tất cả',
@@ -347,10 +339,6 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       _historyStatuses = statuses;
       _selectedTab = 1;
     });
-  }
-
-  void _openWallet(BuildContext context) {
-    setState(() => _selectedTab = 2);
   }
 
   void _openAccount(BuildContext context) {
@@ -593,43 +581,54 @@ class _OrderOverview extends StatelessWidget {
   final VoidCallback onDelivered;
 
   @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Container(
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-      ),
-      child: Column(
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 330;
+      final tiles = [
+        _StatusTile(
+          icon: Icons.inventory_2_outlined,
+          title: 'Chờ lấy hàng',
+          value: waiting,
+          color: const Color(0xFFFF9500),
+          onTap: onWaiting,
+        ),
+        _StatusTile(
+          icon: Icons.local_shipping_outlined,
+          title: 'Đang vận chuyển',
+          value: delivering,
+          color: AppColors.primary,
+          onTap: onDelivering,
+        ),
+        _StatusTile(
+          icon: Icons.check_circle_outline_rounded,
+          title: 'Đã giao',
+          value: delivered,
+          color: const Color(0xFF34C759),
+          onTap: onDelivered,
+        ),
+      ];
+      if (compact) {
+        return Column(
+          children: [
+            tiles[0],
+            const SizedBox(height: 10),
+            tiles[1],
+            const SizedBox(height: 10),
+            tiles[2],
+          ],
+        );
+      }
+      return Row(
         children: [
-          _StatusTile(
-            icon: Icons.inventory_2_outlined,
-            title: 'Chờ lấy hàng',
-            value: waiting,
-            color: const Color(0xFFFF9500),
-            onTap: onWaiting,
-          ),
-          _CustomerDivider(),
-          _StatusTile(
-            icon: Icons.local_shipping_outlined,
-            title: 'Đang vận chuyển',
-            value: delivering,
-            color: AppColors.primary,
-            onTap: onDelivering,
-          ),
-          _CustomerDivider(),
-          _StatusTile(
-            icon: Icons.check_circle_outline_rounded,
-            title: 'Đã giao',
-            value: delivered,
-            color: const Color(0xFF34C759),
-            onTap: onDelivered,
-          ),
+          Expanded(child: tiles[0]),
+          const SizedBox(width: 10),
+          Expanded(child: tiles[1]),
+          const SizedBox(width: 10),
+          Expanded(child: tiles[2]),
         ],
-      ),
-    );
-  }
+      );
+    },
+  );
 }
 
 class _StatusTile extends StatelessWidget {
@@ -651,45 +650,57 @@ class _StatusTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     return Material(
-      color: Colors.transparent,
+      color: colors.surfaceContainerLow,
+      borderRadius: BorderRadius.circular(16),
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          constraints: const BoxConstraints.tightFor(height: 128),
+          padding: const EdgeInsets.all(13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: .22)),
+          ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(11),
-                ),
-                child: Icon(icon, color: color, size: 21),
-              ),
-              const SizedBox(width: 14),
               Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    color: colors.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      width: 34,
+                      height: 34,
+                      decoration: BoxDecoration(
+                        color: color.withValues(alpha: .12),
+                        borderRadius: BorderRadius.circular(11),
+                      ),
+                      child: Icon(icon, color: color, size: 19),
+                    ),
+                    const Spacer(),
+                    Text(
+                      '$value',
+                      style: TextStyle(
+                        color: colors.onSurface,
+                        fontSize: 25,
+                        height: 1,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              Text(
-                '$value',
-                style: TextStyle(
-                  color: color,
-                  fontSize: 17,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                size: 16,
-                color: colors.onSurfaceVariant,
               ),
             ],
           ),
@@ -708,132 +719,6 @@ class _CustomerDivider extends StatelessWidget {
     indent: 68,
     color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6),
   );
-}
-
-class _QuickActions extends StatelessWidget {
-  const _QuickActions({
-    required this.onOrders,
-    required this.onWallet,
-    required this.onAccount,
-  });
-
-  final VoidCallback onOrders;
-  final VoidCallback onWallet;
-  final VoidCallback onAccount;
-
-  @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final actions = [
-        _QuickAction(
-          icon: Icons.receipt_long_outlined,
-          label: 'Đơn hàng',
-          caption: 'Xem đơn đã tạo',
-          onTap: onOrders,
-        ),
-        _QuickAction(
-          icon: Icons.account_balance_wallet_outlined,
-          label: 'Ví của tôi',
-          caption: 'Nạp và quản lý ví',
-          onTap: onWallet,
-        ),
-        _QuickAction(
-          icon: Icons.manage_accounts_outlined,
-          label: 'Tài khoản',
-          caption: 'Thông tin cá nhân',
-          onTap: onAccount,
-        ),
-      ];
-      final columns = constraints.maxWidth >= 720
-          ? 3
-          : constraints.maxWidth >= 440
-          ? 2
-          : 1;
-      return GridView.count(
-        crossAxisCount: columns,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: columns == 1 ? 4.2 : 1.85,
-        children: actions,
-      );
-    },
-  );
-}
-
-class _QuickAction extends StatelessWidget {
-  const _QuickAction({
-    required this.icon,
-    required this.label,
-    required this.caption,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final String caption;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Material(
-      color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(18),
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.primary10,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: AppColors.primary),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      caption,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: colors.onSurfaceVariant,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Icon(
-                Icons.arrow_forward_rounded,
-                size: 15,
-                color: colors.onSurfaceVariant,
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _RecentOrders extends StatelessWidget {
