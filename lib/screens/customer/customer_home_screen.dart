@@ -93,17 +93,29 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
       appBar: AppBar(
         toolbarHeight: 68,
         titleSpacing: 16,
-        title: const Row(
+        title: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            _BrandMark(),
-            SizedBox(width: 10),
-            Text(
-              'VinExpress',
-              style: TextStyle(
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.4,
-              ),
+            const _BrandMark(),
+            const SizedBox(width: 10),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Text(
+                  'VinExpress',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.4,
+                  ),
+                ),
+                Text(
+                  'Giao hàng mọi nơi',
+                  style: theme.textTheme.labelSmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -137,7 +149,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
                       name: displayName,
                       onCreateOrder: () => _openCreateOrder(context),
                     ),
-                    const SizedBox(height: 18),
+                    const SizedBox(height: 14),
                     _TrackingPanel(
                       onTrack: (code) => _trackOrder(context, code),
                     ),
@@ -378,82 +390,118 @@ class _CustomerHero extends StatelessWidget {
   final VoidCallback onCreateOrder;
 
   @override
-  Widget build(BuildContext context) => Container(
-    padding: const EdgeInsets.all(24),
-    decoration: BoxDecoration(
-      color: const Color(0xFF143B38),
-      borderRadius: BorderRadius.circular(24),
-      boxShadow: [
-        BoxShadow(
-          color: const Color(0xFF143B38).withValues(alpha: 0.18),
-          blurRadius: 28,
-          offset: const Offset(0, 12),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 560;
+      return Container(
+        height: compact ? 330 : 270,
+        clipBehavior: Clip.antiAlias,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.primary.withValues(alpha: 0.2),
+              blurRadius: 28,
+              offset: const Offset(0, 13),
+            ),
+          ],
         ),
-      ],
-    ),
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final compact = constraints.maxWidth < 650;
-        final copy = Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            Text(
-              'Xin chào, $name',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Color(0xFF9EDBD3), fontSize: 14),
+            Image.asset(
+              'assets/customer/hero_courier.jpg',
+              fit: BoxFit.cover,
+              alignment: compact ? Alignment.centerRight : Alignment.center,
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Gửi hàng nhanh, theo dõi rõ ràng.',
-              style: TextStyle(
-                color: Color(0xFFF4FAF9),
-                fontSize: 27,
-                height: 1.12,
-                letterSpacing: -0.7,
-                fontWeight: FontWeight.w800,
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [Color(0xF5007669), Color(0xA300BFA5)],
+                  stops: [0.12, 1],
+                ),
               ),
             ),
-            const SizedBox(height: 9),
-            const Text(
-              'Tạo đơn và kiểm tra hành trình trong cùng một nơi.',
-              style: TextStyle(color: Color(0xFFD3E5E2), height: 1.4),
-            ),
-          ],
-        );
-        final action = SizedBox(
-          height: 50,
-          child: FilledButton.icon(
-            onPressed: onCreateOrder,
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(CustomerUi.controlRadius),
+            Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.16),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.32),
+                      ),
+                    ),
+                    child: Text(
+                      'Xin chào, $name',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const SizedBox(
+                    width: 280,
+                    child: Text(
+                      'Giao tận nơi,\ntrọn vẹn niềm tin.',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 30,
+                        height: 1.07,
+                        letterSpacing: -0.8,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: 264,
+                    child: Text(
+                      'Tạo đơn trong vài bước. Theo dõi hành trình mọi lúc.',
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.9),
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  FilledButton.icon(
+                    onPressed: onCreateOrder,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: const Color(0xFF007E70),
+                      minimumSize: const Size(156, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text(
+                      'Tạo đơn mới',
+                      style: TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
               ),
             ),
-            icon: const Icon(Icons.add_rounded),
-            label: const Text(
-              'Tạo đơn mới',
-              style: TextStyle(fontWeight: FontWeight.w800),
-            ),
-          ),
-        );
-        if (compact) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [copy, const SizedBox(height: 20), action],
-          );
-        }
-        return Row(
-          children: [
-            Expanded(child: copy),
-            const SizedBox(width: 32),
-            SizedBox(width: 190, child: action),
           ],
-        );
-      },
-    ),
+        ),
+      );
+    },
   );
 }
 
@@ -495,7 +543,14 @@ class _TrackingPanelState extends State<_TrackingPanel> {
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 4),
+          Text(
+            'Xem hành trình đơn hàng của bạn',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 14),
           TextField(
             controller: _controller,
             textCapitalization: TextCapitalization.characters,
@@ -538,65 +593,43 @@ class _OrderOverview extends StatelessWidget {
   final VoidCallback onDelivered;
 
   @override
-  Widget build(BuildContext context) => LayoutBuilder(
-    builder: (context, constraints) {
-      final wide = constraints.maxWidth >= 680;
-      final active = _StatusTile(
-        icon: Icons.local_shipping_outlined,
-        title: 'Đang vận chuyển',
-        value: delivering,
-        accent: true,
-        onTap: onDelivering,
-      );
-      final waitingTile = _StatusTile(
-        icon: Icons.inventory_2_outlined,
-        title: 'Chờ lấy hàng',
-        value: waiting,
-        onTap: onWaiting,
-      );
-      final deliveredTile = _StatusTile(
-        icon: Icons.check_circle_outline_rounded,
-        title: 'Đã giao',
-        value: delivered,
-        onTap: onDelivered,
-      );
-      if (!wide) {
-        return Column(
-          children: [
-            active,
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(child: waitingTile),
-                const SizedBox(width: 10),
-                Expanded(child: deliveredTile),
-              ],
-            ),
-          ],
-        );
-      }
-      return SizedBox(
-        height: 210,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(flex: 7, child: active),
-            const SizedBox(width: 12),
-            Expanded(
-              flex: 5,
-              child: Column(
-                children: [
-                  Expanded(child: waitingTile),
-                  const SizedBox(height: 12),
-                  Expanded(child: deliveredTile),
-                ],
-              ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          _StatusTile(
+            icon: Icons.inventory_2_outlined,
+            title: 'Chờ lấy hàng',
+            value: waiting,
+            color: const Color(0xFFFF9500),
+            onTap: onWaiting,
+          ),
+          _CustomerDivider(),
+          _StatusTile(
+            icon: Icons.local_shipping_outlined,
+            title: 'Đang vận chuyển',
+            value: delivering,
+            color: AppColors.primary,
+            onTap: onDelivering,
+          ),
+          _CustomerDivider(),
+          _StatusTile(
+            icon: Icons.check_circle_outline_rounded,
+            title: 'Đã giao',
+            value: delivered,
+            color: const Color(0xFF34C759),
+            onTap: onDelivered,
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _StatusTile extends StatelessWidget {
@@ -605,83 +638,58 @@ class _StatusTile extends StatelessWidget {
     required this.title,
     required this.value,
     required this.onTap,
-    this.accent = false,
+    required this.color,
   });
 
   final IconData icon;
   final String title;
   final int value;
   final VoidCallback onTap;
-  final bool accent;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
-    final background = accent ? AppColors.primary : colors.surfaceContainerLow;
-    final foreground = accent ? Colors.white : colors.onSurface;
     return Material(
-      color: background,
-      borderRadius: BorderRadius.circular(CustomerUi.surfaceRadius),
-      clipBehavior: Clip.antiAlias,
+      color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(CustomerUi.surfaceRadius),
-            border: accent ? null : Border.all(color: colors.outlineVariant),
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
           child: Row(
             children: [
               Container(
-                width: 48,
-                height: 48,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
-                  color: accent
-                      ? Colors.white.withValues(alpha: 0.18)
-                      : AppColors.primary10,
-                  borderRadius: BorderRadius.circular(15),
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(11),
                 ),
-                child: Icon(
-                  icon,
-                  color: accent ? Colors.white : AppColors.primary,
-                ),
+                child: Icon(icon, color: color, size: 21),
               ),
               const SizedBox(width: 14),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text(
-                      '$value',
-                      style: TextStyle(
-                        color: foreground,
-                        fontSize: accent ? 30 : 23,
-                        height: 1,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: accent
-                            ? Colors.white.withValues(alpha: 0.9)
-                            : colors.onSurfaceVariant,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ],
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: colors.onSurface,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
+              Text(
+                '$value',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(width: 8),
               Icon(
                 Icons.chevron_right_rounded,
-                color: accent
-                    ? Colors.white.withValues(alpha: 0.8)
-                    : colors.onSurfaceVariant,
+                size: 16,
+                color: colors.onSurfaceVariant,
               ),
             ],
           ),
@@ -689,6 +697,17 @@ class _StatusTile extends StatelessWidget {
       ),
     );
   }
+}
+
+class _CustomerDivider extends StatelessWidget {
+  const _CustomerDivider();
+
+  @override
+  Widget build(BuildContext context) => Divider(
+    height: 1,
+    indent: 68,
+    color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.6),
+  );
 }
 
 class _QuickActions extends StatelessWidget {
@@ -703,33 +722,43 @@ class _QuickActions extends StatelessWidget {
   final VoidCallback onAccount;
 
   @override
-  Widget build(BuildContext context) => CustomerPanel(
-    padding: EdgeInsets.zero,
-    child: LayoutBuilder(
-      builder: (context, constraints) {
-        final actions = [
-          _QuickAction(
-            icon: Icons.receipt_long_outlined,
-            label: 'Đơn hàng',
-            onTap: onOrders,
-          ),
-          _QuickAction(
-            icon: Icons.account_balance_wallet_outlined,
-            label: 'Ví của tôi',
-            onTap: onWallet,
-          ),
-          _QuickAction(
-            icon: Icons.manage_accounts_outlined,
-            label: 'Tài khoản',
-            onTap: onAccount,
-          ),
-        ];
-        if (constraints.maxWidth < 520) return Column(children: actions);
-        return Row(
-          children: actions.map((action) => Expanded(child: action)).toList(),
-        );
-      },
-    ),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final actions = [
+        _QuickAction(
+          icon: Icons.receipt_long_outlined,
+          label: 'Đơn hàng',
+          caption: 'Xem đơn đã tạo',
+          onTap: onOrders,
+        ),
+        _QuickAction(
+          icon: Icons.account_balance_wallet_outlined,
+          label: 'Ví của tôi',
+          caption: 'Nạp và quản lý ví',
+          onTap: onWallet,
+        ),
+        _QuickAction(
+          icon: Icons.manage_accounts_outlined,
+          label: 'Tài khoản',
+          caption: 'Thông tin cá nhân',
+          onTap: onAccount,
+        ),
+      ];
+      final columns = constraints.maxWidth >= 720
+          ? 3
+          : constraints.maxWidth >= 440
+          ? 2
+          : 1;
+      return GridView.count(
+        crossAxisCount: columns,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: columns == 1 ? 4.2 : 1.85,
+        children: actions,
+      );
+    },
   );
 }
 
@@ -737,36 +766,74 @@ class _QuickAction extends StatelessWidget {
   const _QuickAction({
     required this.icon,
     required this.label,
+    required this.caption,
     required this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final String caption;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: onTap,
-    borderRadius: BorderRadius.circular(CustomerUi.surfaceRadius),
-    child: Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(icon, color: AppColors.primary),
-          const SizedBox(width: 9),
-          Flexible(
-            child: Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontWeight: FontWeight.w700),
-            ),
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Material(
+      color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      borderRadius: BorderRadius.circular(18),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.primary10,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, color: AppColors.primary),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      caption,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_rounded,
+                size: 15,
+                color: colors.onSurfaceVariant,
+              ),
+            ],
           ),
-        ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _RecentOrders extends StatelessWidget {
@@ -775,22 +842,24 @@ class _RecentOrders extends StatelessWidget {
   final List<Map<String, dynamic>> orders;
 
   @override
-  Widget build(BuildContext context) => CustomerPanel(
-    padding: EdgeInsets.zero,
-    child: Column(
-      children: [
-        for (var index = 0; index < orders.length; index++) ...[
-          _RecentOrderRow(order: orders[index]),
-          if (index < orders.length - 1)
-            Divider(
-              height: 1,
-              indent: 72,
-              color: Theme.of(context).colorScheme.outlineVariant,
-            ),
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Container(
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        children: [
+          for (var index = 0; index < orders.length; index++) ...[
+            _RecentOrderRow(order: orders[index]),
+            if (index < orders.length - 1) const _CustomerDivider(),
+          ],
         ],
-      ],
-    ),
-  );
+      ),
+    );
+  }
 }
 
 class _RecentOrderRow extends StatelessWidget {
@@ -813,7 +882,7 @@ class _RecentOrderRow extends StatelessWidget {
     }.contains(statusValue);
     final colors = Theme.of(context).colorScheme;
     return InkWell(
-      borderRadius: BorderRadius.circular(CustomerUi.surfaceRadius),
+      borderRadius: BorderRadius.circular(18),
       onTap: canTrack
           ? () => Navigator.of(context).push(
               MaterialPageRoute<void>(
@@ -831,7 +900,7 @@ class _RecentOrderRow extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 color: status.color.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(Icons.inventory_2_outlined, color: status.color),
             ),

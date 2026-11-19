@@ -80,6 +80,7 @@ flutter:
   assets:
     - assets/fonts/NotoSans-Regular.ttf
     - assets/fonts/NotoSans-Bold.ttf
+    - assets/customer/hero_courier.jpg
 
   fonts:
     - family: NotoSans
