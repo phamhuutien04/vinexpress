@@ -59,12 +59,25 @@ class PayosService {
 
   Future<bool> isPaymentCompleted(int orderCode) async {
     try {
+      // Webhook là luồng chính. Nếu PayOS vừa thanh toán nhưng webhook bị chậm,
+      // Edge Function sẽ đối soát trực tiếp với PayOS trước khi trả kết quả.
+      final syncResult = await _client.functions.invoke(
+        'payos-sync-topup',
+        body: {'order_code': orderCode},
+      );
+      final syncData = syncResult.data;
+      if (syncData is Map && syncData['paid'] == true) return true;
+
       final data = await _client.rpc(
         'trang_thai_giao_dich_payos',
         params: {'p_ma_don_payos': orderCode},
       );
       final rows = List<Map<String, dynamic>>.from(data as List);
       return rows.isNotEmpty && rows.first['trang_thai'] == 'DA_THANH_TOAN';
+    } on FunctionException catch (error) {
+      final details = error.details;
+      final message = details is Map ? details['error'] : null;
+      throw PayosServiceException('${message ?? 'Không kiểm tra được thanh toán'}');
     } on PostgrestException catch (error) {
       throw PayosServiceException(error.message);
     }

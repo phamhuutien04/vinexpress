@@ -33,6 +33,11 @@ migrate_working_dir/
 /build/
 /coverage/
 
+# Local secrets (PayOS/Supabase/etc.) must never be committed.
+.env
+.env.*
+!.env.example
+
 # Symbolication related
 app.*.symbols
 

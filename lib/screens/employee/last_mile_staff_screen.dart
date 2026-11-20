@@ -20,6 +20,7 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
   bool _loading = true;
   String? _error;
   List<Map<String, dynamic>> _tasks = [];
+  List<Map<String, dynamic>> _pickupHistory = [];
   final Set<int> _busyOrderIds = {};
   bool _showMyOrders = false;
   int _tabIndex = 0;
@@ -45,7 +46,15 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
     });
     try {
       final tasks = await _service.tasks();
-      if (mounted) setState(() => _tasks = tasks);
+      final history = _pickup
+          ? await _service.pickupHistory()
+          : <Map<String, dynamic>>[];
+      if (mounted) {
+        setState(() {
+          _tasks = tasks;
+          _pickupHistory = history;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -62,6 +71,64 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
         .length;
     final mineCount = _tasks.where((item) => item['da_nhan'] == true).length;
     final visibleTasks = _visibleTasks;
+    final content = _pickup && _tabIndex == 4
+        ? _PickupAccount(
+            employee: employee ?? const <String, dynamic>{},
+            onLogout: _logout,
+          )
+        : _pickup && _tabIndex == 3
+        ? const EmployeeWalletScreen()
+        : _pickup && _tabIndex == 2
+        ? _PickupHistory(
+            orders: _pickupHistory,
+            loading: _loading,
+            onRefresh: _load,
+          )
+        : RefreshIndicator(
+            onRefresh: _load,
+            child: CustomScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _StaffHeader(
+                    employeeName: employeeName,
+                    pickup: _pickup,
+                    availableCount: availableCount,
+                    mineCount: mineCount,
+                  ),
+                ),
+                if (_loading)
+                  const SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (_error != null)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _ErrorState(message: _error!, onRetry: _load),
+                  )
+                else if (visibleTasks.isEmpty)
+                  SliverFillRemaining(
+                    hasScrollBody: false,
+                    child: _EmptyState(
+                      message: _pickup
+                          ? _showMyOrders
+                                ? 'Bạn chưa nhận đơn lấy hàng nào'
+                                : 'Chưa có đơn mới trong khu vực phụ trách'
+                          : 'Hãy quét mã trên kiện hàng tại kho',
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                    sliver: SliverList.builder(
+                      itemCount: visibleTasks.length,
+                      itemBuilder: (_, index) => _taskCard(visibleTasks[index]),
+                    ),
+                  ),
+              ],
+            ),
+          );
     return Scaffold(
       appBar: AppBar(
         title: Text(_pickup ? 'Nhân viên lấy hàng' : 'Nhân viên giao hàng'),
@@ -81,59 +148,71 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
           ),
         ],
       ),
-      body: _pickup && _tabIndex == 3
-          ? _PickupAccount(
-              employee: employee ?? const <String, dynamic>{},
-              onLogout: _logout,
-            )
-          : _pickup && _tabIndex == 2
-          ? const EmployeeWalletScreen()
-          : RefreshIndicator(
-              onRefresh: _load,
-              child: CustomScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                slivers: [
-                  SliverToBoxAdapter(
-                    child: _StaffHeader(
-                      employeeName: employeeName,
-                      pickup: _pickup,
-                      availableCount: availableCount,
-                      mineCount: mineCount,
-                    ),
-                  ),
-                  if (_loading)
-                    const SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: Center(child: CircularProgressIndicator()),
-                    )
-                  else if (_error != null)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _ErrorState(message: _error!, onRetry: _load),
-                    )
-                  else if (visibleTasks.isEmpty)
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _EmptyState(
-                        message: _pickup
-                            ? _showMyOrders
-                                  ? 'Bạn chưa nhận đơn lấy hàng nào'
-                                  : 'Chưa có đơn mới trong khu vực phụ trách'
-                            : 'Hãy quét mã trên kiện hàng tại kho',
-                      ),
-                    )
-                  else
-                    SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
-                      sliver: SliverList.builder(
-                        itemCount: visibleTasks.length,
-                        itemBuilder: (_, index) =>
-                            _taskCard(visibleTasks[index]),
+      drawer: _pickup
+          ? Drawer(
+              child: SafeArea(
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 22, 20, 18),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: AppColors.primary.withValues(
+                              alpha: .14,
+                            ),
+                            child: const Icon(
+                              Icons.delivery_dining_rounded,
+                              color: AppColors.primary,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Text(
+                              'Nhân viên lấy hàng',
+                              style: TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                ],
+                    const Divider(height: 1),
+                    _pickupDrawerItem(
+                      context,
+                      0,
+                      Icons.inventory_2_outlined,
+                      'Đơn mới ($availableCount)',
+                    ),
+                    _pickupDrawerItem(
+                      context,
+                      1,
+                      Icons.delivery_dining_outlined,
+                      'Đơn của tôi ($mineCount)',
+                    ),
+                    _pickupDrawerItem(
+                      context,
+                      2,
+                      Icons.history_outlined,
+                      'Lịch sử',
+                    ),
+                    _pickupDrawerItem(
+                      context,
+                      3,
+                      Icons.account_balance_wallet_outlined,
+                      'Ví',
+                    ),
+                    _pickupDrawerItem(
+                      context,
+                      4,
+                      Icons.person_outline,
+                      'Tài khoản',
+                    ),
+                  ],
+                ),
               ),
-            ),
+            )
+          : null,
+      body: content,
       floatingActionButton: _pickup
           ? null
           : FloatingActionButton.extended(
@@ -141,41 +220,33 @@ class _LastMileStaffScreenState extends State<LastMileStaffScreen> {
               icon: const Icon(Icons.qr_code_scanner),
               label: const Text('Quét kiện tại kho'),
             ),
-      bottomNavigationBar: _pickup
-          ? NavigationBar(
-              selectedIndex: _tabIndex,
-              onDestinationSelected: (index) {
-                setState(() {
-                  _tabIndex = index;
-                  if (index < 2) _showMyOrders = index == 1;
-                });
-              },
-              destinations: [
-                NavigationDestination(
-                  icon: const Icon(Icons.inventory_2_outlined),
-                  selectedIcon: const Icon(Icons.inventory_2),
-                  label: 'Đơn mới ($availableCount)',
-                ),
-                NavigationDestination(
-                  icon: const Icon(Icons.delivery_dining_outlined),
-                  selectedIcon: const Icon(Icons.delivery_dining),
-                  label: 'Đơn của tôi ($mineCount)',
-                ),
-                const NavigationDestination(
-                  icon: Icon(Icons.account_balance_wallet_outlined),
-                  selectedIcon: Icon(Icons.account_balance_wallet),
-                  label: 'Ví',
-                ),
-                const NavigationDestination(
-                  icon: Icon(Icons.person_outline),
-                  selectedIcon: Icon(Icons.person),
-                  label: 'Tài khoản',
-                ),
-              ],
-            )
-          : null,
     );
   }
+
+  Widget _pickupDrawerItem(
+    BuildContext context,
+    int index,
+    IconData icon,
+    String label,
+  ) => ListTile(
+    leading: Icon(icon, color: _tabIndex == index ? AppColors.primary : null),
+    title: Text(
+      label,
+      style: TextStyle(
+        fontWeight: _tabIndex == index ? FontWeight.w700 : FontWeight.w500,
+      ),
+    ),
+    selected: _tabIndex == index,
+    selectedTileColor: AppColors.primary.withValues(alpha: .1),
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    onTap: () {
+      Navigator.of(context).pop();
+      setState(() {
+        _tabIndex = index;
+        if (index < 2) _showMyOrders = index == 1;
+      });
+    },
+  );
 
   Widget _taskCard(Map<String, dynamic> item) {
     final delivering = item['trang_thai'] == 'DANG_GIAO_HANG';
@@ -655,6 +726,68 @@ class _ErrorState extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _PickupHistory extends StatelessWidget {
+  const _PickupHistory({
+    required this.orders,
+    required this.loading,
+    required this.onRefresh,
+  });
+
+  final List<Map<String, dynamic>> orders;
+  final bool loading;
+  final Future<void> Function() onRefresh;
+
+  @override
+  Widget build(BuildContext context) => RefreshIndicator(
+    onRefresh: onRefresh,
+    child: loading
+        ? const Center(child: CircularProgressIndicator())
+        : orders.isEmpty
+        ? ListView(
+            children: const [
+              SizedBox(height: 180),
+              Icon(Icons.history_outlined, size: 56),
+              SizedBox(height: 12),
+              Center(child: Text('Chưa có lịch sử nhận hàng')),
+            ],
+          )
+        : ListView.builder(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+            itemCount: orders.length,
+            itemBuilder: (context, index) {
+              final order = orders[index];
+              return Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                child: ListTile(
+                  leading: const CircleAvatar(
+                    child: Icon(Icons.inventory_2_outlined),
+                  ),
+                  title: Text(
+                    '${order['ma_van_don']}',
+                    style: const TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  subtitle: Text(
+                    '${order['dia_chi'] ?? ''}\nĐã nhận: ${_staffDateTime(order['ngay_lay_hang'])}',
+                  ),
+                  isThreeLine: true,
+                  trailing: const Icon(
+                    Icons.check_circle,
+                    color: AppColors.success,
+                  ),
+                ),
+              );
+            },
+          ),
+  );
+}
+
+String _staffDateTime(dynamic value) {
+  final time = DateTime.tryParse('$value')?.toLocal();
+  if (time == null) return 'Không rõ';
+  String two(int number) => number.toString().padLeft(2, '0');
+  return '${two(time.hour)}:${two(time.minute)} ${two(time.day)}/${two(time.month)}/${time.year}';
 }
 
 class _PickupAccount extends StatelessWidget {

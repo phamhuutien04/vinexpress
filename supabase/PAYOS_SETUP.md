@@ -17,11 +17,12 @@ Mở Supabase SQL Editor, chạy:
 Trong thư mục dự án, cấu hình các giá trị lấy từ Kênh thanh toán trên PayOS:
 
 ```powershell
-supabase secrets set PAYOS_CLIENT_ID="..."
-supabase secrets set PAYOS_API_KEY="..."
-supabase secrets set PAYOS_CHECKSUM_KEY="..."
-supabase secrets set PAYOS_RETURN_URL="https://PROJECT_REF.supabase.co/functions/v1/payos-return"
-supabase secrets set PAYOS_CANCEL_URL="https://PROJECT_REF.supabase.co/functions/v1/payos-return"
+# Không đưa các khóa này vào mã nguồn hoặc file đã commit.
+supabase secrets set PAYOS_CLIENT_ID="<client-id-moi>"
+supabase secrets set PAYOS_API_KEY="<api-key-moi>"
+supabase secrets set PAYOS_CHECKSUM_KEY="<checksum-key-moi>"
+supabase secrets set PAYOS_RETURN_URL="https://klhzughpwbnyffxwcjyx.supabase.co/functions/v1/payos-return"
+supabase secrets set PAYOS_CANCEL_URL="https://klhzughpwbnyffxwcjyx.supabase.co/functions/v1/payos-return"
 ```
 
 `PAYOS_RETURN_URL` và `PAYOS_CANCEL_URL` phải là URL HTTPS công khai của ứng
@@ -34,12 +35,13 @@ xác nhận thanh toán cuối cùng**.
 supabase functions deploy payos-create-topup
 supabase functions deploy payos-webhook --no-verify-jwt
 supabase functions deploy payos-return --no-verify-jwt
+supabase functions deploy payos-sync-topup
 ```
 
 Lấy URL webhook theo mẫu dưới đây, thay `PROJECT_REF` bằng Supabase project ref:
 
 ```text
-https://PROJECT_REF.supabase.co/functions/v1/payos-webhook
+https://klhzughpwbnyffxwcjyx.supabase.co/functions/v1/payos-webhook
 ```
 
 Đăng nhập PayOS, mở Kênh thanh toán và đặt URL này làm webhook. PayOS sẽ gọi

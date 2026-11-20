@@ -9,6 +9,11 @@ class LastMileStaffService {
     return List<Map<String, dynamic>>.from(data as List);
   }
 
+  Future<List<Map<String, dynamic>>> pickupHistory() async {
+    final data = await _client.rpc('nhan_vien_lay_hang_lich_su');
+    return List<Map<String, dynamic>>.from(data as List);
+  }
+
   Future<String> confirm(int orderId) async =>
       '${await _client.rpc('nhan_vien_chang_cuoi_xac_nhan', params: {'p_don_hang_id': orderId})}';
 

@@ -3,3 +3,6 @@ verify_jwt = false
 
 [functions.payos-return]
 verify_jwt = false
+
+[functions.payos-sync-topup]
+verify_jwt = true
