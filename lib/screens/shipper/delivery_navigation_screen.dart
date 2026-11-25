@@ -46,6 +46,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   bool _navigationStarted = false;
   bool _simulating = false;
   bool _simulatedThisStage = false;
+  // GPS thật có thể gửi lại vị trí cũ sau khi giả lập dừng. Giữ lại điểm đã
+  // đến để ảnh minh chứng và bước xác nhận dùng đúng vị trí của chặng này.
+  LatLng? _simulatedArrivalPosition;
   bool _loadingRoute = true;
   bool _updatingStatus = false;
   double? _distanceKm;
@@ -194,7 +197,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
             ),
           ).listen((position) {
             if (!mounted) return;
-            if (_simulating) return;
+            if (_simulating || _simulatedArrivalPosition != null) return;
             final updatedPosition = LatLng(
               position.latitude,
               position.longitude,
@@ -365,9 +368,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 60,
-        maxWidth: 800,
-        maxHeight: 800,
+        imageQuality: 50,
+        maxWidth: 640,
+        maxHeight: 640,
       );
       if (image == null) return;
       final capturedPosition = await _evidencePosition();
@@ -403,6 +406,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       setState(() {
         _toReceiver = true;
         _simulatedThisStage = false;
+        _simulatedArrivalPosition = null;
       });
       await _loadRoute();
     } on CloudinaryUploadException catch (error) {
@@ -422,6 +426,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
           setState(() {
             _toReceiver = true;
             _simulatedThisStage = false;
+            _simulatedArrivalPosition = null;
           });
           await _loadRoute();
         }
@@ -472,6 +477,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
       _navigationStarted = true;
       _simulating = true;
       _simulatedThisStage = true;
+      _simulatedArrivalPosition = null;
       _detailsExpanded = false;
     });
 
@@ -524,6 +530,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     setState(() {
       _simulating = false;
       if (reachedDestination) {
+        _simulatedArrivalPosition = _shipper;
         _distanceKm = 0;
         _durationMinutes = 0;
         _nextTurnMeters = 0;
@@ -585,9 +592,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 60,
-        maxWidth: 800,
-        maxHeight: 800,
+        imageQuality: 50,
+        maxWidth: 640,
+        maxHeight: 640,
       );
       if (image == null) return;
       final capturedPosition = await _evidencePosition();
@@ -647,7 +654,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     required String targetName,
     required String actionName,
   }) {
-    final shipper = _shipper;
+    final shipper = _simulatedArrivalPosition ?? _shipper;
     if (shipper == null || target == null) {
       _showError('Chưa xác định được vị trí hiện tại để $actionName.');
       return false;
@@ -749,9 +756,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     try {
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 60,
-        maxWidth: 800,
-        maxHeight: 800,
+        imageQuality: 50,
+        maxWidth: 640,
+        maxHeight: 640,
       );
       if (image == null) return;
       final position = await _evidencePosition();
@@ -792,6 +799,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         _toReceiver = false;
         _navigationStarted = false;
         _simulatedThisStage = false;
+        _simulatedArrivalPosition = null;
       });
       await _loadRoute();
       if (mounted) {
@@ -900,9 +908,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     try {
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 60,
-        maxWidth: 800,
-        maxHeight: 800,
+        imageQuality: 50,
+        maxWidth: 640,
+        maxHeight: 640,
       );
       if (image == null) return;
       final position = await _evidencePosition();
@@ -957,7 +965,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
 
   Future<void> _completeReturn() async {
     final pickup = _pickup;
-    final shipper = _shipper;
+    final shipper = _simulatedArrivalPosition ?? _shipper;
     if (pickup == null || shipper == null) {
       _showError('Chưa xác định được vị trí hoàn hàng.');
       return;
@@ -979,9 +987,9 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     try {
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 60,
-        maxWidth: 800,
-        maxHeight: 800,
+        imageQuality: 50,
+        maxWidth: 640,
+        maxHeight: 640,
       );
       if (image == null) return;
       final position = await _evidencePosition();
@@ -1140,7 +1148,8 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
   }
 
   Future<LatLng> _evidencePosition() async {
-    if (_simulatedThisStage && _shipper != null) return _shipper!;
+    final simulatedArrival = _simulatedArrivalPosition;
+    if (simulatedArrival != null) return simulatedArrival;
     final position = await Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,

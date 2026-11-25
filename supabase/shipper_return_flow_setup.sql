@@ -183,6 +183,10 @@ DECLARE
   v_nv_id BIGINT;
   v_don public.don_hang%ROWTYPE;
   v_khoang_cach_met DOUBLE PRECISION;
+  v_phi_hoan_hang NUMERIC;
+  v_phan_tram_san NUMERIC;
+  v_tien_san NUMERIC;
+  v_tien_shipper NUMERIC;
 BEGIN
   SELECT nv.id INTO v_nv_id
   FROM public.nhan_vien nv
@@ -227,6 +231,29 @@ BEGIN
       ngay_cap_nhat = NOW()
   WHERE id = v_don.id;
 
+  -- Đơn hoàn đã đi đủ hai chiều nên vẫn được ghi nhận thu nhập. Giữ nguyên
+  -- tỷ lệ sàn/shipper hiện có như đơn giao thành công.
+  v_phi_hoan_hang := GREATEST(COALESCE(v_don.phi_van_chuyen, 0), 0);
+  IF v_phi_hoan_hang > 0 THEN
+    SELECT COALESCE(pvc.phan_tram_san, 20) INTO v_phan_tram_san
+    FROM public.phi_van_chuyen pvc WHERE pvc.id = 1;
+    v_tien_san := ROUND(v_phi_hoan_hang * v_phan_tram_san / 100, 0);
+    v_tien_shipper := v_phi_hoan_hang - v_tien_san;
+    INSERT INTO public.luong_shipper(
+      nhan_vien_id, don_hang_id, phi_van_chuyen,
+      phan_tram_san, tien_san, tien_shipper,
+      trang_thai, ngay_thanh_toan
+    ) VALUES (
+      v_nv_id, v_don.id, v_phi_hoan_hang,
+      v_phan_tram_san, v_tien_san, v_tien_shipper,
+      'DA_THANH_TOAN', NOW()
+    ) ON CONFLICT (don_hang_id) DO NOTHING;
+
+    PERFORM public.cong_thu_nhap_vi_shipper(
+      v_nv_id, v_don.id, v_tien_shipper
+    );
+  END IF;
+
   INSERT INTO public.nhat_ky_don_hang(
     nhan_vien_id, don_hang_id, khach_hang_id, hanh_dong,
     trang_thai_cu, trang_thai_moi, minh_chung, ghi_chu,
@@ -239,7 +266,7 @@ BEGIN
     p_vi_do, p_kinh_do, NOW()
   );
 
-  -- Không trừ COD và không cộng thu nhập giao hàng cho đơn hoàn.
+  -- COD không thu được từ người nhận nên không có khoản COD cần đối soát.
 END;
 $$;
 

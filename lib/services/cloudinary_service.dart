@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -62,7 +63,14 @@ class CloudinaryService {
             ),
           );
 
-    final response = await request.send().timeout(const Duration(seconds: 60));
+    late http.StreamedResponse response;
+    try {
+      response = await request.send().timeout(const Duration(seconds: 25));
+    } on TimeoutException {
+      throw const CloudinaryUploadException(
+        'Tải ảnh quá 25 giây. Vui lòng kiểm tra mạng và thử lại.',
+      );
+    }
     final body = await response.stream.bytesToString();
     final data = jsonDecode(body) as Map<String, dynamic>;
     if (response.statusCode < 200 || response.statusCode >= 300) {

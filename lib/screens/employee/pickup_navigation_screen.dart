@@ -107,7 +107,9 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
               distanceFilter: 15,
             ),
           ).listen((position) {
-            if (!mounted || _simulating) return;
+            // Sau khi mô phỏng đã tới điểm lấy, giữ nguyên vị trí đó đến khi
+            // nhân viên chụp ảnh và xác nhận; không để GPS thật kéo về chỗ cũ.
+            if (!mounted || _simulating || _usingSimulatedPosition) return;
             _current = LatLng(position.latitude, position.longitude);
             _loadRoute(moveMap: false);
           });
@@ -396,8 +398,8 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
       }
       final image = await _imagePicker.pickImage(
         source: ImageSource.camera,
-        imageQuality: 82,
-        maxWidth: 1600,
+        imageQuality: 50,
+        maxWidth: 640,
       );
       if (image == null) return;
       final trackingCode = '${widget.order['ma_van_don']}';
@@ -522,8 +524,8 @@ class _PickupNavigationScreenState extends State<PickupNavigationScreen> {
     try {
       final image = await _imagePicker.pickImage(
         source: source,
-        imageQuality: 82,
-        maxWidth: 1600,
+        imageQuality: 50,
+        maxWidth: 640,
       );
       if (image == null) return;
       final position = await _evidencePosition();
