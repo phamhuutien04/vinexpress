@@ -254,7 +254,7 @@ class _CustomerHomeScreenState extends State<CustomerHomeScreen> {
               title: _historyTitle,
               statuses: _historyStatuses,
             ),
-            const CustomerWalletScreen(),
+            CustomerWalletScreen(isActive: _selectedTab == 2),
             const CustomerAccountScreen(),
           ],
         ),

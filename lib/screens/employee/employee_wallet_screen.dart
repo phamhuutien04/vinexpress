@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
@@ -22,7 +23,10 @@ class _EmployeeWalletScreenState extends State<EmployeeWalletScreen> {
   Map<String, dynamic> _wallet = {};
   List<Map<String, dynamic>> _transactions = [];
   bool _loading = true;
+  bool _refreshing = false;
   String? _error;
+  RealtimeChannel? _walletChannel;
+  Timer? _realtimeDebounce;
 
   double get _balance => (_wallet['so_du'] as num?)?.toDouble() ?? 0;
 
@@ -30,6 +34,66 @@ class _EmployeeWalletScreenState extends State<EmployeeWalletScreen> {
   void initState() {
     super.initState();
     _load();
+    _subscribeWalletRealtime();
+  }
+
+  void _subscribeWalletRealtime() {
+    _walletChannel = Supabase.instance.client
+        .channel(
+          'employee-wallet-${Supabase.instance.client.auth.currentUser?.id}',
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'vi',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'giao_dich_vi',
+          callback: (_) => _scheduleRealtimeRefresh(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleRealtimeRefresh() {
+    _realtimeDebounce?.cancel();
+    _realtimeDebounce = Timer(
+      const Duration(milliseconds: 250),
+      _refreshSilently,
+    );
+  }
+
+  Future<void> _refreshSilently() async {
+    if (!mounted || _loading || _refreshing) return;
+    _refreshing = true;
+    try {
+      final results = await Future.wait([
+        _service.getWalletInfo(),
+        _service.getTransactions(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _wallet = results[0] as Map<String, dynamic>;
+        _transactions = results[1] as List<Map<String, dynamic>>;
+        _error = null;
+      });
+    } on WalletServiceException {
+      // Giữ số dư đang thấy; Realtime sẽ thử lại khi có thay đổi tiếp theo.
+    } finally {
+      _refreshing = false;
+    }
+  }
+
+  @override
+  void dispose() {
+    _realtimeDebounce?.cancel();
+    final channel = _walletChannel;
+    if (channel != null) {
+      unawaited(Supabase.instance.client.removeChannel(channel));
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {

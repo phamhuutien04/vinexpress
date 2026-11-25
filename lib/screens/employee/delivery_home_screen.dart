@@ -91,7 +91,7 @@ class _DeliveryHomeScreenState extends State<DeliveryHomeScreen> {
         index: _tab,
         children: [
           NearbyOrdersScreen(key: ValueKey(_nearbyRevision), embedded: true),
-          const ShipperWalletScreen(),
+          ShipperWalletScreen(isActive: _tab == 1),
           const ShipperOrderHistoryScreen(),
           _ProfilePage(name: _name, onLogout: _logout),
         ],

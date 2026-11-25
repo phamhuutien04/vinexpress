@@ -1131,7 +1131,7 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
         MaterialPageRoute(
           builder: (_) => Scaffold(
             appBar: AppBar(title: const Text('Ví shipper')),
-            body: const ShipperWalletScreen(),
+            body: const ShipperWalletScreen(isActive: true),
           ),
         ),
       );

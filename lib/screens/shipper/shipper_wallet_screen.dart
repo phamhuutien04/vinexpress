@@ -12,7 +12,9 @@ import '../../widgets/wallet_withdrawal_sheet.dart';
 import '../../widgets/shipper_income_chart.dart';
 
 class ShipperWalletScreen extends StatefulWidget {
-  const ShipperWalletScreen({super.key});
+  const ShipperWalletScreen({super.key, required this.isActive});
+
+  final bool isActive;
 
   @override
   State<ShipperWalletScreen> createState() => _ShipperWalletScreenState();
@@ -29,7 +31,6 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   String? _error;
   RealtimeChannel? _walletChannel;
   Timer? _realtimeDebounce;
-  Timer? _walletPollingTimer;
 
   double get _balance => (_wallet['so_du'] as num?)?.toDouble() ?? 0;
   double get _pendingWithdrawal =>
@@ -41,12 +42,14 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   @override
   void initState() {
     super.initState();
-    _load();
+    if (widget.isActive) _load();
     _subscribeWalletRealtime();
-    _walletPollingTimer = Timer.periodic(
-      const Duration(seconds: 3),
-      (_) => _refreshSilently(),
-    );
+  }
+
+  @override
+  void didUpdateWidget(covariant ShipperWalletScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isActive && !oldWidget.isActive) unawaited(_load());
   }
 
   void _subscribeWalletRealtime() {
@@ -70,8 +73,8 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   }
 
   void _scheduleRealtimeRefresh() {
+    if (!widget.isActive) return;
     _realtimeDebounce?.cancel();
-    _walletPollingTimer?.cancel();
     _realtimeDebounce = Timer(
       const Duration(milliseconds: 250),
       _refreshSilently,
@@ -104,7 +107,6 @@ class _ShipperWalletScreenState extends State<ShipperWalletScreen> {
   @override
   void dispose() {
     _realtimeDebounce?.cancel();
-    _walletPollingTimer?.cancel();
     final channel = _walletChannel;
     if (channel != null) {
       unawaited(Supabase.instance.client.removeChannel(channel));
