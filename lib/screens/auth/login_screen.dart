@@ -9,6 +9,7 @@ import '../employee/employee_home_screen.dart';
 import '../employee/last_mile_staff_screen.dart';
 import '../transport/transport_driver_home_screen.dart';
 import '../warehouse/warehouse_manager_home_screen.dart';
+import '../shared/incoming_call_listener.dart';
 import 'register_screen.dart';
 import 'widgets/auth_design.dart';
 
@@ -48,11 +49,13 @@ class _LoginScreenState extends State<LoginScreen> {
         MaterialPageRoute(
           builder: (_) {
             if (result.type == AccountType.customer) {
-              return const CustomerHomeScreen();
+              return const IncomingCallListener(child: CustomerHomeScreen());
             }
             final role = result.profile['vai_tro'] as String?;
             if (role == 'ADMIN') return const AdminHomeScreen();
-            if (role == 'SHIPPER') return const DeliveryHomeScreen();
+            if (role == 'SHIPPER') {
+              return const IncomingCallListener(child: DeliveryHomeScreen());
+            }
             if (role == 'NHAN_VIEN_LAY_HANG' || role == 'NHAN_VIEN_GIAO_HANG') {
               return const LastMileStaffScreen();
             }

@@ -6,3 +6,6 @@ verify_jwt = false
 
 [functions.payos-sync-topup]
 verify_jwt = true
+
+[functions.agora-call-token]
+verify_jwt = true

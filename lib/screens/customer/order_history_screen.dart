@@ -6,6 +6,7 @@ import 'create_order_screen.dart';
 import 'invoice_preview_screen.dart';
 import 'order_tracking_screen.dart';
 import 'widgets/customer_design.dart';
+import '../shared/agora_voice_call_screen.dart';
 
 class OrderHistoryScreen extends StatefulWidget {
   const OrderHistoryScreen({
@@ -328,6 +329,7 @@ class _OrderHistoryCard extends StatelessWidget {
     final canPrintInvoice =
         ((order['khoang_cach_km'] as num?)?.toDouble() ?? 0) > 50 &&
         status != 'DA_HUY';
+    final canCallShipper = order['nhan_vien_giao_id'] != null && canTrack;
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: CustomerPanel(
@@ -409,6 +411,25 @@ class _OrderHistoryCard extends StatelessWidget {
                   ),
                   icon: const Icon(Icons.my_location),
                   label: const Text('Theo dõi đơn hàng'),
+                ),
+              ),
+            ],
+            if (canCallShipper) ...[
+              const SizedBox(height: 8),
+              SizedBox(
+                width: double.infinity,
+                child: OutlinedButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => AgoraVoiceCallScreen(
+                        orderId: (order['id'] as num).toInt(),
+                        contactName:
+                            '${order['nhan_vien_giao_ten'] ?? 'Nhân viên giao hàng'}',
+                      ),
+                    ),
+                  ),
+                  icon: const Icon(Icons.call_outlined),
+                  label: const Text('Gọi shipper trong ứng dụng'),
                 ),
               ),
             ],

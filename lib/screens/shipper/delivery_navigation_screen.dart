@@ -10,9 +10,9 @@ import 'package:latlong2/latlong.dart';
 
 import '../../widgets/vietnam_island_markers.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/constants/app_colors.dart';
+import '../shared/agora_voice_call_screen.dart';
 import '../../services/shipper_service.dart';
 import '../../services/cloudinary_service.dart';
 import '../../services/evidence_image_service.dart';
@@ -1165,17 +1165,20 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
     );
   }
 
-  Future<void> _callPhone(String phone) async {
-    final normalized = phone.replaceAll(RegExp(r'[^0-9+]'), '');
-    if (normalized.isEmpty) {
-      _showError('Đơn hàng chưa có số điện thoại liên hệ.');
+  Future<void> _startInAppCall(String contactName) async {
+    final orderId = (widget.order['id'] as num?)?.toInt();
+    if (orderId == null) {
+      _showError('Không xác định được đơn hàng để gọi.');
       return;
     }
-
-    final opened = await launchUrl(Uri(scheme: 'tel', path: normalized));
-    if (!opened && mounted) {
-      _showError('Không thể mở ứng dụng gọi điện trên thiết bị này.');
-    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => AgoraVoiceCallScreen(
+          orderId: orderId,
+          contactName: contactName,
+        ),
+      ),
+    );
   }
 
   @override
@@ -1430,10 +1433,8 @@ class _DeliveryNavigationScreenState extends State<DeliveryNavigationScreen> {
                       ),
                     ),
                     IconButton.filled(
-                      tooltip: 'Gọi điện',
-                      onPressed: contactPhone.isEmpty
-                          ? null
-                          : () => _callPhone(contactPhone),
+                      tooltip: 'Gọi trong ứng dụng',
+                      onPressed: () => _startInAppCall(contactName),
                       icon: const Icon(Icons.call),
                     ),
                   ],
